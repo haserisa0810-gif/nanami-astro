@@ -1,0 +1,293 @@
+{% extends "platform_base.html" %}
+{% set title = "今日の空気ジェネレーター" %}
+{% block content %}
+<div class="topnav">
+  <a class="btn secondary" href="/">通常鑑定</a>
+  <a class="btn" href="/daily-theme">今日の空気</a>
+  <a class="btn secondary" href="/dashboard">管理画面</a>
+  <a class="btn secondary" href="/guide">ガイド</a>
+</div>
+
+<div class="card">
+  <h1>今日の空気ジェネレーター</h1>
+  <p class="muted">全体トランジットから、占い師用の「今日の空気」を先に作るツールです。個人出生図は使わず、その日の天体配置だけでテーマを出します。</p>
+  <div class="grid">
+    <label>
+      対象日
+      <input id="date" type="date" value="{{ initial_date }}" />
+    </label>
+    <label>
+      期間
+      <select id="period">
+        <option value="daily">今日</option>
+        <option value="weekly">今週</option>
+        <option value="monthly">今月</option>
+      </select>
+    </label>
+    <label>
+      軸
+      <select id="axis">
+        <option value="overall">全体</option>
+        <option value="love">恋愛</option>
+        <option value="work">仕事</option>
+        <option value="relationship">人間関係</option>
+      </select>
+    </label>
+  </div>
+  <div class="row" style="margin-top:16px;">
+    <button id="generateBtn" type="button">今日の空気を生成</button>
+    <span id="status" class="muted"></span>
+  </div>
+</div>
+
+<div id="errorBox" class="error" style="display:none;"></div>
+
+<div id="resultCard" class="card" style="display:none;">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2 id="resultTitle">生成結果</h2>
+      <div class="muted" id="resultMeta"></div>
+    </div>
+    <span class="pill">占い師メモ</span>
+  </div>
+
+  <div class="stats" style="margin-top:16px;">
+    <div class="stat">
+      <div class="muted">今のテーマ</div>
+      <div id="summaryText" style="margin-top:8px;"></div>
+    </div>
+    <div class="stat">
+      <div class="muted">タイプ変換の軸</div>
+      <div id="typeAxisText" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:18px;">
+    <div>
+      <h3>コアテーマ</h3>
+      <ul id="coreThemes"></ul>
+    </div>
+    <div>
+      <h3>追い風</h3>
+      <ul id="pushList"></ul>
+    </div>
+    <div>
+      <h3>注意点</h3>
+      <ul id="cautionList"></ul>
+    </div>
+    <div>
+      <h3>向いている行動</h3>
+      <ul id="actionList"></ul>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:18px;">
+    <div>
+      <h3>避けたい動き</h3>
+      <ul id="avoidList"></ul>
+    </div>
+    <div>
+      <h3>SNS向け一言</h3>
+      <textarea id="socialPost" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<div id="typeToolCard" class="card" style="display:none;">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2>タイプ別運勢ジェネレーター</h2>
+      <div class="muted">1行に1タイプずつ入力してください。必要なら「タイプ名: 補足」で特徴も添えられます。</div>
+    </div>
+    <span class="pill">タイプ別</span>
+  </div>
+
+  <label style="margin-top:14px; display:block;">
+    タイプリスト
+    <textarea id="typeLines" rows="8" placeholder="例
+月灯タイプ: 感受性が高く内面で受け取りやすい
+炎輪タイプ: 動くほど流れが開く行動型
+静水タイプ"></textarea>
+  </label>
+
+  <div class="row" style="margin-top:16px; gap:12px; align-items:center; flex-wrap:wrap;">
+    <button id="generateTypesBtn" type="button">タイプ別運勢を生成</button>
+    <span id="typeStatus" class="muted"></span>
+  </div>
+</div>
+
+<div id="typeResultCard" class="card" style="display:none;">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2>タイプ別の今日の運勢</h2>
+      <div class="muted">今日の空気を各タイプに変換した結果です。</div>
+    </div>
+  </div>
+  <div id="typeResultList" class="grid" style="margin-top:18px;"></div>
+</div>
+
+<div id="transitCard" class="card" style="display:none;">
+  <h2>元になった全体トランジット</h2>
+  <div class="grid">
+    <div>
+      <h3>天体配置</h3>
+      <pre id="planetDump" style="white-space:pre-wrap;"></pre>
+    </div>
+    <div>
+      <h3>主要アスペクト</h3>
+      <pre id="aspectDump" style="white-space:pre-wrap;"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const byId = (id) => document.getElementById(id);
+let latestTheme = null;
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", "&#39;");
+}
+
+function renderList(id, items) {
+  const el = byId(id);
+  el.innerHTML = "";
+  (items || []).forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item;
+    el.appendChild(li);
+  });
+}
+
+function renderTypeItems(items) {
+  const wrap = byId("typeResultList");
+  wrap.innerHTML = "";
+  (items || []).forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "stat";
+    card.innerHTML = `
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <h3 style="margin:0;">${escapeHtml(item.type_name || "")}</h3>
+          ${item.type_hint ? `<div class="muted" style="margin-top:6px;">${escapeHtml(item.type_hint)}</div>` : ""}
+        </div>
+        <span class="pill">タイプ別</span>
+      </div>
+      <div style="margin-top:14px;"><strong>要約</strong><div style="margin-top:6px;">${escapeHtml(item.summary || "")}</div></div>
+      <div style="margin-top:14px;"><strong>流れ</strong><div style="margin-top:6px;">${escapeHtml(item.flow || "")}</div></div>
+      <div style="margin-top:14px;"><strong>起きやすいこと</strong><ul>${(item.likely_things || []).map(v => `<li>${escapeHtml(v)}</li>`).join("")}</ul></div>
+      <div style="margin-top:14px;"><strong>注意点</strong><ul>${(item.caution || []).map(v => `<li>${escapeHtml(v)}</li>`).join("")}</ul></div>
+      <div style="margin-top:14px;"><strong>活かし方</strong><ul>${(item.advice || []).map(v => `<li>${escapeHtml(v)}</li>`).join("")}</ul></div>
+      <div style="margin-top:14px;"><strong>SNS向け一言</strong><textarea readonly>${escapeHtml(item.social_post || "")}</textarea></div>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+async function generateTheme() {
+  byId("status").textContent = "生成中...";
+  byId("errorBox").style.display = "none";
+
+  try {
+    const res = await fetch("/daily-theme/generate", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        date: byId("date").value,
+        period: byId("period").value,
+        axis: byId("axis").value,
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "生成に失敗しました");
+    }
+
+    latestTheme = data;
+    byId("resultCard").style.display = "block";
+    byId("typeToolCard").style.display = "block";
+    byId("transitCard").style.display = "block";
+    byId("resultMeta").textContent = `${data.date || ""} / ${data.period || ""} / ${data.axis || ""}`;
+    byId("summaryText").textContent = data.summary || "";
+    byId("typeAxisText").textContent = data.type_translation_axis || "";
+    byId("socialPost").value = data.social_post || "";
+
+    renderList("coreThemes", data.core_themes);
+    renderList("pushList", data.push);
+    renderList("cautionList", data.caution);
+    renderList("actionList", data.recommended_actions);
+    renderList("avoidList", data.avoid_actions);
+
+    const planets = (data.source_transit?.today_planets || []).map(
+      (p) => `- ${p.name}: ${p.sign} ${p.degree}°`
+    ).join("\n");
+    byId("planetDump").textContent = planets || "（データなし）";
+    byId("planetDump").textContent = planets || "（データなし）";
+
+    const aspects = (data.source_transit?.aspects || []).map(
+      (a) => `- ${a.planet_a} ${a.aspect} ${a.planet_b} / orb ${a.orb}°`
+    ).join("\n");
+    byId("aspectDump").textContent = aspects || "（データなし）";
+    byId("aspectDump").textContent = aspects || "（データなし）";
+
+    byId("status").textContent = "生成完了";
+  } catch (err) {
+    byId("errorBox").style.display = "block";
+    byId("errorBox").textContent = err.message || String(err);
+    byId("status").textContent = "";
+  }
+}
+
+async function generateTypeForecasts() {
+  byId("errorBox").style.display = "none";
+  if (!latestTheme) {
+    byId("errorBox").style.display = "block";
+    byId("errorBox").textContent = "先に『今日の空気』を生成してください。";
+    return;
+  }
+
+  const typeLines = byId("typeLines").value.split(/\n+/).map(v => v.trim()).filter(Boolean);
+  if (!typeLines.length) {
+    byId("errorBox").style.display = "block";
+    byId("errorBox").textContent = "タイプを1件以上入力してください。";
+    return;
+  }
+
+  byId("typeStatus").textContent = "生成中...";
+  try {
+    const res = await fetch("/daily-theme/generate-types", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        date: byId("date").value,
+        period: byId("period").value,
+        axis: byId("axis").value,
+        theme: latestTheme,
+        type_lines: typeLines,
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "タイプ別生成に失敗しました");
+    }
+
+    renderTypeItems(data.items || []);
+    byId("typeResultCard").style.display = "block";
+    byId("typeStatus").textContent = "生成完了";
+  } catch (err) {
+    byId("errorBox").style.display = "block";
+    byId("errorBox").textContent = err.message || String(err);
+    byId("typeStatus").textContent = "";
+  }
+}
+
+byId("generateBtn").addEventListener("click", generateTheme);
+byId("generateTypesBtn").addEventListener("click", generateTypeForecasts);
+</script>
+{% endblock %}

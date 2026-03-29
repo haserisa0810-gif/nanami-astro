@@ -1,0 +1,28 @@
+{% extends "platform_base.html" %}{% set title = "案件一覧" %}{% block content %}
+<div class="topnav">
+  <a class="btn secondary" href="/dashboard">管理画面</a>
+  <a class="btn secondary" href="/">通常鑑定</a>
+  <a class="btn secondary" href="/daily-theme">今日の空気</a>
+  <a class="btn secondary" href="/logout">ログアウト</a>
+</div>
+<div class="card">
+  <h1>案件一覧</h1>
+  <p class="muted">管理者も占い師も同じ一覧を見て、そのまま着手できます。</p>
+  <table>
+    <thead><tr><th>注文ID</th><th>顧客</th><th>商品</th><th>価格</th><th>状態</th><th>担当</th><th>作成日時</th></tr></thead>
+    <tbody>
+      {% for order in orders %}
+      <tr>
+        <td><a href="/staff/orders/{{ order.order_code }}">{{ order.order_code }}</a></td>
+        <td>{{ order.user_name }}</td>
+        <td>{{ order.menu.name if order.menu else '-' }}</td>
+        <td>¥{{ "{:,}".format(order.price) }}</td>
+        <td>{{ status_labels.get(order.status, order.status) }}</td>
+        <td>{{ order.assigned_reader.display_name if order.assigned_reader else '-' }}</td>
+        <td>{{ order.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

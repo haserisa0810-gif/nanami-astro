@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f4f1;color:#111;margin:0}
+    .wrap{max-width:1080px;margin:32px auto;padding:0 16px}
+    .card{background:#fff;border:1px solid #e7e1d9;border-radius:18px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.05);margin-bottom:18px}
+    h1,h2,h3{margin:0 0 12px}
+    .muted{color:#666}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    input,textarea,select{width:100%;padding:10px 12px;border:1px solid #d7d1c8;border-radius:10px;background:#fff;box-sizing:border-box}
+    textarea{min-height:120px}
+    button,.btn{display:inline-block;background:#111;color:#fff;border:0;border-radius:10px;padding:10px 16px;text-decoration:none;cursor:pointer}
+    button.danger,.btn.danger{background:#dc3545;color:#fff}
+    .btn.secondary,button.secondary{background:#fff;color:#111;border:1px solid #d7d1c8}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top;text-align:left}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#f2efe9;font-size:12px}.pill.danger{background:#dc3545;color:#fff}.pill.warning{background:#f0ad4e;color:#fff}.pill.success{background:#28a745;color:#fff}.pill.secondary{background:#6c757d;color:#fff}
+    .topnav{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+    .error{padding:12px 14px;background:#fff3f3;border:1px solid #edcaca;border-radius:12px;color:#8d2f2f;margin-bottom:14px}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+    .stat{background:#faf8f5;border:1px solid #eee2d5;border-radius:16px;padding:16px}
+    .code{font-family:ui-monospace,SFMono-Regular,monospace;background:#faf8f5;border:1px solid #eee2d5;border-radius:8px;padding:2px 6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

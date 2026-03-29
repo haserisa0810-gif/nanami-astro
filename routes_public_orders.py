@@ -1,0 +1,271 @@
+from __future__ import annotations
+
+from datetime import date
+import os
+import json
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from db import get_db
+from models import Menu, Order
+from services.free_reading_service import FREE_RESULT_FOOTER, ensure_unique_free_reading_code, process_free_reading
+from services.order_service import create_order, get_or_create_customer
+from services.location import PREFECTURE_OPTIONS, resolve_birth_location
+
+router = APIRouter()
+templates = Jinja2Templates(directory="templates")
+
+
+@router.get("/menu", response_class=HTMLResponse)
+def menu_page(request: Request, db: Session = Depends(get_db), free_reading_code: str | None = None):
+    menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
+    initial_free_order = None
+    if free_reading_code:
+        initial_free_order = db.scalar(select(Order).where(Order.free_reading_code == free_reading_code, Order.order_kind == "free"))
+    return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": None, "prefecture_options": PREFECTURE_OPTIONS, "initial_free_order": initial_free_order, "initial_free_reading_code": free_reading_code})
+
+
+@router.get("/order/start", response_class=HTMLResponse)
+def order_start(request: Request, db: Session = Depends(get_db), free_reading_code: str | None = None):
+    return menu_page(request, db, free_reading_code=free_reading_code)
+
+
+@router.post("/order/start", response_class=HTMLResponse)
+def create_order_page(
+    request: Request,
+    menu_id: int = Form(...),
+    user_name: str = Form(...),
+    user_contact: str | None = Form(None),
+    birth_date: str = Form(...),
+    birth_time: str | None = Form(None),
+    birth_prefecture: str | None = Form(None),
+    birth_place: str | None = Form(None),
+    gender: str | None = Form(None),
+    consultation_text: str | None = Form(None),
+    free_reading_code: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    menu = db.get(Menu, menu_id)
+    if not menu or not menu.is_active:
+        raise HTTPException(status_code=404, detail="menu not found")
+    try:
+        birth_date_obj = date.fromisoformat(birth_date)
+    except ValueError:
+        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
+        return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": "生年月日の形式が正しくありません。", "prefecture_options": PREFECTURE_OPTIONS, "initial_free_reading_code": free_reading_code, "initial_free_order": None}, status_code=400)
+
+    customer = None
+
+    location = resolve_birth_location((birth_prefecture or '').strip() or None, (birth_place or '').strip() or None)
+    if user_contact:
+        customer = get_or_create_customer(db, display_name=user_name.strip(), email=user_contact.strip() if "@" in user_contact else None)
+    source_free_order = None
+    free_reading_code = (free_reading_code or '').strip().upper() or None
+    if free_reading_code:
+        source_free_order = db.scalar(select(Order).where(Order.free_reading_code == free_reading_code, Order.order_kind == 'free'))
+    order = create_order(
+        db,
+        menu=menu,
+        user_name=user_name.strip(),
+        user_contact=(user_contact or '').strip() or None,
+        birth_date=birth_date_obj,
+        birth_time=(birth_time or '').strip() or None,
+        birth_prefecture=location.get('birth_prefecture'),
+        birth_place=location.get('birth_place'),
+        birth_lat=location.get('birth_lat'),
+        birth_lon=location.get('birth_lon'),
+        location_source=location.get('location_source'),
+        location_note=location.get('location_note'),
+        gender=(gender or '').strip() or None,
+        consultation_text=(consultation_text or '').strip() or None,
+        customer=customer,
+        source='self',
+        status='pending_payment',
+        inputs_json=json.dumps({
+            'user_name': user_name,
+            'user_contact': user_contact,
+            'birth_date': birth_date,
+            'birth_time': birth_time,
+            'birth_prefecture': birth_prefecture,
+            'birth_place': birth_place,
+            'birth_lat': location.get('birth_lat'),
+            'birth_lon': location.get('birth_lon'),
+            'location_source': location.get('location_source'),
+            'gender': gender,
+            'consultation_text': consultation_text,
+            'menu_id': menu_id,
+        }, ensure_ascii=False),
+    )
+    if source_free_order:
+        order.source_free_order_id = source_free_order.id
+    db.commit()
+    return RedirectResponse(url=f"/order/confirm?order_code={order.order_code}", status_code=303)
+
+
+@router.get("/free-reading/start", response_class=HTMLResponse)
+def free_reading_start_page(request: Request):
+    return templates.TemplateResponse(request=request, name="free_start.html", context={"request": request, "error": None, "prefecture_options": PREFECTURE_OPTIONS})
+
+
+@router.post("/free-reading/start")
+def free_reading_create(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_name: str = Form(...),
+    user_contact: str | None = Form(None),
+    birth_date: str = Form(...),
+    birth_time: str | None = Form(None),
+    birth_prefecture: str | None = Form(None),
+    birth_place: str | None = Form(None),
+    gender: str | None = Form(None),
+    consultation_text: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        birth_date_obj = date.fromisoformat(birth_date)
+    except ValueError:
+        return templates.TemplateResponse(request=request, name="free_start.html", context={"request": request, "error": "生年月日の形式が正しくありません。", "prefecture_options": PREFECTURE_OPTIONS}, status_code=400)
+
+    menu = db.scalar(select(Menu).where(Menu.name == '無料鑑定'))
+    if not menu:
+        raise HTTPException(status_code=500, detail='無料鑑定メニューが見つかりません')
+
+    customer = None
+    location = resolve_birth_location((birth_prefecture or '').strip() or None, (birth_place or '').strip() or None)
+    if user_contact:
+        customer = get_or_create_customer(db, display_name=user_name.strip(), email=user_contact.strip() if "@" in user_contact else None)
+
+    order = create_order(
+        db,
+        menu=menu,
+        user_name=user_name.strip(),
+        user_contact=(user_contact or '').strip() or None,
+        birth_date=birth_date_obj,
+        birth_time=(birth_time or '').strip() or None,
+        birth_prefecture=location.get('birth_prefecture'),
+        birth_place=location.get('birth_place'),
+        birth_lat=location.get('birth_lat'),
+        birth_lon=location.get('birth_lon'),
+        location_source=location.get('location_source'),
+        location_note=location.get('location_note'),
+        gender=(gender or '').strip() or None,
+        consultation_text=(consultation_text or '').strip() or None,
+        customer=customer,
+        source='self',
+        status='received',
+        inputs_json=json.dumps({
+            'user_name': user_name,
+            'user_contact': user_contact,
+            'birth_date': birth_date,
+            'birth_time': birth_time,
+            'birth_prefecture': birth_prefecture,
+            'birth_place': birth_place,
+            'gender': gender,
+            'consultation_text': consultation_text,
+            'menu_id': menu.id,
+        }, ensure_ascii=False),
+    )
+    order.order_kind = 'free'
+    order.price = 0
+    order.free_reading_code = ensure_unique_free_reading_code(db)
+    order.ai_status = 'queued'
+    db.commit()
+    background_tasks.add_task(process_free_reading, order.id)
+    return RedirectResponse(url=f"/free-reading/{order.order_code}/wait", status_code=303)
+
+
+@router.get("/free-reading/{order_code}/wait", response_class=HTMLResponse)
+def free_reading_wait(order_code: str, request: Request, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).where(Order.order_code == order_code, Order.order_kind == 'free'))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    return templates.TemplateResponse(request=request, name="free_wait.html", context={"request": request, "order": order})
+
+
+@router.get("/free-reading/{order_code}/status")
+def free_reading_status(order_code: str, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).where(Order.order_code == order_code, Order.order_kind == 'free'))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    return {
+        'order_code': order.order_code,
+        'free_reading_code': order.free_reading_code,
+        'status': order.ai_status or 'queued',
+        'result_url': f'/free-reading/{order.order_code}/result' if (order.ai_status == 'completed') else None,
+    }
+
+
+@router.get("/free-reading/{order_code}/result", response_class=HTMLResponse)
+def free_reading_result(order_code: str, request: Request, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).options(selectinload(Order.yaml_logs), selectinload(Order.result_views)).where(Order.order_code == order_code, Order.order_kind == 'free'))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    result_payload = None
+    if order.result_payload_json:
+        try:
+            result_payload = json.loads(order.result_payload_json)
+        except Exception:
+            result_payload = None
+    yaml_log = sorted(order.yaml_logs, key=lambda x: x.updated_at or x.created_at, reverse=True)
+    latest_yaml = yaml_log[0] if yaml_log else None
+    return templates.TemplateResponse(request=request, name="free_result.html", context={"request": request, "order": order, "result_payload": result_payload, "yaml_log": latest_yaml, "footer_message": FREE_RESULT_FOOTER})
+
+
+@router.get("/order/confirm", response_class=HTMLResponse)
+def order_confirm(order_code: str, request: Request, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    return templates.TemplateResponse(request=request, name="order_confirm.html", context={"request": request, "order": order})
+
+
+@router.get("/payment/{order_code}", response_class=HTMLResponse)
+def payment_page(order_code: str, request: Request, db: Session = Depends(get_db), cancelled: int | None = None):
+    order = db.scalar(select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    test_payment_enabled = ((os.getenv("STRIPE_ALLOW_TEST_SKIP_PAYMENT") or "").strip().lower() in {"1", "true", "yes", "on"}) or ((os.getenv("APP_ENV") or "").strip().lower() in {"dev", "development", "local", "staging", "test"})
+    return templates.TemplateResponse(request=request, name="payment.html", context={"request": request, "order": order, "cancelled": bool(cancelled), "test_payment_enabled": test_payment_enabled})
+
+
+@router.get("/thanks/{order_code}", response_class=HTMLResponse)
+def thanks_page(order_code: str, request: Request, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    return templates.TemplateResponse(request=request, name="thanks-stripe.html", context={"request": request, "order": order})
+
+
+@router.get("/result/{order_code}", response_class=HTMLResponse)
+def order_result(order_code: str, request: Request, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).options(selectinload(Order.deliveries), selectinload(Order.menu), selectinload(Order.yaml_logs), selectinload(Order.result_views)).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    latest_delivery = sorted(order.deliveries, key=lambda d: d.updated_at or d.created_at, reverse=True)
+    delivery = latest_delivery[0] if latest_delivery else None
+    yaml_log = sorted(order.yaml_logs, key=lambda x: x.updated_at or x.created_at, reverse=True)
+    latest_yaml = yaml_log[0] if yaml_log else None
+    result_view = next(iter(sorted(order.result_views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
+    result_payload = None
+    raw_payload = (result_view.result_payload_json if result_view and result_view.result_payload_json else order.result_payload_json)
+    if raw_payload:
+        try:
+            result_payload = json.loads(raw_payload)
+        except Exception:
+            result_payload = None
+    return templates.TemplateResponse(request=request, name="order_result.html", context={"request": request, "order": order, "delivery": delivery, 'yaml_log': latest_yaml, 'result_view': result_view, 'result_payload': result_payload})
+
+
+@router.get("/report/{order_code}", response_class=HTMLResponse)
+def order_report(order_code: str, request: Request, db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).options(selectinload(Order.result_views), selectinload(Order.deliveries), selectinload(Order.yaml_logs), selectinload(Order.menu)).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail='order not found')
+    result_view = next(iter(sorted(order.result_views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
+    if result_view and result_view.report_html:
+        return HTMLResponse(content=result_view.report_html)
+    return order_result(order_code=order_code, request=request, db=db)

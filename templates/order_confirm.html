@@ -1,0 +1,17 @@
+{% extends "platform_base.html" %}{% set title = "注文確認" %}{% block content %}
+<div class="card">
+  <h1>注文確認</h1>
+  <div class="grid">
+    <div><strong>受付番号</strong><div>{{ order.order_code }}</div></div>
+    <div><strong>お名前</strong><div>{{ order.user_name }}</div></div>
+    <div><strong>メニュー</strong><div>{{ order.menu.name if order.menu else '-' }}</div></div>
+    <div><strong>生年月日</strong><div>{{ order.birth_date }}</div></div>
+    <div><strong>出生時間</strong><div>{{ order.birth_time or '-' }}</div></div>
+    <div><strong>都道府県</strong><div>{{ order.birth_prefecture or '-' }}</div></div>
+    <div><strong>出生地</strong><div>{{ order.birth_place or '-' }}</div></div>
+    <div><strong>座標取得</strong><div>{{ order.location_source or '-' }}</div></div>
+  </div>
+  <div style="margin-top:12px"><strong>ご相談内容</strong><p>{{ order.consultation_text or '未入力' }}</p></div>
+  <div class="row" style="margin-top:12px"><a class="btn" href="/payment/{{ order.order_code }}">決済へ進む</a></div>
+</div>
+{% endblock %}

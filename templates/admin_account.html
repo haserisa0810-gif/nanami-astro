@@ -1,0 +1,27 @@
+{% extends "platform_base.html" %}{% set title = "管理者アカウント設定" %}{% block content %}
+<div class="topnav">
+  <a class="btn secondary" href="/admin/dashboard">ダッシュボード</a>
+  <a class="btn secondary" href="/admin/users">管理者</a>
+  <a class="btn secondary" href="/admin/astrologers">占い師管理</a>
+  <a class="btn secondary" href="/admin/logout">ログアウト</a>
+</div>
+{% if force_password %}<div class="card" style="border-color:#f6dea2;background:#fffaf0">初期パスワードのままです。先に新しいパスワードへ変更してください。</div>{% endif %}
+{% if error == 'password_too_short' %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">新しいパスワードは8文字以上で入力してください。</div>{% endif %}
+{% if error == 'password_mismatch' %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">新しいパスワードと確認用パスワードが一致しません。</div>{% endif %}
+{% if error == 'current_password_invalid' %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">現在のパスワードが違います。</div>{% endif %}
+{% if success == 'password_updated' %}<div class="card" style="border-color:#cfe5d1;background:#f5fbf6">パスワードを更新しました。</div>{% endif %}
+<div class="card">
+  <h1>管理者アカウント設定</h1>
+  <form method="post" action="/admin/account/password">
+    <div class="grid">
+      <div><label>表示名</label><input value="{{ admin.display_name }}" disabled></div>
+      <div><label>ログインメール</label><input value="{{ admin.login_email }}" disabled></div>
+      {% if not admin.is_temp_password %}<div><label>現在のパスワード</label><input type="password" name="current_password"></div>{% endif %}
+      <div><label>新しいパスワード</label><input type="password" name="new_password" required></div>
+      <div><label>新しいパスワード（確認）</label><input type="password" name="new_password_confirm" required></div>
+    </div>
+    <p class="muted">管理者追加時に発行した初期パスワードは、この画面で本パスワードへ変更します。</p>
+    <button type="submit">パスワードを更新する</button>
+  </form>
+</div>
+{% endblock %}

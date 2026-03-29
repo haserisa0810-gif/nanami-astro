@@ -1,0 +1,82 @@
+
+{% extends "platform_base.html" %}{% set title = "鑑定結果" %}{% block content %}
+{% set status_label = {'waiting_payment':'支払い待ち','paid':'決済済み','assigned':'担当割当済み','in_progress':'対応中','delivered':'納品済み','completed':'完了','cancelled':'キャンセル'}.get(order.status, order.status) %}
+{% set summary = result_payload.summary if result_payload and result_payload.summary else {} %}
+{% set has_summary = summary and (summary.essence or summary.strength or summary.caution) %}
+<div class="card">
+  <div class="row" style="justify-content:space-between;align-items:flex-start;gap:16px">
+    <div>
+      <h1>鑑定結果</h1>
+      <p class="muted">受付番号 <span class="code">{{ order.order_code }}</span></p>
+    </div>
+    <div class="row">
+      <a class="btn secondary" href="/dashboard">管理画面に戻る</a>
+      <a class="btn secondary" href="/staff/orders/{{ order.order_code }}">案件詳細へ戻る</a>
+    </div>
+  </div>
+  <div class="stats" style="margin-top:14px">
+    <div class="stat"><div class="muted">商品</div><div style="margin-top:8px">{{ order.menu.name if order.menu else '-' }}</div></div>
+    <div class="stat"><div class="muted">状態</div><div style="margin-top:8px"><span class="pill success">{{ status_label }}</span></div></div>
+    <div class="stat"><div class="muted">納品日時</div><div style="margin-top:8px">{{ order.delivered_at or '-' }}</div></div>
+  </div>
+</div>
+
+{% if result_payload %}
+  {% if has_summary %}
+  <div class="card">
+    <h2>{{ result_payload.title or '鑑定結果' }}</h2>
+    <div class="grid" style="margin-top:14px">
+      {% if summary.essence %}<div class="stat"><strong>本質</strong><div style="white-space:pre-wrap;margin-top:8px">{{ summary.essence }}</div></div>{% endif %}
+      {% if summary.strength %}<div class="stat"><strong>強み</strong><div style="white-space:pre-wrap;margin-top:8px">{{ summary.strength }}</div></div>{% endif %}
+      {% if summary.caution %}<div class="stat"><strong>テーマ</strong><div style="white-space:pre-wrap;margin-top:8px">{{ summary.caution }}</div></div>{% endif %}
+    </div>
+    {% if result_payload.horoscope_image_url %}<div style="margin-top:16px"><img src="{{ result_payload.horoscope_image_url }}" alt="horoscope" style="max-width:100%;height:auto"></div>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>本文</h2>
+    {% if result_payload.sections %}
+      {% for sec in result_payload.sections %}
+      <div style="padding:14px 0;border-top:1px solid #eee{% if loop.first %};border-top:none{% endif %}">
+        <h3 style="margin-bottom:8px">{{ sec.heading }}</h3>
+        <div style="white-space:pre-wrap;line-height:1.85">{{ sec.body }}</div>
+      </div>
+      {% endfor %}
+    {% elif delivery %}
+      <div style="white-space:pre-wrap;line-height:1.85">{{ delivery.delivery_text }}</div>
+    {% else %}
+      <p class="muted">まだ納品されていません。</p>
+    {% endif %}
+  </div>
+
+  {% if result_payload.planet_list %}
+  <div class="card"><h2>主要天体</h2><table><thead><tr><th>天体</th><th>サイン</th><th>ハウス</th><th>補足</th></tr></thead><tbody>{% for p in result_payload.planet_list %}<tr><td>{{ p.name }}</td><td>{{ p.sign }}</td><td>{{ p.house }}</td><td>{{ p.note or '-' }}</td></tr>{% endfor %}</tbody></table></div>
+  {% endif %}
+
+  {% if result_payload.advice_list %}
+  <div class="card"><h2>行動アドバイス</h2>{% for a in result_payload.advice_list %}<div style="padding:14px 0;border-top:1px solid #eee{% if loop.first %};border-top:none{% endif %}"><strong>{{ a.title }}</strong><div style="white-space:pre-wrap;margin-top:8px;line-height:1.8">{{ a.body }}</div></div>{% endfor %}</div>
+  {% endif %}
+{% else %}
+<div class="card"><h2>納品本文</h2>{% if delivery %}<div style="white-space:pre-wrap;line-height:1.85">{{ delivery.delivery_text }}</div>{% else %}<p class="muted">まだ納品されていません。</p>{% endif %}</div>
+{% endif %}
+
+<div class="card">
+  <h2>操作</h2>
+  <div class="row">
+    <a class="btn secondary" href="/dashboard">管理画面に戻る</a>
+    <a class="btn secondary" href="/staff/orders/{{ order.order_code }}">案件詳細へ戻る</a>
+  </div>
+</div>
+
+<details class="card"><summary><strong>内部データ（YAML）</strong> <span class="muted">必要な時だけコピーします</span></summary>
+  <div style="margin-top:12px">
+  {% if yaml_log %}
+    <div class="row" style="margin-bottom:10px;justify-content:flex-end"><button type="button" class="secondary" onclick="navigator.clipboard.writeText(document.getElementById('yaml-result-copy').innerText)">YAMLをコピー</button></div>
+    <pre id="yaml-result-copy" style="white-space:pre-wrap;max-height:420px;overflow:auto">{{ yaml_log.yaml_body }}</pre>
+  {% else %}<p class="muted">まだログはありません。</p>{% endif %}
+  </div>
+</details>
+
+{% if result_view and result_view.report_html %}<div class="card"><h2>鑑定書プレビュー</h2><iframe srcdoc='{{ result_view.report_html | e }}' style="width:100%;min-height:700px;border:1px solid #ddd;border-radius:8px"></iframe></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ご決済ありがとうございます | nanami astro</title>
+  <meta name="description" content="ご決済ありがとうございます。LINEで受け付けたご予約内容を確認し、順次ご案内します。" />
+  <style>
+    :root {
+      --bg: #faf7ff;
+      --card: #ffffff;
+      --text: #222222;
+      --sub: #666666;
+      --line: #e8def8;
+      --accent: #7c4dff;
+      --success: #1b8f5a;
+      --warning: #9a6b00;
+      --warning-bg: #fff8e8;
+      --max: 920px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.8;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 24px 16px 64px; }
+    .hero {
+      background: linear-gradient(180deg, #ffffff 0%, #f8f3ff 100%);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 32px 24px;
+      box-shadow: 0 8px 30px rgba(80, 40, 160, 0.06);
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--success);
+      background: #edf9f3;
+      border: 1px solid #bfe8d1;
+      padding: 6px 10px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+    .badge.pending {
+      color: var(--warning);
+      background: var(--warning-bg);
+      border-color: #f2d996;
+    }
+    h1 { margin: 0 0 12px; font-size: 32px; line-height: 1.35; }
+    .lead { margin: 0 auto; color: var(--sub); font-size: 16px; max-width: 680px; }
+    .grid { display: grid; gap: 18px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 20px;
+      box-shadow: 0 6px 20px rgba(80, 40, 160, 0.04);
+    }
+    h2 { margin: 0 0 14px; font-size: 22px; line-height: 1.4; }
+    p { margin: 0 0 12px; }
+    .important {
+      background: #fff8e8;
+      border: 1px solid #f2d996;
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: #6b5200;
+      margin-top: 14px;
+    }
+    .line-box {
+      text-align: center;
+      padding: 28px 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f7fff9 100%);
+      border: 1px solid #d8f0df;
+      border-radius: 18px;
+    }
+    .line-button {
+      display: inline-block;
+      margin-top: 12px;
+      background: #06c755;
+      color: #ffffff;
+      font-weight: 700;
+      padding: 14px 24px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-size: 16px;
+      box-shadow: 0 8px 20px rgba(6, 199, 85, 0.18);
+    }
+    .line-button:hover { opacity: 0.92; text-decoration: none; }
+    .sub-links {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      justify-content: center;
+    }
+    .sub-links a {
+      display: inline-block;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+    .footer { margin-top: 24px; color: var(--sub); font-size: 14px; text-align: center; }
+    .muted { color: var(--sub); }
+    @media (max-width: 640px) {
+      h1 { font-size: 26px; }
+      .hero, .card { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div id="payment-badge" class="badge">お支払い確認中</div>
+      <h1 id="payment-title">決済状況を確認しています</h1>
+      <p id="payment-lead" class="lead">
+        Stripeからの通知を確認中です。<br>
+        数秒以内に反映されることが多いです。
+      </p>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>受付状況</h2>
+        <p>予約番号: <strong>{{ order.order_code if order else '-' }}</strong></p>
+        <p id="payment-status-text" class="muted">支払い状況を取得しています...</p>
+        <div class="important">
+          入力内容に修正がある場合のみ、このままLINEに返信してください。<br>
+          新たに情報を送り直す必要はありません。
+        </div>
+      </section>
+
+      <section class="card line-box">
+        <h2>LINEはこちら</h2>
+        <p>修正やご質問がある場合のみ、以下からLINEにお進みください。</p>
+        <a class="line-button" href="https://line.me/R/ti/p/@281jnwon" target="_blank" rel="noopener noreferrer">
+          LINEを開く
+        </a>
+      </section>
+
+      <section class="card">
+        <h2>ご案内</h2>
+        <p>内容確認後、順次鑑定を進めます。返信までにお時間をいただく場合があります。</p>
+        <p>決済完了メッセージはLINEにも送信されます。</p>
+        <div class="sub-links">
+          <a href="/about">サービス案内</a>
+          <a href="/">トップページ</a>
+          <a href="/payment/{{ order.order_code if order else '' }}">支払いページへ戻る</a>
+        </div>
+      </section>
+    </div>
+
+    <p class="footer">© nanami astro</p>
+  </main>
+
+  <script>
+    const badgeEl = document.getElementById('payment-badge');
+    const titleEl = document.getElementById('payment-title');
+    const leadEl = document.getElementById('payment-lead');
+    const statusEl = document.getElementById('payment-status-text');
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    const orderCode = '{{ order.order_code if order else "" }}';
+
+    function applyPaidState(data) {
+      badgeEl.textContent = 'お支払い確認済み';
+      badgeEl.classList.remove('pending');
+      titleEl.textContent = 'ご決済ありがとうございます';
+      leadEl.innerHTML = 'お支払いの確認が完了しました。<br>LINEで受け付けたご予約内容を確認し、順次ご案内します。';
+      statusEl.textContent = `決済状態: ${data.payment_status || 'paid'} / 受付状態: ${data.order_status || '-'}${data.assigned_reader_id ? ' / 担当割当済み' : ''}`;
+    }
+
+    function applyPendingState(data, detail) {
+      badgeEl.textContent = 'お支払い確認中';
+      badgeEl.classList.add('pending');
+      titleEl.textContent = '決済状況を確認しています';
+      leadEl.innerHTML = 'Stripeからの通知を確認中です。<br>少し時間をおいて自動反映される場合があります。';
+      statusEl.textContent = detail || `決済状態: ${data?.payment_status || '-'} / 受付状態: ${data?.order_status || '-'}`;
+    }
+
+    async function syncStatus() {
+      try {
+        const url = sessionId
+          ? `/api/stripe/orders/${encodeURIComponent(orderCode)}/session-status?session_id=${encodeURIComponent(sessionId)}`
+          : `/api/stripe/orders/${encodeURIComponent(orderCode)}/session-status`;
+        const res = await fetch(url, {method: 'GET'});
+        const data = await res.json();
+        if (!res.ok) {
+          applyPendingState(null, data.detail || '決済状態の確認に失敗しました。時間をおいて再度ご確認ください。');
+          return;
+        }
+        if (data.paid) {
+          applyPaidState(data);
+          return;
+        }
+        applyPendingState(data, 'まだ反映待ちです。反映されない場合は、支払いページまたは管理画面で状況をご確認ください。');
+      } catch (e) {
+        applyPendingState(null, '通信エラーのため、決済状態を確認できませんでした。');
+      }
+    }
+
+    syncStatus();
+  </script>
+</body>
+</html>

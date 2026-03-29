@@ -1,0 +1,17 @@
+{% extends "platform_base.html" %}{% set title = "運営ログイン" %}{% block content %}
+<div class="card" style="max-width:520px;margin:40px auto">
+  <h1>運営ログイン</h1>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/admin/login">
+    <div style="margin-bottom:12px">
+      <label>ログインID または メールアドレス</label>
+      <input name="login_email" required placeholder="admin または admin@example.com">
+    </div>
+    <div style="margin-bottom:12px">
+      <label>パスワード</label>
+      <input type="password" name="password" required>
+    </div>
+    <button type="submit">ログイン</button>
+  </form>
+</div>
+{% endblock %}

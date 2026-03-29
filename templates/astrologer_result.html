@@ -1,0 +1,157 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>占い師用分析</title>
+  <style>
+    :root{--bg:#f6f3ef;--card:#fff;--ink:#171717;--sub:#666;--line:#e8e1d8;--accent:#d8c8ff;--shadow:0 16px 42px rgba(0,0,0,.07);--radius:20px}
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#faf7f3 0%,#f1ece5 100%);font-family:Inter,system-ui,sans-serif;color:var(--ink);line-height:1.7}
+    .wrap{width:min(1200px,calc(100% - 28px));margin:24px auto 56px}
+    .hero,.card{background:rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.7);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .hero{padding:26px;margin-bottom:16px}.card{padding:20px}.stack{display:grid;gap:16px}.grid{display:grid;grid-template-columns:1.12fr .88fr;gap:16px}
+    h1{margin:10px 0 6px;font-size:clamp(32px,4vw,48px);line-height:1.05} h2{margin:0 0 12px;font-size:24px} h3{margin:0 0 10px;font-size:18px}
+    .eyebrow{display:inline-block;padding:7px 10px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .lead,.sub{color:var(--sub)} .two{display:grid;grid-template-columns:1fr 1fr;gap:12px} .three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .section-title{padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:12px}
+    .theme{padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:#fff;margin-bottom:12px}
+    .theme h4{margin:0 0 8px;font-size:17px}.label{display:inline-block;padding:4px 9px;border-radius:999px;background:#f3edff;border:1px solid #eadfff;font-size:12px;margin-bottom:8px}
+    ul{margin:8px 0 0 20px;padding:0} .mono{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+    .house-list{columns:2;column-gap:24px} .house-item{break-inside:avoid;margin-bottom:8px}
+    details{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff} summary{cursor:pointer;font-weight:700}
+    .empty{color:var(--sub);font-style:italic}
+    a{color:#4c3fa8}
+    @media (max-width: 940px){.grid,.two,.three,.house-list{display:block;columns:1}.theme,.card{margin-bottom:12px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <span class="eyebrow">Astrologer View</span>
+    <h1>占い師用分析</h1>
+    <p class="lead">ラベル一覧ではなく、<strong>どう現れるか → なぜそう読むか → どう説明するか</strong> を中心に整理しています。</p>
+  </section>
+
+  <div class="grid">
+    <div class="stack">
+      <section class="card">
+        <h2 class="section-title">総合判断（AI補助）</h2>
+        <div class="mono">{{ summary.combined.ai_judgment }}</div>
+      </section>
+
+      {% if reader_text %}
+      <section class="card">
+        <h2 class="section-title">占い師メモ</h2>
+        <div class="mono">{{ reader_text }}</div>
+      </section>
+      {% endif %}
+
+      <section class="card">
+        <h2 class="section-title">西洋占星術</h2>
+        {% if summary.western.available %}
+          {% for t in summary.western.themes %}
+          <article class="theme">
+            <div class="label">{{ t.label }}</div>
+            <h4>{{ t.summary }}</h4>
+            <p><strong>相談者向けの言い方:</strong> {{ t.client_text }}</p>
+            <p><strong>占い師向け説明:</strong> {{ t.reader_explanation }}</p>
+            {% if t.reasons %}
+              <div><strong>理由</strong><ul>{% for r in t.reasons if r %}<li>{{ r }}</li>{% endfor %}</ul></div>
+            {% endif %}
+            {% if t.evidence %}
+              <div><strong>根拠</strong><ul>{% for e in t.evidence if e %}<li>{{ e }}</li>{% endfor %}</ul></div>
+            {% endif %}
+            {% if t.misread_risk %}
+              <p><strong>違和感が出やすい点:</strong> {{ t.misread_note }}</p>
+            {% endif %}
+          </article>
+          {% endfor %}
+          <details>
+            <summary>各ハウスの星座配置と読み方（西洋）</summary>
+            <div class="house-list">{% for line in summary.western.house_readings %}<div class="house-item">{{ line }}</div>{% endfor %}</div>
+          </details>
+        {% else %}<p class="empty">西洋占星術データはありません。</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <h2 class="section-title">インド占星術</h2>
+        {% if summary.vedic.available %}
+          {% for t in summary.vedic.themes %}
+          <article class="theme">
+            <div class="label">{{ t.label }}</div>
+            <h4>{{ t.summary }}</h4>
+            <p><strong>相談者向けの言い方:</strong> {{ t.client_text }}</p>
+            <p><strong>占い師向け説明:</strong> {{ t.reader_explanation }}</p>
+            {% if t.reasons %}
+              <div><strong>理由</strong><ul>{% for r in t.reasons if r %}<li>{{ r }}</li>{% endfor %}</ul></div>
+            {% endif %}
+            {% if t.evidence %}
+              <div><strong>根拠</strong><ul>{% for e in t.evidence if e %}<li>{{ e }}</li>{% endfor %}</ul></div>
+            {% endif %}
+            {% if t.misread_risk %}
+              <p><strong>違和感が出やすい点:</strong> {{ t.misread_note }}</p>
+            {% endif %}
+          </article>
+          {% endfor %}
+          <details>
+            <summary>各ハウスの星座配置と読み方（インド）</summary>
+            <div class="house-list">{% for line in summary.vedic.house_readings %}<div class="house-item">{{ line }}</div>{% endfor %}</div>
+          </details>
+        {% else %}<p class="empty">インド占星術データはありません。</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <h2 class="section-title">四柱推命</h2>
+        {% if summary.shichu.available %}
+          {% for t in summary.shichu.themes %}
+          <article class="theme">
+            <div class="label">{{ t.label }}</div>
+            <h4>{{ t.summary }}</h4>
+            <p><strong>相談者向けの言い方:</strong> {{ t.client_text }}</p>
+            <p><strong>占い師向け説明:</strong> {{ t.reader_explanation }}</p>
+            {% if t.reasons %}<div><strong>理由</strong><ul>{% for r in t.reasons if r %}<li>{{ r }}</li>{% endfor %}</ul></div>{% endif %}
+          </article>
+          {% endfor %}
+        {% else %}<p class="empty">四柱推命データはありません。</p>{% endif %}
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="card">
+        <h3>総合ヘッドライン</h3>
+        <p>{{ summary.combined.headline }}</p>
+      </section>
+
+      <section class="card">
+        <h3>一般リスク（構造）</h3>
+        {% set wf = summary.western.flags %}
+        {% if wf %}
+          <ul>{% for f in wf %}<li><strong>{{ f.id }}</strong> — {{ f.manifestation }}</li>{% endfor %}</ul>
+        {% else %}<p class="empty">なし</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <h3>Vedic フラグ</h3>
+        {% set vf = summary.vedic.flags %}
+        {% if vf %}
+          <ul>{% for f in vf %}<li><strong>{{ f.id }}</strong> — {{ f.manifestation }}</li>{% endfor %}</ul>
+        {% else %}<p class="empty">なし</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <h3>構造サマリー（デバッグ）</h3>
+        <details><summary>structure_summary を見る</summary><pre class="mono">{{ summary.structure_summary | tojson(indent=2) }}</pre></details>
+      </section>
+
+      <section class="card">
+        <h3>raw JSON（デバッグ）</h3>
+        <details><summary>result_json を見る</summary><pre class="mono">{{ result | tojson(indent=2) }}</pre></details>
+      </section>
+    </div>
+  </div>
+
+  <div style="margin-top:14px"><a href="/">← 入力画面に戻る</a></div>
+</div>
+</body>
+</html>

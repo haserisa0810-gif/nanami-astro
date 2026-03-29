@@ -1,0 +1,4 @@
+{% extends "platform_base.html" %}{% set title = "注文一覧" %}{% block content %}
+<div class="topnav"><a class="btn secondary" href="/admin/dashboard">ダッシュボード</a><a class="btn secondary" href="/admin/payouts">報酬</a><a class="btn secondary" href="/admin/yaml-logs">YAMLログ</a></div>
+<div class="card"><h1>注文一覧</h1><table><thead><tr><th>注文ID</th><th>顧客</th><th>販路</th><th>商品</th><th>価格</th><th>状態</th><th>担当</th><th>作成日時</th></tr></thead><tbody>{% for order in orders %}<tr><td><a href="/admin/orders/{{ order.order_code }}">{{ order.order_code }}</a></td><td>{{ order.user_name }}</td><td>{{ order.source }}</td><td>{{ order.menu.name if order.menu else '-' }}</td><td>¥{{ "{:,}".format(order.price) }}</td><td>{{ status_labels.get(order.status, order.status) }}</td><td>{{ order.assigned_reader.display_name if order.assigned_reader else '-' }}</td><td>{{ order.created_at }}</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

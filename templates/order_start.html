@@ -1,0 +1,23 @@
+{% extends "platform_base.html" %}{% set title = "占いお申込み" %}{% block content %}
+<div class="card"><h1>占いお申込み</h1><p class="muted">メニュー選択 → 入力 → 決済案内 → 納品の流れです。</p></div>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<div class="card">
+  <form method="post" action="/order/start">
+    <div class="grid">
+      <div><label>メニュー</label><select name="menu_id" required>{% for menu in menus %}{% if menu.price > 0 %}<option value="{{ menu.id }}">{{ menu.name }} / ¥{{ "{:,}".format(menu.price) }}</option>{% endif %}{% endfor %}</select></div>
+      <div><label>お名前</label><input name="user_name" required value="{{ initial_free_order.user_name if initial_free_order else '' }}"></div>
+      <div><label>ご連絡先（メール推奨）</label><input name="user_contact" placeholder="example@example.com" value="{{ initial_free_order.user_contact if initial_free_order else '' }}"></div>
+      <div><label>生年月日</label><input type="date" name="birth_date" required value="{{ initial_free_order.birth_date.isoformat() if initial_free_order and initial_free_order.birth_date else '' }}"></div>
+      <div><label>出生時間</label><input type="time" name="birth_time" value="{{ initial_free_order.birth_time if initial_free_order else '' }}"></div>
+      <div><label>都道府県（任意）</label><select name="birth_prefecture"><option value="">選択なし</option>{% for pref in prefecture_options %}<option value="{{ pref }}" {% if initial_free_order and initial_free_order.birth_prefecture == pref %}selected{% endif %}>{{ pref }}</option>{% endfor %}</select></div>
+      <div><label>出生地（市区町村など・任意）</label><input name="birth_place" placeholder="足立区 / 横浜市 など" value="{{ initial_free_order.birth_place if initial_free_order else '' }}"></div>
+      <div><label>性別（任意）</label><select name="gender"><option value="">未選択</option><option value="1" {% if initial_free_order and initial_free_order.gender == '1' %}selected{% endif %}>女性</option><option value="2" {% if initial_free_order and initial_free_order.gender == '2' %}selected{% endif %}>男性</option><option value="3" {% if initial_free_order and initial_free_order.gender == '3' %}selected{% endif %}>その他</option><option value="4" {% if initial_free_order and initial_free_order.gender == '4' %}selected{% endif %}>回答しない</option></select></div>
+      <div><label>無料鑑定ID（お持ちの方のみ）</label><input name="free_reading_code" placeholder="F-260328-8K3M" value="{{ initial_free_reading_code or '' }}"></div>
+    </div>
+    <div style="margin-top:12px"><label>ご相談内容（任意）</label><textarea name="consultation_text" placeholder="恋愛、仕事、人間関係など">{{ initial_free_order.consultation_text if initial_free_order else '' }}</textarea></div>
+    <p class="muted" style="margin-top:10px">以前の無料鑑定IDがあればご記入ください。確認がスムーズになります。</p>
+    <p class="muted" style="margin-top:10px">都道府県だけでも受付できます。市区町村まで入力すると、より正確な出生地設定ができます。座標は内部で自動取得し、必要な場合は管理画面で手修正できます。</p>
+    <div style="margin-top:14px"><button type="submit">確認画面へ進む</button></div>
+  </form>
+</div>
+{% endblock %}

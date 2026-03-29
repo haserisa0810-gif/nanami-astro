@@ -1,0 +1,19 @@
+{% extends "platform_base.html" %}{% set title = "スタッフログイン" %}{% block content %}
+<div class="topnav"><a class="btn secondary" href="/">通常鑑定</a><a class="btn secondary" href="/daily-theme">今日の空気</a></div>
+<div class="card" style="max-width:520px;margin:40px auto">
+  <h1>スタッフログイン</h1>
+  <p class="muted">管理者も占い師もこの画面から入れます。</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <div style="margin-bottom:12px">
+      <label>ログインID または メールアドレス</label>
+      <input name="login_email" required placeholder="admin / astrologer@example.com">
+    </div>
+    <div style="margin-bottom:12px">
+      <label>パスワード</label>
+      <input type="password" name="password" required>
+    </div>
+    <button type="submit">ログイン</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,4 @@
+{% extends "platform_base.html" %}{% set title = "顧客一覧" %}{% block content %}
+<div class="topnav"><a class="btn secondary" href="/admin/dashboard">ダッシュボード</a><a class="btn secondary" href="/admin/yaml-logs">YAMLログ</a></div>
+<div class="card"><h1>顧客一覧</h1><table><thead><tr><th>ID</th><th>表示名</th><th>LINE user</th><th>Email</th><th>更新日</th></tr></thead><tbody>{% for c in customers %}<tr><td>{{ c.id }}</td><td><a href="/admin/customers/{{ c.id }}">{{ c.display_name or '-' }}</a></td><td>{{ c.line_user_id or '-' }}</td><td>{{ c.email or '-' }}</td><td>{{ c.updated_at }}</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

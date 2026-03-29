@@ -1,0 +1,4 @@
+{% extends "platform_base.html" %}{% set title = "案件一覧" %}{% block content %}
+<div class="topnav"><a class="btn secondary" href="/reader/dashboard">ダッシュボード</a><a class="btn secondary" href="/reader/payouts">報酬一覧</a></div>
+<div class="card"><h1>案件一覧</h1><table><thead><tr><th>注文ID</th><th>顧客</th><th>商品</th><th>状態</th><th>報酬見込み</th></tr></thead><tbody>{% for order in orders %}<tr><td><a href="/reader/orders/{{ order.order_code }}">{{ order.order_code }}</a></td><td>{{ order.user_name }}</td><td>{{ order.menu.name if order.menu else '-' }}</td><td>{{ order.status }}</td><td>¥{{ "{:,}".format((order.price * 0.6)|int) }} 目安</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

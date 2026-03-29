@@ -1,0 +1,4 @@
+{% extends "platform_base.html" %}{% set title = "占い師ログイン" %}{% block content %}
+<div class="card" style="max-width:520px;margin:40px auto"><h1>占い師ログイン</h1>{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" action="/reader/login"><div style="margin-bottom:12px"><label>メールアドレス</label><input name="login_email" required></div><div style="margin-bottom:12px"><label>パスワード</label><input type="password" name="password" required></div><button type="submit">ログイン</button></form></div>
+{% endblock %}

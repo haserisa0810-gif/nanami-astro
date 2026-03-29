@@ -1,0 +1,25 @@
+{% extends "platform_base.html" %}{% set title = "占い師プロフィール" %}{% block content %}
+<div class="topnav"><a class="btn secondary" href="/reader/dashboard">ダッシュボード</a><a class="btn secondary" href="/reader/orders">案件一覧</a><a class="btn secondary" href="/reader/payouts">報酬一覧</a><a class="btn secondary" href="/reader/logout">ログアウト</a></div>
+{% if success %}<div class="card" style="border-color:#cfe5d1;background:#f5fbf6">保存しました。</div>{% endif %}
+{% if force_password %}<div class="card" style="border-color:#f6dea2;background:#fffaf0">初期パスワードのままです。先に新しいパスワードへ変更してください。</div>{% endif %}
+{% if error == "password_mismatch" %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">パスワード確認が一致しません。</div>{% endif %}
+{% if error == "password_too_short" %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">パスワードは8文字以上で入力してください。</div>{% endif %}
+{% if error == "temp_password_change_required" %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">初回ログイン時は、新しいパスワードの設定が必須です。</div>{% endif %}
+<div class="card">
+  <h1>プロフィール設定</h1>
+  <form method="post" action="/reader/profile">
+    <div class="grid">
+      <div><label>表示名</label><input name="display_name" value="{{ reader.display_name }}" required></div>
+      <div><label>ログインメール</label><input value="{{ reader.login_email }}" disabled></div>
+      <div><label>新しいパスワード</label><input type="password" name="new_password" placeholder="8文字以上。変更しない場合は空欄"></div>
+      <div><label>新しいパスワード（確認）</label><input type="password" name="new_password_confirm" placeholder="確認用でもう一度入力"></div>
+      <div><label>報酬率</label><input value="{{ reader.commission_rate }}%" disabled></div>
+      <div><label style="display:flex;gap:8px;align-items:center;margin-top:28px"><input type="checkbox" name="line_accepting_enabled" value="true" {% if reader.line_accepting_enabled %}checked{% endif %}> LINE受付を有効にする</label></div>
+      <div><label>LINE受付状態</label><select name="line_accepting_status"><option value="open" {% if reader.line_accepting_status == "open" %}selected{% endif %}>受付中</option><option value="paused" {% if reader.line_accepting_status == "paused" %}selected{% endif %}>一時停止</option><option value="full" {% if reader.line_accepting_status == "full" %}selected{% endif %}>満枠</option><option value="hidden" {% if reader.line_accepting_status == "hidden" %}selected{% endif %}>非表示</option></select></div>
+      <div style="grid-column:1 / -1"><label>停止・満枠時の案内文</label><textarea name="line_accepting_message" rows="4" placeholder="未入力なら共通メッセージを返します。">{{ reader.line_accepting_message or '' }}</textarea></div>
+    </div>
+    <p class="muted">メールアドレスと報酬率の変更は運営側で行います。LINE受付は占い師ごとに設定できます。現在: {{ line_status_label(reader.line_accepting_status) }} / {% if reader.line_accepting_enabled %}有効{% else %}無効{% endif %}</p>
+    <button type="submit">保存する</button>
+  </form>
+</div>
+{% endblock %}

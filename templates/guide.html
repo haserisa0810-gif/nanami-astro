@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>nanami-astro 利用ガイド</title>
+  <style>
+    :root{
+      --bg:#f5f3f0;
+      --bg-soft:#fbfaf8;
+      --surface:rgba(255,255,255,.9);
+      --surface-strong:#ffffff;
+      --ink:#111111;
+      --sub:#5f6470;
+      --line:#e7e2dc;
+      --line-strong:#d8d2ca;
+      --accent:#d6c4ff;
+      --accent-strong:#b69cff;
+      --rose:#f4d3df;
+      --shadow:0 24px 60px rgba(17,17,17,.07);
+      --shadow-soft:0 10px 30px rgba(17,17,17,.05);
+      --radius:28px;
+      --radius-sm:18px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      color:var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height:1.75;
+      letter-spacing:.01em;
+      background:
+        radial-gradient(900px 520px at 0% 0%, rgba(214,196,255,.23), transparent 58%),
+        radial-gradient(720px 420px at 100% 0%, rgba(244,211,223,.28), transparent 56%),
+        linear-gradient(180deg, #f8f6f3 0%, #f3f0eb 100%);
+      overflow-x:hidden;
+    }
+    body::before, body::after{
+      content:""; position:fixed; border-radius:999px; filter:blur(14px); opacity:.45; pointer-events:none; z-index:0;
+    }
+    body::before{ width:360px; height:360px; right:-120px; top:-80px; background:rgba(214,196,255,.4);}
+    body::after{ width:300px; height:300px; left:-120px; bottom:-120px; background:rgba(244,211,223,.36);}
+    .wrap{ width:min(1120px, calc(100% - 40px)); margin:36px auto 72px; position:relative; z-index:1; }
+    .hero, .card, .mini-card{
+      border:1px solid rgba(255,255,255,.7);
+      background:linear-gradient(180deg, rgba(255,255,255,.84), rgba(255,255,255,.74));
+      backdrop-filter:blur(14px);
+      box-shadow:var(--shadow);
+      border-radius:var(--radius);
+    }
+    .hero{ padding:28px; margin-bottom:22px; }
+    .eyebrow{
+      display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px;
+      border:1px solid var(--line); background:rgba(255,255,255,.68); color:#444; font-size:12px; font-weight:700;
+      letter-spacing:.08em; text-transform:uppercase;
+    }
+    h1{ margin:14px 0 12px; font-size:clamp(32px, 4vw, 52px); line-height:1.06; letter-spacing:-.03em; }
+    .lead{ margin:0; color:var(--sub); font-size:15px; max-width:70ch; }
+    .top-actions{ display:flex; gap:12px; flex-wrap:wrap; margin-top:18px; }
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:13px 18px; border-radius:999px;
+      border:1px solid rgba(17,17,17,.08); background:linear-gradient(135deg, #ffffff 0%, #faf8ff 55%, #fff6f8 100%);
+      color:#111111; font-weight:800; letter-spacing:.02em; text-decoration:none; box-shadow:0 18px 40px rgba(17,17,17,.08);
+      transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+    }
+    .btn:hover{ transform:translateY(-2px); border-color:rgba(17,17,17,.12); box-shadow:0 24px 48px rgba(17,17,17,.12); }
+    .grid{ display:grid; grid-template-columns:300px minmax(0,1fr); gap:20px; align-items:start; }
+    .toc, .content{ display:grid; gap:18px; }
+    .mini-card, .card{ padding:24px; }
+    .mini-card h2, .card h2{ margin:0 0 12px; font-size:22px; letter-spacing:-.02em; }
+    .mini-card h3, .card h3{ margin:28px 0 10px; font-size:18px; letter-spacing:-.02em; }
+    .toc a{ color:#222; text-decoration:none; }
+    .toc ol{ margin:0; padding-left:20px; }
+    .toc li{ margin:8px 0; }
+    p{ margin:0 0 14px; }
+    ul, ol{ margin:10px 0 14px; padding-left:20px; }
+    li{ margin:6px 0; }
+    .note{
+      padding:14px 16px; border-radius:18px; border:1px solid var(--line); background:rgba(255,255,255,.88); color:#444;
+      box-shadow:var(--shadow-soft); margin:10px 0 16px;
+    }
+    .steps{ display:grid; gap:12px; margin:14px 0 18px; }
+    .step{
+      padding:16px 18px; border-radius:22px; border:1px solid var(--line); background:rgba(255,255,255,.82); box-shadow:var(--shadow-soft);
+    }
+    .step strong{ display:block; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:#555; margin-bottom:6px; }
+    pre{
+      margin:12px 0 16px; padding:16px 18px; border-radius:18px; border:1px solid var(--line);
+      background:#fcfbfa; overflow:auto; font-size:13px; line-height:1.65;
+    }
+    code{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .soft{ color:var(--sub); }
+    .disclaimer{
+      margin-top:22px; padding-top:20px; border-top:1px solid var(--line); font-size:13px; color:#666;
+    }
+    .footer-note{ margin-top:18px; font-size:12px; color:#777; }
+    @media (max-width: 920px){ .grid, .two-col{ grid-template-columns:1fr; } .wrap{ width:min(100% - 24px, 100%); margin:24px auto 56px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">guide / astrology workflow</div>
+      <h1>nanami-astro 利用ガイド</h1>
+      <p class="lead">このページは、nanami-astro を初めて使う占い師向けの実運用ガイドです。西洋占星術・インド占星術・四柱推命を横断して計算し、必要に応じて小惑星や占い師メモも使いながら、YAMLログを ChatGPT や Gemini に渡して鑑定を深掘りする流れをまとめています。</p>
+      <div class="top-actions">
+        <a class="btn" href="/">入力画面へ戻る</a>
+        <a class="btn" href="#yaml">YAML活用手順へ</a>
+        <a class="btn" href="#disclaimer">注意事項へ</a>
+      </div>
+    </section>
+
+    <div class="grid">
+      <aside class="toc">
+        <section class="mini-card">
+          <h2>目次</h2>
+          <ol>
+            <li><a href="#about">nanami-astro とは</a></li>
+            <li><a href="#flow">鑑定の基本フロー</a></li>
+            <li><a href="#input">入力項目の意味</a></li>
+            <li><a href="#systems">占術と詳細分析</a></li>
+            <li><a href="#reader">占い師メモの使い方</a></li>
+            <li><a href="#yaml">YAMLログをAIに渡す手順</a></li>
+            <li><a href="#prompts">すぐ使えるプロンプト例</a></li>
+            <li><a href="#compat">相性鑑定の進め方</a></li>
+            <li><a href="#proflow">占い師が「おお」となる導線</a></li>
+            <li><a href="#disclaimer">ご利用にあたっての注意事項</a></li>
+          </ol>
+        </section>
+
+        <section class="mini-card">
+          <h2>このシステムでできること</h2>
+          <div class="note">
+            占術の計算を自動化し、結果を YAMLログ として再利用できるのが最大の特徴です。<br>
+            一度出した鑑定を、あとから ChatGPT や Gemini で続き鑑定・裏カルテ化・時期分析へ発展できます。
+          </div>
+        </section>
+      </aside>
+
+      <main class="content">
+        <section class="card" id="about">
+          <h2>1. nanami-astro とは</h2>
+          <p>nanami-astro は、<strong>占術計算システム</strong>と<strong>AI分析</strong>を組み合わせた占い師向けの鑑定支援ツールです。単なる文章生成ツールではなく、まず占術データを計算し、その結果をもとに鑑定文や引き継ぎ用ログを作る構造になっています。</p>
+          <div class="two-col">
+            <div class="note">
+              <strong>使う占術</strong><br>
+              西洋占星術 / インド占星術（ヴェーダ占星術） / 四柱推命
+            </div>
+            <div class="note">
+              <strong>補助要素</strong><br>
+              小惑星 / カイロン / リリス / ノード / Vertex など
+            </div>
+          </div>
+          <p>このシステムの強みは、<strong>鑑定結果を YAMLログ として残せること</strong>です。これにより、その場の文章だけで終わらず、あとから別AIに渡して追加鑑定できます。</p>
+        </section>
+
+        <section class="card" id="flow">
+          <h2>2. 鑑定の基本フロー</h2>
+          <div class="steps">
+            <div class="step"><strong>STEP 1</strong> 出生データを入力する</div>
+            <div class="step"><strong>STEP 2</strong> 占術タイプやオプションを選んで解析する</div>
+            <div class="step"><strong>STEP 3</strong> 鑑定文と YAMLログ を確認する</div>
+            <div class="step"><strong>STEP 4</strong> 必要なら ChatGPT / Gemini に YAMLログ を貼って続き鑑定する</div>
+          </div>
+          <p>最初から AI に丸投げするのではなく、<strong>nanami-astro で命式・星配置・構造を固めてから、AI で深掘りする</strong>のが基本運用です。</p>
+        </section>
+
+        <section class="card" id="input">
+          <h2>3. 入力項目の意味</h2>
+          <h3>出生データ</h3>
+          <p>生年月日、出生時間、出生地、性別を入力します。出生地は地図検索に対応しているため、地名だけでなく座標ベースで精度を上げられます。</p>
+          <div class="note">出生時間が不明でも解析は可能ですが、ハウスやラグナなど時間依存の読みは弱くなります。時間が曖昧な場合は、その前提を鑑定中に伝える運用が安全です。</div>
+          <h3>分析タイプ</h3>
+          <p><strong>通常鑑定</strong>は1人用、<strong>相性分析</strong>は2人分の出生データを入力して関係性を見るモードです。</p>
+          <h3>占星術タイプ</h3>
+          <p>西洋、インド、四柱推命、統合モードから選べます。統合系は複数占術の結果をまとめて扱うため、<strong>迷ったら統合（西洋＋インド＋四柱）</strong>を使うと全体像が取りやすいです。</p>
+        </section>
+
+        <section class="card" id="systems">
+          <h2>4. 占術と詳細分析</h2>
+          <h3>西洋占星術</h3>
+          <p>天体配置、ハウス、アスペクトなどを扱います。心理傾向や人生の主軸、外から見えやすい性質を読みやすいです。</p>
+          <h3>インド占星術</h3>
+          <p>ラグナ、ナクシャトラ、ヨーガなど、宿命性やカルマ的テーマ、現実面での出方の読みを強めたい時に有効です。</p>
+          <h3>四柱推命</h3>
+          <p>命式、十神、五行バランス、空亡などを通して、その人の土台・資質・出やすい現実パターンを確認します。</p>
+          <h3>小惑星は入っている？</h3>
+          <p>入っています。小惑星は主天体ほどの主役ではありませんが、<strong>詳細分析・補助分析</strong>としてかなり有効です。たとえば次のような場面で役立ちます。</p>
+          <ul>
+            <li>主天体だけでは見えにくい対人テーマを補う</li>
+            <li>痛み・役割・契約感・献身性などのニュアンスを見る</li>
+            <li>占い師メモや裏カルテで「もう一段細い読み」を作る</li>
+          </ul>
+          <p class="soft">小惑星を使うと情報量は増えますが、そのぶん解釈は占い師側で取捨選択するのがコツです。</p>
+        </section>
+
+        <section class="card" id="reader">
+          <h2>5. 占い師メモの使い方</h2>
+          <p>入力画面には <strong>占い師メモも生成する</strong> というチェックがあります。これは相談者にそのまま見せるための文章ではなく、占い師向けの補助メモです。</p>
+          <div class="note">
+            <strong>ONに向く場面</strong><br>
+            初回相談 / 深掘り鑑定 / 裏カルテ作成 / あとでAIに続きを読ませたい時
+          </div>
+          <div class="note">
+            <strong>OFFに向く場面</strong><br>
+            まず全体だけ見たい時 / 待ち時間を抑えたい時 / ライトな鑑定時
+          </div>
+          <p>処理を軽くしたい時は OFF 推奨です。必要になったら同じデータで再度 ON にして取り直せます。</p>
+        </section>
+
+        <section class="card" id="yaml">
+          <h2>6. YAMLログをAIに渡す手順</h2>
+          <p>結果画面には YAMLログ が表示されます。これはそのまま <strong>ChatGPT や Gemini に貼り付けて続き鑑定できる引き継ぎデータ</strong> です。</p>
+          <h3>基本手順</h3>
+          <div class="steps">
+            <div class="step"><strong>1</strong> nanami-astro で鑑定を実行する</div>
+            <div class="step"><strong>2</strong> 結果画面の YAMLログ をコピーする</div>
+            <div class="step"><strong>3</strong> ChatGPT または Gemini を開く</div>
+            <div class="step"><strong>4</strong> 先に指示文（プロンプト）を書く</div>
+            <div class="step"><strong>5</strong> その下に YAMLログ を貼り付けて送信する</div>
+          </div>
+          <h3>貼り付け例</h3>
+<pre><code>以下のYAMLログを読み取り、占い師向けに整理してください。
+綺麗に言い換えすぎず、鑑定で使える強み・弱み・注意点を分けて出してください。
+必要なら質問も3つ作ってください。
+
+---
+ここに nanami-astro の YAMLログを貼る
+---</code></pre>
+          <h3>コツ</h3>
+          <ul>
+            <li>最初に「誰向けの出力か」を指定する（占い師向け / お客様向け）</li>
+            <li>欲しい切り口を明示する（恋愛 / 仕事 / 時期 / リスク）</li>
+            <li>言い方の強さも指定する（やわらかく / 率直に / 厳しめに）</li>
+          </ul>
+        </section>
+
+        <section class="card" id="prompts">
+          <h2>7. すぐ使えるプロンプト例</h2>
+          <h3>初回鑑定前の裏カルテ</h3>
+<pre><code>以下の解析ログを読み取り、プロ占い師用の裏カルテを作成してください。
+
+出力ルール:
+- 忖度なし
+- 強み / 弱み / 人間関係のクセ / お金の注意点 / 心理的な引っかかりを整理
+- 相談者に確認すると的中率が上がる質問を3つ作る
+
+下に解析ログを貼ります。</code></pre>
+          <h3>時期分析</h3>
+<pre><code>このYAMLログをベースに、2026年◯月ごろの運勢を分析してください。
+良い面だけでなく、注意すべき落とし穴や避けたい動きも書いてください。</code></pre>
+          <h3>お客様に渡す文に整える</h3>
+<pre><code>以下のログをもとに、お客様向けの鑑定文へ整えてください。
+不安を煽りすぎず、行動のヒントが残る形でまとめてください。</code></pre>
+        </section>
+
+        <section class="card" id="compat">
+          <h2>8. 相性鑑定の進め方</h2>
+          <p>相性分析は実装済みです。2人分の出生データを入力すると、関係性を比較できます。</p>
+          <h3>おすすめの見方</h3>
+          <ul>
+            <li>恋愛なら、惹かれやすさと消耗ポイントを分けて見る</li>
+            <li>仕事なら、役割分担・主導権・金銭感覚のズレを見る</li>
+            <li>家族関係なら、依存・介入・距離感の問題を確認する</li>
+          </ul>
+          <h3>AIに渡す例</h3>
+<pre><code>2人の解析ログを比較し、相性鑑定をしてください。
+
+見たい項目:
+- 関係の強み
+- ぶつかりやすい点
+- どちらが主導権を握りやすいか
+- 金銭感覚 / 距離感 / 感情表現のズレ
+- 恋愛相性と仕事相性の違い</code></pre>
+        </section>
+
+        <section class="card" id="proflow">
+          <h2>9. 占い師が「おお」となる導線</h2>
+          <p>このシステムは、単に鑑定文を出して終わりではもったいないです。次の流れにすると、占い師の道具として一段強くなります。</p>
+          <div class="steps">
+            <div class="step"><strong>導線 1</strong> まず通常鑑定で全体像をつかむ</div>
+            <div class="step"><strong>導線 2</strong> 次に占い師メモをONにして構造のクセを見る</div>
+            <div class="step"><strong>導線 3</strong> YAMLログをAIへ投げて、裏カルテと核心質問を作る</div>
+            <div class="step"><strong>導線 4</strong> 面談やチャット鑑定では、その質問で本音を引き出す</div>
+            <div class="step"><strong>導線 5</strong> 最後に、お客様向けの優しい表現へ再整形する</div>
+          </div>
+          <div class="note">つまり、<strong>nanami-astro は「占術計算と鑑定の土台作り」</strong>、ChatGPT / Gemini は「補助の分析役」として使うのが最も強い運用です。</div>
+        </section>
+
+        <section class="card" id="disclaimer">
+          <h2>10. ご利用にあたっての注意事項</h2>
+          <p>本ガイドおよび本システムで提供される情報は、占術計算およびAIによる分析結果をもとに生成された参考情報です。その正確性、完全性、個別事情への適合性、将来の結果を保証するものではありません。</p>
+          <p>また、本サービスは医療、法律、投資その他の専門的助言を提供するものではありません。病気の診断、法的判断、投資判断などは、必要に応じて各専門家へご相談ください。</p>
+          <p>AIによる分析には、不完全な情報、表現上の偏り、解釈上の誤差が含まれる場合があります。鑑定結果や補助分析は参考情報として利用し、最終的な判断および行動は利用者ご自身の責任において行ってください。</p>
+          <p>本ガイドおよび本システムの利用により生じたいかなる損害（直接・間接・付随的損害、逸失利益を含みます）についても、当方は責任を負いかねます。</p>
+          <p>なお、本サービスの内容は、予告なく変更・中断・終了する場合があります。</p>
+          <div class="disclaimer">本サイトの内容は、娯楽および自己理解を目的とした参考情報を含みます。占い師の実務で使う場合は、相談者への伝え方と境界線の管理を含め、利用者自身の責任で運用してください。</div>
+          <div class="footer-note">このガイドは nanami-astro を初めて使う占い師向けに作成されています。実運用では、ログの保管方法やお客様への説明文もあわせて整えておくと安全です。</div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

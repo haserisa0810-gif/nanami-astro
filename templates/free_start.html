@@ -1,0 +1,20 @@
+{% extends "platform_base.html" %}{% set title = "無料鑑定" %}{% block content %}
+<div class="card"><h1>無料鑑定</h1><p class="muted">LINEなしで完結します。結果ができたら、この画面からそのまま確認できます。</p></div>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<div class="card">
+  <form method="post" action="/free-reading/start">
+    <div class="grid">
+      <div><label>お名前</label><input name="user_name" required></div>
+      <div><label>ご連絡先（任意）</label><input name="user_contact" placeholder="example@example.com"></div>
+      <div><label>生年月日</label><input type="date" name="birth_date" required></div>
+      <div><label>出生時間</label><input type="time" name="birth_time"></div>
+      <div><label>都道府県（任意）</label><select name="birth_prefecture"><option value="">選択なし</option>{% for pref in prefecture_options %}<option value="{{ pref }}">{{ pref }}</option>{% endfor %}</select></div>
+      <div><label>出生地（市区町村など・任意）</label><input name="birth_place" placeholder="足立区 / 横浜市 など"></div>
+      <div><label>性別（任意）</label><select name="gender"><option value="">未選択</option><option value="1">女性</option><option value="2">男性</option><option value="3">その他</option><option value="4">回答しない</option></select></div>
+    </div>
+    <div style="margin-top:12px"><label>今の悩み・見てほしいこと（任意）</label><textarea name="consultation_text" placeholder="恋愛、仕事、人間関係など"></textarea></div>
+    <p class="muted" style="margin-top:10px">無料鑑定ごとに専用IDを発行します。気に入った場合は、そのIDを使って有料鑑定へ引き継げます。</p>
+    <div style="margin-top:14px"><button type="submit">無料鑑定をはじめる</button></div>
+  </form>
+</div>
+{% endblock %}

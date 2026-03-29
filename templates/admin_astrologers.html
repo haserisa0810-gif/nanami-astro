@@ -1,0 +1,79 @@
+{% extends "platform_base.html" %}{% set title = "占い師管理" %}{% block content %}
+<div class="topnav">
+  <a class="btn secondary" href="/admin/dashboard">ダッシュボード</a>
+  <a class="btn secondary" href="/admin/users">管理者</a>
+  <a class="btn secondary" href="/admin/account">アカウント設定</a>
+  <a class="btn secondary" href="/admin/orders">注文一覧</a>
+  <a class="btn secondary" href="/admin/logout">ログアウト</a>
+</div>
+{% if error %}
+  <div class="card" style="border-color:#f0c7c7;background:#fff5f5">
+    {% if error == 'reader_has_open_orders' %}進行中の案件がある占い師は削除できません。先に担当解除または完了にしてください。{% elif error.startswith('stripe_connect_failed:') %}Stripe Connect連携に失敗しました。{{ error.split(':', 1)[1] }}{% elif error.startswith('stripe_refresh_failed:') %}Stripe情報の更新に失敗しました。{{ error.split(':', 1)[1] }}{% else %}{{ error }}{% endif %}
+  </div>
+{% endif %}
+{% if success %}
+  <div class="card" style="border-color:#cfe5d1;background:#f5fbf6">
+    {% if success == 'deleted' %}削除しました。{% elif success == 'stripe_refreshed' %}Stripe接続状態を更新しました。{% else %}保存しました。{% endif %}
+  </div>
+{% endif %}
+<div class="card">
+  <h1>占い師を追加</h1>
+  <form method="post" action="/admin/astrologers">
+    <div class="grid">
+      <div><label>表示名</label><input name="display_name" required></div>
+      <div><label>ログインメール</label><input type="email" name="login_email" required></div>
+      <div><label>初期パスワード</label><input type="text" name="password" required></div>
+      <div><label>報酬率（%）</label><input type="number" name="commission_rate" value="60" min="0" max="100" step="0.01" required></div>
+      <div><label>状態</label><select name="status"><option value="active">active</option><option value="inactive">inactive</option></select></div>
+    </div>
+    <p class="muted">追加直後は仮パスワード扱いになります。初回ログイン時に占い師側で変更が必要です。</p>
+    <button type="submit">追加する</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>登録済み占い師</h2>
+  <table>
+    <thead>
+      <tr><th>基本情報</th><th>Stripe報酬連携</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+      {% for reader in readers %}
+      <tr>
+        <td style="vertical-align:top;width:48%">
+          <form method="post" action="/admin/astrologers/{{ reader.id }}/update">
+            <div class="grid">
+              <div><label>表示名</label><input name="display_name" value="{{ reader.display_name }}" required></div>
+              <div><label>ログインメール</label><input type="email" name="login_email" value="{{ reader.login_email }}" required></div>
+              <div><label>新しい初期パスワード</label><input type="text" name="password" placeholder="再発行する場合のみ入力"></div>
+              <div><label>報酬率（%）</label><input type="number" name="commission_rate" value="{{ reader.commission_rate }}" min="0" max="100" step="0.01" required></div>
+              <div><label>状態</label><select name="status"><option value="active" {% if reader.status == 'active' %}selected{% endif %}>active</option><option value="inactive" {% if reader.status == 'inactive' %}selected{% endif %}>inactive</option></select></div>
+              <div><label>パスワード状態</label><input value="{% if reader.is_temp_password %}仮パスワード{% else %}変更済み{% endif %}" disabled></div>
+            </div>
+            <div style="margin-top:12px"><button type="submit">更新する</button></div>
+          </form>
+        </td>
+        <td style="vertical-align:top;width:32%">
+          <div><strong>account_id:</strong><br>{{ reader.stripe_account_id or '未連携' }}</div>
+          <div class="muted" style="margin-top:8px">オンボード: {% if reader.stripe_onboarding_completed %}完了{% else %}未完了{% endif %}</div>
+          <div class="muted">決済受取: {% if reader.stripe_charges_enabled %}有効{% else %}未有効{% endif %}</div>
+          <div class="muted">出金: {% if reader.stripe_payouts_enabled %}有効{% else %}未有効{% endif %}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+            <form method="post" action="/admin/astrologers/{{ reader.id }}/stripe/connect"><button type="submit">{% if reader.stripe_account_id %}Stripe再連携{% else %}Stripe連携開始{% endif %}</button></form>
+            <form method="post" action="/admin/astrologers/{{ reader.id }}/stripe/refresh"><button type="submit" class="secondary">状態更新</button></form>
+          </div>
+        </td>
+        <td style="vertical-align:top;width:20%">
+          <form method="post" action="/admin/astrologers/{{ reader.id }}/delete" onsubmit="return confirm('進行中案件がなければ削除します。よろしいですか？');">
+            <button type="submit" style="background:#e74c3c;color:#fff">削除</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">まだ占い師がいません。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:12px">この版では、Stripe Connectの口座連携と状態確認まで実装しています。実際の自動送金実行は別途 payout 実行フローを足す前提です。</p>
+</div>
+{% endblock %}

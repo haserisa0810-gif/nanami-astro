@@ -1,0 +1,37 @@
+{% extends "platform_base.html" %}{% set title = "お支払い" %}{% block content %}
+<div class="card"><h1>お支払い</h1><p class="muted">注文ID <span class="code">{{ order.order_code }}</span></p>{% if cancelled %}<div class="error">決済はキャンセルされました。もう一度お試しください。</div>{% endif %}
+<div class="grid"><div><strong>商品</strong><div>{{ order.menu.name if order.menu else '-' }}</div></div><div><strong>金額</strong><div>¥{{ "{:,}".format(order.price) }}</div></div><div><strong>状態</strong><div>{{ order.status }}</div></div></div>
+<p class="muted" style="margin-top:12px">Stripe Checkout を使ってお支払いします。</p>
+<button id="stripe-checkout">Stripeで支払う</button>
+<div id="checkout-result" class="muted" style="margin-top:12px"></div>
+{% if test_payment_enabled %}<button id="test-payment-skip" class="secondary" style="margin-top:12px">テスト用: 決済済みにする</button><p class="muted" style="margin-top:8px">本番では非表示です。テスト環境でのみ、決済後フロー確認用に使えます。</p>{% endif %}</div>
+<script>
+const resultEl = document.getElementById('checkout-result');
+const checkoutBtn = document.getElementById('stripe-checkout');
+checkoutBtn.addEventListener('click', async () => {
+  checkoutBtn.disabled = true;
+  resultEl.textContent = '決済ページを準備しています...';
+  try {
+    const res = await fetch('/api/stripe/checkout', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({order_code: '{{ order.order_code }}'})});
+    const data = await res.json();
+    if (res.ok && data.checkout_url) { window.location.href = data.checkout_url; return; }
+    resultEl.textContent = data.detail || '決済URLの生成に失敗しました。';
+  } catch (e) {
+    resultEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+  }
+  checkoutBtn.disabled = false;
+});
+
+document.getElementById('test-payment-skip')?.addEventListener('click', async () => {
+  resultEl.textContent = '決済済み状態へ反映しています...';
+  try {
+    const res = await fetch('/api/test/orders/{{ order.order_code }}/simulate-paid', {method:'POST'});
+    const data = await res.json();
+    if (res.ok && data.redirect_url) { window.location.href = data.redirect_url; return; }
+    resultEl.textContent = data.detail || 'テスト決済の反映に失敗しました。';
+  } catch (e) {
+    resultEl.textContent = '通信エラーが発生しました。';
+  }
+});
+</script>
+{% endblock %}

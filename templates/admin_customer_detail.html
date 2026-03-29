@@ -1,0 +1,40 @@
+{% extends "platform_base.html" %}{% set title = "顧客詳細" %}{% block content %}
+<div class="topnav">
+  <a class="btn secondary" href="/admin/customers">顧客一覧</a>
+  <a class="btn secondary" href="/admin/dashboard">ダッシュボード</a>
+</div>
+<div class="card">
+  <h1>{{ customer.display_name or '名称未設定' }}</h1>
+  <p class="muted">LINE: {{ customer.line_user_id or '-' }} / Email: {{ customer.email or '-' }} / Phone: {{ customer.phone or '-' }}</p>
+</div>
+<div class="card">
+  <h2>注文履歴</h2>
+  <table>
+    <thead><tr><th>注文ID</th><th>商品</th><th>状態</th><th>担当</th><th>作成日時</th></tr></thead>
+    <tbody>
+      {% for order in orders %}
+      <tr>
+        <td><a href="/admin/orders/{{ order.order_code }}">{{ order.order_code }}</a></td>
+        <td>{{ order.menu.name if order.menu else '-' }}</td>
+        <td>{{ order.status }}</td>
+        <td>{{ order.assigned_reader.display_name if order.assigned_reader else '-' }}</td>
+        <td>{{ order.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">注文履歴がありません。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="card">
+  <h2>YAMLログ</h2>
+  {% for log in logs %}
+  <div style="border-top:1px solid #eee;padding-top:12px;margin-top:12px">
+    <div><span class="pill">{{ log.created_at }}</span> <span class="code">order_id={{ log.order_id }}</span></div>
+    <pre style="white-space:pre-wrap;word-break:break-word">{{ log.yaml_body }}</pre>
+  </div>
+  {% else %}
+  <p class="muted">YAMLログがありません。</p>
+  {% endfor %}
+</div>
+{% endblock %}

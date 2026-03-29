@@ -1,0 +1,26 @@
+{% extends "platform_base.html" %}{% set title = "無料鑑定を作成中" %}{% block content %}
+<div class="card">
+  <h1>無料鑑定を作成中です</h1>
+  <p class="muted">受付番号 <span class="code">{{ order.order_code }}</span></p>
+  <p>このまま少しお待ちください。ページは自動で更新されます。</p>
+  <p class="muted">無料鑑定IDは完了後に表示されます。</p>
+</div>
+<script>
+async function poll(){
+  try {
+    const res = await fetch('/free-reading/{{ order.order_code }}/status', {cache:'no-store'});
+    const data = await res.json();
+    if (data.status === 'completed') {
+      location.href = data.result_url;
+      return;
+    }
+    if (data.status === 'failed') {
+      location.href = '/free-reading/{{ order.order_code }}/result';
+      return;
+    }
+  } catch (e) {}
+  setTimeout(poll, 3000);
+}
+setTimeout(poll, 2000);
+</script>
+{% endblock %}

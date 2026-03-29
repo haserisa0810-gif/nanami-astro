@@ -1,0 +1,55 @@
+{% extends "platform_base.html" %}{% set title = "スタッフダッシュボード" %}{% block content %}
+<div class="topnav">
+  <a class="btn" href="/dashboard">管理画面</a>
+  <a class="btn secondary" href="/staff/orders">案件一覧</a>
+  <a class="btn secondary" href="/">通常鑑定</a>
+  <a class="btn secondary" href="/daily-theme">今日の空気</a>
+  {% if staff.role == 'admin' %}<a class="btn secondary" href="/admin/users">設定</a>{% else %}<a class="btn secondary" href="/reader/profile">自分の受付設定</a>{% endif %}
+  <a class="btn secondary" href="/logout">ログアウト</a>
+</div>
+<div class="card">
+  <h1>スタッフダッシュボード</h1>
+  <p class="muted">{{ staff.display_name }} / {{ '管理者' if staff.role == 'admin' else '占い師' }}</p>
+</div>
+<div class="stats">
+  <div class="stat"><div class="muted">無料鑑定</div><div style="font-size:28px;font-weight:700">{{ counts.free }}</div></div>
+  <div class="stat"><div class="muted">受付済み</div><div style="font-size:28px;font-weight:700">{{ counts.received }}</div></div>
+  <div class="stat"><div class="muted">決済済み</div><div style="font-size:28px;font-weight:700">{{ counts.paid }}</div></div>
+  <div class="stat"><div class="muted">対応中</div><div style="font-size:28px;font-weight:700">{{ counts.in_progress }}</div></div>
+  <div class="stat"><div class="muted">完了</div><div style="font-size:28px;font-weight:700">{{ counts.completed }}</div></div>
+</div>
+
+{% if staff.role == 'reader' %}
+<div class="card">
+  <h2>自分のLINE受付状態</h2>
+  <p class="muted">現在: {{ line_status_label(staff.user.line_accepting_status) }} / {% if staff.user.line_accepting_enabled %}有効{% else %}無効{% endif %}</p>
+  {% if staff.user.line_accepting_message %}<div class="muted">案内文: {{ staff.user.line_accepting_message }}</div>{% endif %}
+  <div style="margin-top:12px"><a class="btn secondary" href="/reader/profile">受付設定を変更する</a></div>
+</div>
+{% endif %}
+<div class="card">
+  <h2>アクティブ占い師</h2>
+  <div class="row">
+    {% for reader in active_readers %}<span class="pill">{{ reader.display_name }}</span>{% endfor %}
+  </div>
+</div>
+<div class="card">
+  <h2>最近の案件</h2>
+  <table>
+    <thead><tr><th>注文ID</th><th>種別</th><th>顧客</th><th>商品</th><th>状態</th><th>担当</th><th>作成日時</th></tr></thead>
+    <tbody>
+      {% for order in recent_orders %}
+      <tr>
+        <td><a href="/staff/orders/{{ order.order_code }}">{{ order.order_code }}</a></td>
+        <td>{{ "無料鑑定" if order.order_kind == "free" else "有料鑑定" }}</td>
+        <td>{{ order.user_name }}</td>
+        <td>{{ order.menu.name if order.menu else '-' }}</td>
+        <td>{{ status_labels.get(order.status, order.status) }}</td>
+        <td>{{ order.assigned_reader.display_name if order.assigned_reader else '-' }}</td>
+        <td>{{ order.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

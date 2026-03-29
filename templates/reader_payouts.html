@@ -1,0 +1,5 @@
+{% extends "platform_base.html" %}{% set title = "報酬一覧" %}{% block content %}
+<div class="topnav"><a class="btn secondary" href="/reader/dashboard">ダッシュボード</a><a class="btn secondary" href="/reader/orders">案件一覧</a></div>
+<div class="card"><h1>報酬一覧</h1><div class="stats"><div class="stat"><div class="muted">報酬合計</div><div>¥{{ "{:,}".format(total) }}</div></div></div></div>
+<div class="card"><table><thead><tr><th>注文ID</th><th>売上</th><th>報酬率</th><th>報酬額</th><th>状態</th></tr></thead><tbody>{% for payout in payouts %}<tr><td>{{ payout.order.order_code if payout.order else '-' }}</td><td>¥{{ "{:,}".format(payout.gross_amount) }}</td><td>{{ payout.commission_rate }}%</td><td>¥{{ "{:,}".format(payout.reader_amount) }}</td><td>{{ payout.status }}</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

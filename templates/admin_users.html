@@ -1,0 +1,51 @@
+{% extends "platform_base.html" %}{% set title = "管理者管理" %}{% block content %}
+<div class="topnav">
+  <a class="btn secondary" href="/admin/dashboard">ダッシュボード</a>
+  <a class="btn secondary" href="/admin/astrologers">占い師管理</a>
+  <a class="btn secondary" href="/admin/account">アカウント設定</a>
+  <a class="btn secondary" href="/admin/logout">ログアウト</a>
+</div>
+{% if error %}
+<div class="card" style="border-color:#f0c7c7;background:#fff5f5">
+  {% if error == 'cannot_delete_self' %}ログイン中の自分自身は削除できません。{% elif error == 'last_active_admin' %}有効な管理者が最後の1人になるため削除できません。{% else %}{{ error }}{% endif %}
+</div>
+{% endif %}
+{% if success %}<div class="card" style="border-color:#cfe5d1;background:#f5fbf6">{% if success == 'deleted' %}削除しました。{% else %}保存しました。{% endif %}</div>{% endif %}
+<div class="card">
+  <h1>管理者を追加</h1>
+  <form method="post" action="/admin/users">
+    <div class="grid">
+      <div><label>表示名</label><input name="display_name" required></div>
+      <div><label>ログインメール</label><input type="email" name="login_email" required></div>
+      <div><label>初期パスワード</label><input type="text" name="password" required></div>
+      <div><label>有効状態</label><select name="is_active"><option value="true">有効</option><option value="false">無効</option></select></div>
+    </div>
+    <p class="muted">追加直後は仮パスワード扱いになります。初回ログイン時に変更が必要です。</p>
+    <button type="submit">追加する</button>
+  </form>
+</div>
+<div class="card">
+  <h2>登録済み管理者</h2>
+  {% for user in users %}
+  <div style="border-top:1px solid #eee;padding-top:16px;margin-top:16px">
+    <form method="post" action="/admin/users/{{ user.id }}/update">
+      <div class="grid">
+        <div><label>表示名</label><input name="display_name" value="{{ user.display_name }}" required></div>
+        <div><label>ログインメール</label><input type="email" name="login_email" value="{{ user.login_email }}" required></div>
+        <div><label>新しい初期パスワード</label><input type="text" name="password" placeholder="再発行する場合のみ入力"></div>
+        <div><label>有効状態</label><select name="is_active"><option value="true" {% if user.is_active %}selected{% endif %}>有効</option><option value="false" {% if not user.is_active %}selected{% endif %}>無効</option></select></div>
+        <div><label>パスワード状態</label><input value="{% if user.is_temp_password %}仮パスワード{% else %}変更済み{% endif %}" disabled></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button type="submit">更新する</button>
+      </div>
+    </form>
+    <form method="post" action="/admin/users/{{ user.id }}/delete" onsubmit="return confirm('この管理者を削除しますか？');" style="margin-top:8px">
+      <button type="submit" style="background:#e74c3c;color:#fff">削除</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="muted">管理者がいません。</p>
+  {% endfor %}
+</div>
+{% endblock %}

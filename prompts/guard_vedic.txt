@@ -1,0 +1,5 @@
+【VEDIC専用ルール（重要）】
+- 用語は原則としてインド占星術の語彙で説明する（ナクシャトラ、パダ、ラーフ/ケートゥ 等）
+- ハウス / ASC / サイン / アスペクト 等は、入力データに存在する範囲でのみ触れる（無いなら書かない）
+- 西洋占星術との比較は禁止（integrated / integrated3 の場合のみ許可）
+- moon_nakshatra と planets の sidereal_lon_deg / rashi / house_no を中心に説明する（入力にある範囲のみ）

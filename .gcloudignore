@@ -1,0 +1,18 @@
+# Python caches
+__pycache__/
+*.pyc
+
+# venv
+.venv/
+venv/
+
+# OS/IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Chrome config (念のため)
+.config/
+.env
+*.db
+*.csv

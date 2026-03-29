@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>占い鑑定サービスのご案内 | nanami astro</title>
+  <meta name="description" content="西洋占星術をベースにしたオンライン鑑定サービスのご案内。提供内容、料金、返金方針、特定商取引法に基づく表記を掲載しています。" />
+  <style>
+    :root {
+      --bg: #faf7ff;
+      --card: #ffffff;
+      --text: #222222;
+      --sub: #666666;
+      --line: #e8def8;
+      --accent: #7c4dff;
+      --accent-soft: #f1eaff;
+      --danger: #b00020;
+      --max: 920px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+        "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.8;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 24px 16px 64px;
+    }
+
+    .hero {
+      background: linear-gradient(180deg, #ffffff 0%, #f8f3ff 100%);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 32px 24px;
+      box-shadow: 0 8px 30px rgba(80, 40, 160, 0.06);
+      margin-bottom: 24px;
+    }
+
+    .brand {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-soft);
+      padding: 6px 10px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 32px;
+      line-height: 1.35;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--sub);
+      font-size: 16px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 20px;
+      box-shadow: 0 6px 20px rgba(80, 40, 160, 0.04);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      line-height: 1.4;
+    }
+
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 17px;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    ul {
+      margin: 8px 0 12px 1.2em;
+      padding: 0;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    .note {
+      background: #fffaf0;
+      border: 1px solid #f4dfb5;
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: #5f4b1e;
+      margin-top: 14px;
+    }
+
+    .warn {
+      background: #fff5f7;
+      border: 1px solid #f4c7d0;
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: var(--danger);
+      margin-top: 14px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 15px;
+      background: #fff;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .table th,
+    .table td {
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .table th {
+      width: 30%;
+      background: #f8f4ff;
+      font-weight: 700;
+    }
+
+    .footer {
+      margin-top: 24px;
+      color: var(--sub);
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin-top: 8px;
+    }
+
+    .links a {
+      display: inline-block;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    @media (max-width: 640px) {
+      h1 {
+        font-size: 26px;
+      }
+
+      .hero,
+      .card {
+        padding: 20px 16px;
+      }
+
+      .table,
+      .table tbody,
+      .table tr,
+      .table th,
+      .table td {
+        display: block;
+        width: 100%;
+      }
+
+      .table tr {
+        margin-bottom: 10px;
+      }
+
+      .table th {
+        border-bottom: none;
+      }
+
+      .table td {
+        border-top: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="brand">nanami astro</div>
+      <h1>占い鑑定サービスのご案内</h1>
+      <p class="lead">
+        当サービスは、西洋占星術をベースにしたオンライン鑑定サービスです。
+        生年月日・出生時刻・出生地などの情報、またはご相談内容をもとに、
+        恋愛・仕事・人間関係・今後の流れに関する鑑定結果をテキスト形式で提供します。
+      </p>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>サービス概要</h2>
+        <p>
+          当サービスは、オンライン上で完結する個人向け鑑定サービスです。
+          ご購入後、必要情報をご入力いただき、その内容をもとに鑑定結果を作成し、
+          画面表示またはメッセージ形式で提供します。
+        </p>
+        <p>
+          提供内容は助言・参考情報・娯楽の範囲に限られ、
+          医療、診断、法律相談、投資助言その他これに類する専門的判断を行うものではありません。
+        </p>
+        <div class="note">
+          鑑定結果は参考情報として提供するものであり、将来の出来事や特定の結果、
+          効果を保証するものではありません。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>提供内容</h2>
+        <ul>
+          <li>個人向けオンライン鑑定</li>
+          <li>恋愛、仕事、人間関係、運勢に関する鑑定</li>
+          <li>テキスト形式の鑑定結果の提供</li>
+          <li>必要に応じた追加質問対応（各商品ページの条件による）</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>提供方法</h2>
+        <ul>
+          <li>ご購入後、案内に従って必要情報をご入力いただきます。</li>
+          <li>入力内容を確認後、オンラインで鑑定結果を提供します。</li>
+          <li>デジタルコンテンツの性質上、物品の発送はありません。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>料金</h2>
+        <p>
+          各サービスの料金は、申込ページまたは販売ページに税込表示します。
+          オプション料金がある場合も、申込時に明示します。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>提供時期</h2>
+        <p>
+          決済完了後、必要情報の入力が完了した時点から鑑定準備に入ります。
+          納品目安は各商品ページに表示します。
+        </p>
+        <p>
+          混雑状況、確認事項の有無、システム状況等により提供時期が前後する場合があります。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>お支払い方法</h2>
+        <ul>
+          <li>クレジットカード決済</li>
+          <li>その他、導入済みのオンライン決済方法</li>
+        </ul>
+        <p>決済は外部決済サービスを通じて安全に処理されます。</p>
+      </section>
+
+      <section class="card">
+        <h2>返品・キャンセル・返金について</h2>
+        <p>
+          デジタルコンテンツおよび役務提供の性質上、
+          <strong>鑑定開始後のキャンセル・返金は原則としてお受けしておりません。</strong>
+        </p>
+        <p>
+          ただし、重複請求、システム不具合、提供不能など当方に起因する問題が確認された場合は、
+          内容に応じて返金または再提供を行います。
+        </p>
+        <p>
+          鑑定前であり、かつ当方が未着手であることが明確な場合に限り、
+          個別にキャンセル可否を判断します。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>禁止事項</h2>
+        <ul>
+          <li>法令または公序良俗に反する目的での利用</li>
+          <li>第三者への誹謗中傷や不当な干渉を目的とする相談</li>
+          <li>生命、医療、法律、投資等について断定的判断を求める行為</li>
+          <li>虚偽情報による申込み</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>免責事項</h2>
+        <p>
+          当サービスは助言・娯楽・参考情報の提供を目的とするものです。
+          鑑定結果の利用は、お客様ご自身の判断と責任で行っていただきます。
+        </p>
+        <p>
+          当サービスの利用により生じた損害について、
+          当方に故意または重過失がある場合を除き、責任を負いません。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>特定商取引法に基づく表記</h2>
+        <table class="table">
+          <tr>
+            <th>販売事業者</th>
+            <td>nanami astro</td>
+          </tr>
+          <tr>
+            <th>運営責任者</th>
+            <td>【ここに氏名または屋号管理者名】</td>
+          </tr>
+          <tr>
+            <th>所在地</th>
+            <td>請求があった場合は遅滞なく開示いたします。</td>
+          </tr>
+          <tr>
+            <th>電話番号</th>
+            <td>請求があった場合は遅滞なく開示いたします。</td>
+          </tr>
+          <tr>
+            <th>お問い合わせ先</th>
+            <td>
+              メール：<a href="mailto:support@example.com">support@example.com</a><br />
+              またはお問い合わせフォームよりご連絡ください。
+            </td>
+          </tr>
+          <tr>
+            <th>販売価格</th>
+            <td>各商品ページに税込価格を表示</td>
+          </tr>
+          <tr>
+            <th>商品代金以外の必要料金</th>
+            <td>インターネット接続にかかる通信料等はお客様負担となります。</td>
+          </tr>
+          <tr>
+            <th>お支払い方法</th>
+            <td>クレジットカード決済等、各申込ページに表示の方法</td>
+          </tr>
+          <tr>
+            <th>お支払い時期</th>
+            <td>各決済会社またはカード会社の定めによります。</td>
+          </tr>
+          <tr>
+            <th>商品の引渡時期</th>
+            <td>決済完了後、当方所定の手続き完了後に、各商品ページ記載の時期に提供します。</td>
+          </tr>
+          <tr>
+            <th>返品・キャンセル</th>
+            <td>
+              デジタルコンテンツ・役務提供の性質上、鑑定開始後のキャンセル・返金は原則不可。<br />
+              ただし、重複決済、システム障害、当方都合による提供不能の場合はこの限りではありません。
+            </td>
+          </tr>
+          <tr>
+            <th>動作環境</th>
+            <td>最新の主要ブラウザ環境での利用を推奨します。</td>
+          </tr>
+        </table>
+
+        <div class="warn">
+          「請求があった場合は遅滞なく開示いたします」は使えますが、
+          Stripe目線では実在性確認のため、問い合わせ先メールは必ず実在のものを置いた方が安全です。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>お問い合わせ</h2>
+        <p>ご不明点がある場合は、以下までお問い合わせください。</p>
+        <ul>
+          <li>メール：<a href="mailto:support@example.com">support@example.com</a></li>
+          <li>お問い合わせフォーム：<a href="/contact">/contact</a></li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>関連ページ</h2>
+        <div class="links">
+          <a href="/about">サービス案内</a>
+          <a href="/legal">特定商取引法に基づく表記</a>
+          <a href="/terms">利用規約</a>
+          <a href="/privacy">プライバシーポリシー</a>
+          <a href="/contact">お問い合わせ</a>
+        </div>
+      </section>
+    </div>
+
+    <p class="footer">
+      © nanami astro
+    </p>
+  </main>
+</body>
+</html>
