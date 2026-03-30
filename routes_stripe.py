@@ -25,13 +25,19 @@ def _webhook_secret() -> str:
 
 
 def _run_async_notification(coro) -> None:
+    import asyncio
     try:
-        asyncio.run(coro)
-    except RuntimeError:
-        print('Notification skipped: existing event loop')
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            loop.create_task(coro)
+        else:
+            asyncio.run(coro)
     except Exception as exc:
         print('Notification error:', repr(exc))
-
 
 
 def _is_test_payment_bypass_enabled() -> bool:
@@ -67,12 +73,26 @@ def _load_order(db: Session, order_code: str) -> Order | None:
     )
 
 
-def _upsert_payment_tx(db: Session, order: Order, *, provider_session_id: str | None, event: dict[str, Any] | None = None, payment_intent: str | None = None) -> PaymentTransaction:
+def _upsert_payment_tx(
+    db: Session,
+    order: Order,
+    *,
+    provider_session_id: str | None,
+    event: dict[str, Any] | None = None,
+    payment_intent: str | None = None,
+) -> PaymentTransaction:
     tx = None
     if provider_session_id:
-        tx = db.scalar(select(PaymentTransaction).where(PaymentTransaction.provider_session_id == provider_session_id))
+        tx = db.scalar(
+            select(PaymentTransaction).where(PaymentTransaction.provider_session_id == provider_session_id)
+        )
     if not tx:
-        tx = db.scalar(select(PaymentTransaction).where(PaymentTransaction.order_id == order.id, PaymentTransaction.provider == 'stripe'))
+        tx = db.scalar(
+            select(PaymentTransaction).where(
+                PaymentTransaction.order_id == order.id,
+                PaymentTransaction.provider == 'stripe',
+            )
+        )
     if not tx:
         tx = PaymentTransaction(
             order_id=order.id,
@@ -84,6 +104,7 @@ def _upsert_payment_tx(db: Session, order: Order, *, provider_session_id: str | 
             status='pending',
         )
         db.add(tx)
+
     tx.provider_session_id = provider_session_id or tx.provider_session_id
     tx.provider_payment_id = payment_intent or tx.provider_payment_id
     if event is not None:
@@ -91,7 +112,14 @@ def _upsert_payment_tx(db: Session, order: Order, *, provider_session_id: str | 
     return tx
 
 
-def _mark_order_paid(db: Session, order: Order, *, provider_session_id: str | None, payment_intent: str | None, note: str) -> bool:
+def _mark_order_paid(
+    db: Session,
+    order: Order,
+    *,
+    provider_session_id: str | None,
+    payment_intent: str | None,
+    note: str,
+) -> bool:
     tx = _upsert_payment_tx(
         db,
         order,
@@ -108,33 +136,56 @@ def _mark_order_paid(db: Session, order: Order, *, provider_session_id: str | No
             },
         },
     )
+
     already_paid = order.status in {'paid', 'assigned', 'in_progress', 'delivered', 'completed'}
     tx.status = 'paid'
+
     if not already_paid:
         update_order_status(db, order, to_status='paid', actor_type='system', note=note)
         _maybe_auto_assign_paid_order(db, order)
+
     order.stripe_checkout_session_id = provider_session_id or order.stripe_checkout_session_id
     order.stripe_payment_intent_id = payment_intent or order.stripe_payment_intent_id
     tx.paid_at = order.paid_at
+
     return (not already_paid) and order.source == 'line'
 
 
-def _sync_checkout_session_to_order(db: Session, order: Order, session_payload: Any, *, note: str) -> dict[str, Any]:
+def _sync_checkout_session_to_order(
+    db: Session,
+    order: Order,
+    session_payload: Any,
+    *,
+    note: str,
+) -> dict[str, Any]:
     session_id = getattr(session_payload, 'id', None) or session_payload.get('id')
     payment_status = getattr(session_payload, 'payment_status', None) or session_payload.get('payment_status')
     status = getattr(session_payload, 'status', None) or session_payload.get('status')
     payment_intent = getattr(session_payload, 'payment_intent', None) or session_payload.get('payment_intent')
 
     notify_paid = False
+
     if payment_status == 'paid':
-        notify_paid = _mark_order_paid(db, order, provider_session_id=session_id, payment_intent=payment_intent, note=note)
+        notify_paid = _mark_order_paid(
+            db,
+            order,
+            provider_session_id=session_id,
+            payment_intent=payment_intent,
+            note='stripe session status sync from success page',
+        )
     else:
-        tx = _upsert_payment_tx(db, order, provider_session_id=session_id, payment_intent=payment_intent)
+        tx = _upsert_payment_tx(
+            db,
+            order,
+            provider_session_id=session_id,
+            payment_intent=payment_intent,
+        )
         tx.status = 'expired' if status == 'expired' else 'pending'
         order.stripe_checkout_session_id = session_id or order.stripe_checkout_session_id
 
     db.commit()
     db.refresh(order)
+
     if notify_paid:
         _run_async_notification(notify_paid_line_order(order))
 
@@ -153,25 +204,48 @@ def stripe_checkout(payload: dict, db: Session = Depends(get_db)):
     order_code = str(payload.get('order_code') or '').strip()
     if not order_code:
         raise HTTPException(status_code=400, detail='order_code required')
-    order = db.scalar(select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code))
+
+    order = db.scalar(
+        select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code)
+    )
     if not order or not order.menu:
         raise HTTPException(status_code=404, detail='order not found')
+
     if order.status not in {'pending_payment', 'payment_failed', 'expired'}:
         raise HTTPException(status_code=400, detail='order is not payable')
+
     try:
         session = create_checkout_session(order, order.menu)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f'Stripe checkout creation failed: {exc}')
+
     order.stripe_checkout_session_id = session.id
-    tx = db.scalar(select(PaymentTransaction).where(PaymentTransaction.provider_session_id == session.id))
+
+    tx = db.scalar(
+        select(PaymentTransaction).where(PaymentTransaction.provider_session_id == session.id)
+    )
     if not tx:
-        db.add(PaymentTransaction(order_id=order.id, provider='stripe', provider_session_id=session.id, amount=order.price, currency='jpy', status='pending'))
+        db.add(
+            PaymentTransaction(
+                order_id=order.id,
+                provider='stripe',
+                provider_session_id=session.id,
+                amount=order.price,
+                currency='jpy',
+                status='pending',
+            )
+        )
+
     db.commit()
     return {'checkout_url': session.url, 'session_id': session.id}
 
 
 @router.get('/api/stripe/orders/{order_code}/session-status')
-def stripe_order_session_status(order_code: str, session_id: str | None = Query(default=None), db: Session = Depends(get_db)):
+def stripe_order_session_status(
+    order_code: str,
+    session_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
     order = _load_order(db, order_code)
     if not order:
         raise HTTPException(status_code=404, detail='order not found')
@@ -191,7 +265,12 @@ def stripe_order_session_status(order_code: str, session_id: str | None = Query(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f'Unable to retrieve Stripe session: {exc}')
 
-    return _sync_checkout_session_to_order(db, order, session, note='stripe session status sync from success page')
+    return _sync_checkout_session_to_order(
+        db,
+        order,
+        session,
+        note='stripe session status sync from success page',
+    )
 
 
 @router.post('/api/test/orders/{order_code}/simulate-paid')
@@ -202,10 +281,16 @@ def simulate_paid_order(order_code: str, db: Session = Depends(get_db)):
     order = _load_order(db, order_code)
     if not order:
         raise HTTPException(status_code=404, detail='order not found')
+
     if order.status in {'delivered', 'completed', 'refunded'}:
         raise HTTPException(status_code=400, detail='order cannot be moved to paid from current status')
 
-    tx = db.scalar(select(PaymentTransaction).where(PaymentTransaction.order_id == order.id, PaymentTransaction.provider == 'stripe'))
+    tx = db.scalar(
+        select(PaymentTransaction).where(
+            PaymentTransaction.order_id == order.id,
+            PaymentTransaction.provider == 'stripe',
+        )
+    )
     if not tx:
         tx = PaymentTransaction(
             order_id=order.id,
@@ -214,7 +299,10 @@ def simulate_paid_order(order_code: str, db: Session = Depends(get_db)):
             amount=order.price,
             currency='jpy',
             status='pending',
-            raw_event_json=json.dumps({'type': 'test.simulate_paid', 'order_code': order.order_code}, ensure_ascii=False),
+            raw_event_json=json.dumps(
+                {'type': 'test.simulate_paid', 'order_code': order.order_code},
+                ensure_ascii=False,
+            ),
         )
         db.add(tx)
 
@@ -223,6 +311,7 @@ def simulate_paid_order(order_code: str, db: Session = Depends(get_db)):
     order.stripe_checkout_session_id = order.stripe_checkout_session_id or f'test_skip_{order.order_code}'
     tx.paid_at = order.paid_at
     _maybe_auto_assign_paid_order(db, order)
+
     db.commit()
     db.refresh(order)
 
@@ -243,21 +332,49 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
     sig_header = request.headers.get('stripe-signature', '')
     webhook_secret = _webhook_secret()
+
+    print(
+        f"STRIPE WEBHOOK: payload_len={len(payload)}, "
+        f"sig={sig_header[:30] if sig_header else 'NONE'}, "
+        f"secret_set={bool(webhook_secret)}"
+    )
+
     try:
         if webhook_secret:
-            event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=webhook_secret)
+            event = stripe.Webhook.construct_event(
+                payload=payload,
+                sig_header=sig_header,
+                secret=webhook_secret,
+            )
         else:
             event = json.loads(payload.decode('utf-8'))
     except Exception as exc:
+        print(f"STRIPE WEBHOOK ERROR: {repr(exc)}")
         raise HTTPException(status_code=400, detail=f'Invalid webhook: {exc}')
 
     if hasattr(event, 'to_dict_recursive'):
         event = event.to_dict_recursive()
 
+    if isinstance(event, str):
+        try:
+            event = json.loads(event)
+        except Exception:
+            raise HTTPException(status_code=400, detail='Invalid webhook: event is not parseable')
+    elif not isinstance(event, dict):
+        try:
+            event = json.loads(json.dumps(event, default=str))
+        except Exception:
+            raise HTTPException(status_code=400, detail='Invalid webhook: event conversion failed')
+
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail='Invalid webhook: event is not a dict')
+
     event_type = event.get('type')
-    data_object = (event.get('data') or {}).get('object') or {}
-    metadata = data_object.get('metadata') or {}
-    order_code = (metadata.get('order_code') or data_object.get('client_reference_id') or '').strip()
+    data_object = ((event.get('data') or {}).get('object') or {}) if isinstance(event.get('data'), dict) else {}
+    metadata = data_object.get('metadata') or {} if isinstance(data_object, dict) else {}
+    order_code = (
+        metadata.get('order_code') or data_object.get('client_reference_id') or ''
+    ).strip() if isinstance(data_object, dict) else ''
 
     order = None
     if order_code:
@@ -277,7 +394,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             event=event,
             payment_intent=data_object.get('payment_intent'),
         )
+
         notify_paid = False
+
         if event_type == 'checkout.session.completed':
             notify_paid = _mark_order_paid(
                 db,
@@ -295,8 +414,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         elif str(event_type or '').startswith('charge.refunded'):
             tx.status = 'refunded'
             update_order_status(db, order, to_status='refunded', actor_type='system', note='stripe refund')
+
         db.commit()
         db.refresh(order)
+
         if notify_paid:
             _run_async_notification(notify_paid_line_order(order))
 
