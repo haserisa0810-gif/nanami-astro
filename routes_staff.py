@@ -370,16 +370,13 @@ def staff_save_delivery(
 
     if action == "resend_notify":
         db.commit()
-        mode = "delivery"
         if send_line_text and send_line_report:
-            mode = "delivery"
+            _run_async_safely(notify_line_delivery(order, mode="delivery_with_report"))
         elif send_line_report and not send_line_text:
-            mode = "report_only"
+            _run_async_safely(notify_line_delivery(order, mode="report_only"))
         elif send_line_text and not send_line_report:
-            mode = "delivery"
-        else:
-            mode = "report_only"
-        _run_async_safely(notify_line_delivery(order, mode=mode))
+            _run_async_safely(notify_line_delivery(order, mode="delivery"))
+        # 両方OFFの場合はLINE通知しない
         return _redirect(f"/staff/orders/{order_code}")
 
     cleaned_delivery_text = (delivery_text or '').strip()
@@ -416,10 +413,12 @@ def staff_save_delivery(
     db.commit()
 
     if action == "deliver" and (send_line_text or send_line_report):
-        mode = "delivery"
-        if send_line_report and not send_line_text:
-            mode = "report_only"
-        _run_async_safely(notify_line_delivery(order, mode=mode))
+        if send_line_text and send_line_report:
+            _run_async_safely(notify_line_delivery(order, mode="delivery_with_report"))
+        elif send_line_report and not send_line_text:
+            _run_async_safely(notify_line_delivery(order, mode="report_only"))
+        else:
+            _run_async_safely(notify_line_delivery(order, mode="delivery"))
 
     return _redirect(f"/staff/orders/{order_code}")
 
@@ -478,7 +477,7 @@ def staff_publish_result(
     if delivery and not delivery.is_draft and order.status not in {'delivered','completed'}:
         update_order_status(db, order, to_status='delivered', actor_type=actor_type, actor_id=actor_id, note='result published')
     db.commit()
-    return _redirect(f"/result/{order_code}")
+    return _redirect(f"/staff/orders/{order_code}/astrologer-result")
 
 
 @router.post("/staff/orders/{order_code}/generate-report")
@@ -576,15 +575,47 @@ def staff_astrologer_result(order_code: str, request: Request, staff: dict = Dep
                     break
 
     summary = build_full_astrologer_summary(raw if isinstance(raw, dict) else {}, structure if isinstance(structure, dict) else {})
+
+    # AI本文・各種ログを取り出す
+    reports = {}
+    if active_yaml:
+        summary_data = _safe_json_loads(active_yaml.summary_json)
+        reports = summary_data.get('reports') if isinstance(summary_data.get('reports'), dict) else {}
+    ai_text = _meaningful_text(reports.get('web')) or ''
+    if not ai_text:
+        sections = payload.get('sections') or []
+        ai_text = '\n\n'.join(
+            f"<h3>{s.get('heading','')}</h3>\n{s.get('body','')}"
+            for s in sections if isinstance(s, dict) and s.get('body')
+        )
+
+    handoff_yaml_full = (active_yaml.yaml_body or '') if active_yaml else ''
+
     return templates.TemplateResponse(
         request=request,
-        name="astrologer_result.html",
+        name="result.html",
         context={
             "request": request,
-            "result": raw if isinstance(raw, dict) else {},
-            "summary": summary,
-            "structure_summary": structure if isinstance(structure, dict) else {},
+            # result.html が必要とする変数をすべて渡す
+            "ai_text": ai_text,
             "reader_text": reader_text,
+            "raw_reader_text": reader_text,
+            "line_text": "",
+            "include_reader": bool(reader_text),
+            "raw_json": raw if isinstance(raw, dict) else {},
+            "inputs_json": {},
+            "payload_json": {},
+            "structure_summary_json": structure if isinstance(structure, dict) else {},
+            "transit_data": None,
+            "unknowns": [],
+            "bias_guard": None,
+            "handoff_json":       "",
+            "handoff_yaml":       handoff_yaml_full,
+            "handoff_json_full":  "",
+            "handoff_yaml_full":  handoff_yaml_full,
+            "handoff_json_delta": "",
+            "handoff_yaml_delta": "",
+            "from_order_code": None,  # 案件保存UIは非表示にする
         },
     )
 

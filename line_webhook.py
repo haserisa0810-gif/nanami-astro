@@ -31,6 +31,8 @@ from line_parser import (
 )
 from line_order_handler import (
     append_correction_note,
+    apply_correction_to_order,
+    correction_select_prompt,
     get_order_by_code,
     handle_order_message,
     should_start_order,
@@ -285,15 +287,79 @@ async def line_webhook(request: Request) -> dict[str, Any]:
             existing_order_code = (session or {}).get("order_code")
 
             if current_state == "completed" and raw_text not in {"続き", "やり直し", "キャンセル"} and not should_start_order(raw_text):
-                if append_correction_note(existing_order_code, raw_text):
-                    order = get_order_by_code(existing_order_code)
-                    if order:
-                        await notify_line_order_correction(order, raw_text)
-                    await _line_reply(
-                        reply_token,
-                        "修正内容を受け付けました。確認のうえ反映します。追加があればこのまま返信してください。",
-                        user_id,
-                    )
+                order = get_order_by_code(existing_order_code)
+                if order:
+                    # in_progress以降は修正不可
+                    if order.status in {"in_progress", "delivered", "completed", "cancelled"}:
+                        await _line_reply(
+                            reply_token,
+                            "鑑定をすでに開始しているため、内容の修正はお受けできません。\nご不明な点はご予約時のやり取りをご確認ください。",
+                            user_id,
+                        )
+                        continue
+
+                    correction_state = (session or {}).get("correction_state")
+
+                    # 修正トリガーワード → 項目選択へ
+                    if raw_text in {"修正", "修正したい", "変更", "変更したい", "訂正", "間違えた", "間違い"} or correction_state is None:
+                        upsert_session(user_id, {
+                            "state": "completed",
+                            "order_code": existing_order_code,
+                            "correction_state": "field_select",
+                        })
+                        await _line_reply(reply_token, correction_select_prompt(), user_id)
+                        continue
+
+                    # 項目選択 → 値入力待ち
+                    if correction_state == "field_select":
+                        if raw_text in {"1", "2", "3", "4", "5", "6"}:
+                            from line_order_handler import _edit_prompt
+                            draft = {
+                                "user_name": order.user_name,
+                                "birth_date": order.birth_date.isoformat() if order.birth_date else None,
+                                "birth_time": order.birth_time,
+                                "birth_place": order.birth_place,
+                                "gender": order.gender,
+                                "consultation_text": order.consultation_text,
+                            }
+                            upsert_session(user_id, {
+                                "state": "completed",
+                                "order_code": existing_order_code,
+                                "correction_state": "field_input",
+                                "correction_field": raw_text,
+                            })
+                            await _line_reply(reply_token, _edit_prompt(raw_text, draft), user_id)
+                        else:
+                            await _line_reply(reply_token, f"1〜6の番号で選んでください。\n\n{correction_select_prompt()}", user_id)
+                        continue
+
+                    # 値入力 → DB上書き
+                    if correction_state == "field_input":
+                        field_code = (session or {}).get("correction_field", "")
+                        if raw_text == "確認に戻る":
+                            upsert_session(user_id, {
+                                "state": "completed",
+                                "order_code": existing_order_code,
+                                "correction_state": "field_select",
+                            })
+                            await _line_reply(reply_token, correction_select_prompt(), user_id)
+                            continue
+                        success, label = apply_correction_to_order(existing_order_code, field_code, raw_text)
+                        if success:
+                            upsert_session(user_id, {
+                                "state": "completed",
+                                "order_code": existing_order_code,
+                            })
+                            await notify_line_order_correction(order, f"[{label}を修正]\n{raw_text}")
+                            await _line_reply(
+                                reply_token,
+                                f"【{label}】を修正しました。\n他に修正がある場合は「修正したい」と送ってください。",
+                                user_id,
+                            )
+                        else:
+                            await _line_reply(reply_token, "入力内容を確認してもう一度送ってください。", user_id)
+                        continue
+
                 else:
                     await _line_reply(reply_token, 'ご予約をご希望の方は「予約」または「予約したい」と送ってください。', user_id)
                 continue

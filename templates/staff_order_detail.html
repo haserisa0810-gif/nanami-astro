@@ -73,7 +73,7 @@
         <p class="muted" style="margin-top:10px">通知を再送しても案件内容はそのままです。LINE未達時の再送確認に使えます。</p>
       </form>
       <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
-        <form method="post" action="/staff/orders/{{ order.order_code }}/publish-result"><button type="submit" {% if auto_ai_ready %}class="danger"{% endif %}>結果画面に反映/開く</button></form>
+        <form method="post" action="/staff/orders/{{ order.order_code }}/publish-result"><button type="submit" {% if auto_ai_ready %}class="danger"{% endif %}>結果画面に反映して開く</button></form>
         <form method="post" action="/staff/orders/{{ order.order_code }}/generate-report"><button type="submit" class="secondary">鑑定書を作成</button></form>
         {% if result_view and result_view.report_html %}<a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-download">鑑定書をダウンロード</a>{% endif %}
       </div>
@@ -99,8 +99,6 @@
         <div class="row" style="margin-top:12px;flex-wrap:wrap">
           <button type="submit">自動鑑定を開始</button>
           <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/analyze">通常鑑定を開く</a>
-          <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/analysis-result" target="_blank" rel="noopener">鑑定結果画面</a>
-          <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/astrologer-result" target="_blank" rel="noopener">占い師用分析</a>
          <!-- <a class="btn secondary" href="/result/{{ order.order_code }}">結果画面を開く</a>-->
         </div>
         <p class="muted" style="margin-top:10px">現在の座標情報: {{ location_summary }}</p>

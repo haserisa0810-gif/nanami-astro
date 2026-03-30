@@ -90,28 +90,41 @@ def build_delivery_completed_user_message(order: Order, *, mode: str = "delivery
     delivery_text = _latest_delivery_text(order)
     result_url = build_order_result_url(order)
 
+    # mode の解釈:
+    #   "delivery"     → 本文テキストのみ送る（URLなし）
+    #   "report_only"  → URLのみ送る（本文テキストなし）
+    #   "delivery_with_report" → 本文テキスト＋URL両方送る
+    #   "auto"         → 自動鑑定用（本文＋URL両方送る）
+    include_text = mode in ("delivery", "delivery_with_report", "auto")
+    include_url  = mode in ("report_only", "delivery_with_report", "auto")
+
     if mode == "auto":
         main_body = _sections_digest(payload) or delivery_text or (getattr(order, "free_result_text", None) or "").strip()
         opening = "鑑定結果をお送りします。"
+    elif mode == "report_only":
+        main_body = ""
+        opening = "お待たせしました。鑑定書をお届けします。"
     else:
         main_body = delivery_text or _sections_digest(payload) or (getattr(order, "free_result_text", None) or "").strip()
         opening = "お待たせしました。鑑定が仕上がりました。心を込めてお届けします。"
 
-    if not main_body:
+    if include_text and not main_body:
         main_body = "鑑定結果ページをご確認ください。"
 
-    planet_text = _planet_digest(payload)
+    planet_text = _planet_digest(payload) if include_text else ""
     extra_lines = []
     if planet_text:
         extra_lines.append("【主要な星配置】\n" + planet_text)
-    extra_lines.append("【ホロスコープ図・ハウス解説・鑑定書】\n" + result_url)
+    if include_url:
+        extra_lines.append("【ホロスコープ図・ハウス解説・鑑定書】\n" + result_url)
 
-    return (
-        f"{opening}\n"
-        f"予約番号【{order.order_code}】\n\n"
-        f"{main_body.strip()}\n\n"
-        + "\n\n".join(extra_lines)
-    ).strip()
+    parts = [f"{opening}\n予約番号【{order.order_code}】"]
+    if include_text and main_body:
+        parts.append(main_body.strip())
+    if extra_lines:
+        parts.append("\n\n".join(extra_lines))
+
+    return "\n\n".join(parts).strip()
 
 
 def build_delivery_chart_url(order: Order) -> str:
@@ -222,7 +235,7 @@ async def _push_line_message(user_ids: Iterable[str], text: str) -> None:
     await _push_line_messages(user_ids, messages)
 
 
-def _send_email_message(recipients: list[str], subject: str, body: str) -> None:
+def _send_email_message(recipients: list[str], subject: str, body: str, *, thread_id: str | None = None) -> None:
     if not recipients:
         return
     host = (os.getenv("SMTP_HOST") or "").strip()
@@ -241,6 +254,14 @@ def _send_email_message(recipients: list[str], subject: str, body: str) -> None:
     message["From"] = from_email
     message["To"] = ", ".join(recipients)
     message.set_content(body)
+
+    # スレッド化: 予約番号ごとに固定のMessage-IDを使いIn-Reply-Toで紐づける
+    if thread_id:
+        domain = (from_email.split("@")[-1]) if "@" in from_email else "nanami-astro.com"
+        base_msg_id = f"<{thread_id}@{domain}>"
+        message["Message-ID"] = f"<{thread_id}.{subject[:10].encode('ascii','ignore').decode()}@{domain}>"
+        message["In-Reply-To"] = base_msg_id
+        message["References"] = base_msg_id
 
     smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
     with smtp_cls(host, port, timeout=20) as smtp:
@@ -263,7 +284,7 @@ async def notify_new_line_reservation(order: Order) -> None:
 
     await _push_line_message(admin_line_ids + reader_line_ids, body)
     try:
-        _send_email_message(admin_emails + reader_emails, "[nanami-astro] LINE予約受付", body)
+        _send_email_message(admin_emails + reader_emails, f"LINE予約受付 【{order.order_code}】", body, thread_id=order.order_code)
     except Exception as exc:
         print("Email notify exception:", repr(exc))
 
@@ -281,7 +302,7 @@ async def notify_paid_line_order(order: Order) -> None:
     if customer_line_id:
         await _push_line_message([customer_line_id], user_message)
     try:
-        _send_email_message(admin_emails + reader_emails, "[nanami-astro] 決済完了", body)
+        _send_email_message(admin_emails + reader_emails, f"決済完了 【{order.order_code}】", body, thread_id=order.order_code)
     except Exception as exc:
         print("Email notify exception:", repr(exc))
 
@@ -306,7 +327,7 @@ async def notify_line_order_correction(order: Order, message_text: str) -> None:
 
     await _push_line_message(admin_line_ids + reader_line_ids, body)
     try:
-        _send_email_message(admin_emails + reader_emails, "[nanami-astro] LINE予約修正", body)
+        _send_email_message(admin_emails + reader_emails, f"LINE予約修正 【{order.order_code}】", body, thread_id=order.order_code)
     except Exception as exc:
         print("Email notify exception:", repr(exc))
 

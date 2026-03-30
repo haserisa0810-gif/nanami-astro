@@ -35,7 +35,11 @@
   {% endif %}
 
   <div class="card">
-    <h2>本文</h2>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h2 style="margin:0">本文</h2>
+      <button type="button" class="secondary" id="copyHonbunBtn" onclick="copyHonbun()" style="font-size:13px;padding:6px 14px">本文をコピー</button>
+    </div>
+    <div id="honbun-body">
     {% if result_payload.sections %}
       {% for sec in result_payload.sections %}
       <div style="padding:14px 0;border-top:1px solid #eee{% if loop.first %};border-top:none{% endif %}">
@@ -48,7 +52,33 @@
     {% else %}
       <p class="muted">まだ納品されていません。</p>
     {% endif %}
+    </div>
   </div>
+
+  <script>
+  async function copyHonbun() {
+    var el = document.getElementById('honbun-body');
+    var text = el ? el.innerText.trim() : '';
+    if (!text) { alert('コピーする本文が見つかりませんでした'); return; }
+    var btn = document.getElementById('copyHonbunBtn');
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        var tmp = document.createElement('textarea');
+        tmp.value = text;
+        tmp.style.position = 'fixed'; tmp.style.opacity = '0';
+        document.body.appendChild(tmp);
+        tmp.select();
+        document.execCommand('copy');
+        document.body.removeChild(tmp);
+      }
+      if (btn) { btn.textContent = text.length.toLocaleString() + '文字をコピー済み'; setTimeout(function(){ btn.textContent = '本文をコピー'; }, 3000); }
+    } catch(e) {
+      alert('コピーに失敗しました');
+    }
+  }
+  </script>
 
   {% if result_payload.planet_list %}
   <div class="card"><h2>主要天体</h2><table><thead><tr><th>天体</th><th>サイン</th><th>ハウス</th><th>補足</th></tr></thead><tbody>{% for p in result_payload.planet_list %}<tr><td>{{ p.name }}</td><td>{{ p.sign }}</td><td>{{ p.house }}</td><td>{{ p.note or '-' }}</td></tr>{% endfor %}</tbody></table></div>

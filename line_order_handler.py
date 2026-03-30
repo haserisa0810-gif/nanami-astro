@@ -37,6 +37,54 @@ def get_order_by_code(order_code: str | None) -> Order | None:
         return order
 
 
+def correction_select_prompt() -> str:
+    return (
+        '修正したい項目の番号を送ってください。\n\n'
+        '1. お名前\n'
+        '2. 生年月日\n'
+        '3. 出生時間\n'
+        '4. 出生地\n'
+        '5. 性別\n'
+        '6. ご相談内容\n\n'
+        'キャンセルする場合は「キャンセル」と送ってください。'
+    )
+
+
+def apply_correction_to_order(order_code: str | None, field_code: str, new_value: str) -> tuple[bool, str]:
+    """DBのorderを直接上書きする。戻り値: (success, display_label)"""
+    if not order_code or field_code not in _EDITABLE_FIELDS:
+        return False, ''
+    field_key, label = _EDITABLE_FIELDS[field_code]
+    with SessionLocal() as db:
+        order = db.query(Order).filter(Order.order_code == order_code).first()
+        if not order:
+            return False, label
+        value = (new_value or '').strip()
+        if field_code == '1':
+            if not value:
+                return False, label
+            order.user_name = value
+        elif field_code == '2':
+            normalized = _normalize_birth_date(value)
+            if not normalized:
+                return False, label
+            from datetime import date as _date
+            order.birth_date = _date.fromisoformat(normalized)
+        elif field_code == '3':
+            order.birth_time = None if value in {'', '不明', 'わからない', '不詳'} else value
+        elif field_code == '4':
+            order.birth_place = None if value in {'', '不明', 'わからない', '不詳'} else value
+        elif field_code == '5':
+            normalized = _normalize_gender(value)
+            if not normalized:
+                return False, label
+            order.gender = normalized
+        elif field_code == '6':
+            order.consultation_text = None if value in {'', 'なし', '特になし', '不要', '未記入'} else value
+        db.commit()
+        return True, label
+
+
 def append_correction_note(order_code: str | None, message_text: str) -> bool:
     if not order_code or not (message_text or '').strip():
         return False
