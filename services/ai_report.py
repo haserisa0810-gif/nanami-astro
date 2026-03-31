@@ -272,6 +272,76 @@ def _extract_planets(astro_data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+
+
+def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
+    """Build a small, authoritative digest for free reading prompts."""
+    try:
+        if not isinstance(astro_data, dict):
+            return ""
+
+        planets = astro_data.get("planets")
+        if not isinstance(planets, list) and isinstance(astro_data.get("western"), dict):
+            planets = astro_data["western"].get("planets")
+        if not isinstance(planets, list):
+            planets = []
+
+        aspects = astro_data.get("aspects")
+        if not isinstance(aspects, list) and isinstance(astro_data.get("western"), dict):
+            aspects = astro_data["western"].get("aspects")
+        if not isinstance(aspects, list):
+            aspects = []
+
+        priority = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"]
+        picked: list[str] = []
+        by_name: dict[str, dict[str, Any]] = {}
+        for item in planets:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if name and name not in by_name:
+                by_name[name] = item
+
+        for name in priority:
+            item = by_name.get(name)
+            if not item:
+                continue
+            sign = item.get("sign") or "-"
+            house = item.get("house")
+            house_text = f" / {int(house)}ハウス" if isinstance(house, (int, float)) else ""
+            retro = " / 逆行" if item.get("retrograde") else ""
+            picked.append(f"{name}: {sign}{house_text}{retro}")
+
+        major_names = {"Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"}
+        aspect_lines: list[str] = []
+        for a in aspects:
+            if not isinstance(a, dict):
+                continue
+            p1 = str(a.get("planet1") or "").strip()
+            p2 = str(a.get("planet2") or "").strip()
+            if p1 not in major_names and p2 not in major_names:
+                continue
+            atype = str(a.get("type") or "").strip()
+            orb = a.get("orb")
+            orb_text = f" orb {float(orb):.2f}" if isinstance(orb, (int, float)) else ""
+            if p1 and p2 and atype:
+                aspect_lines.append(f"{p1} - {p2}: {atype}{orb_text}")
+            if len(aspect_lines) >= 6:
+                break
+
+        lines: list[str] = []
+        if picked:
+            lines.append("【この人の主要配置】")
+            lines.extend(picked)
+        if aspect_lines:
+            lines.append("【主要アスペクト】")
+            lines.extend(aspect_lines)
+
+        return "\n".join(lines).strip()
+    except Exception:
+        return ""
+
+
 def _extract_house_cusps(astro_data: dict[str, Any]) -> list[float] | None:
     """Try to extract 12 house cusps if present."""
     houses = astro_data.get("houses")
@@ -800,6 +870,7 @@ def generate_report(
         "life_phase_theme": life_phase_theme,
         "transit_focus": transit_focus,
         "transit_summary": transit_summary,
+        "free_reading_key_data": _build_free_reading_key_data(astro_data),
     }
 
     common_rules_tpl = _read_prompt_file("common_rules.txt")
@@ -818,6 +889,11 @@ def generate_report(
     single_line_reader_prompt = _render_prompt(single_line_reader_tpl, ctx)
     compat_web_prompt = _render_prompt(compat_web_tpl, ctx)
     compat_line_prompt = _render_prompt(compat_line_tpl, ctx)
+
+    free_reading_prompt = ""
+    if theme == "free_reading":
+        free_reading_tpl = _read_prompt_file("free_reading_web.txt")
+        free_reading_prompt = _render_prompt(free_reading_tpl, ctx)
 
     # -------------------------
     # integrated / integrated3 guards
@@ -860,7 +936,7 @@ def generate_report(
     elif rt == "single_line" or (rt == "single_web" and output_style == "line"):
         prompt = single_line_prompt
     else:
-        prompt = single_web_prompt
+        prompt = free_reading_prompt or single_web_prompt
 
     is_line = (output_style == "line" or "line" in rt)
     is_web = not is_line
@@ -871,7 +947,7 @@ def generate_report(
     if is_web and model_name == "gemini-2.5-flash":
         prompt = prompt.rstrip() + "\n\n" + _flash_web_boost_prompt()
 
-    if is_web and model_name == "gemini-2.5-flash-lite":
+    if is_web and model_name == "gemini-2.5-flash-lite" and theme != "free_reading":
         try:
             return _generate_longform_in_parts(
                 client=client,
@@ -884,6 +960,8 @@ def generate_report(
             print("[ai_report] multipart fallback", {"model": model_name, "error": str(e)})
 
     if is_line:
+        max_tokens = 1400
+    elif theme == "free_reading":
         max_tokens = 1400
     elif model_name == "gemini-2.5-flash":
         max_tokens = 7000

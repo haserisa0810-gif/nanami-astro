@@ -104,6 +104,15 @@ def _latest_delivery(order: Order) -> OrderDelivery | None:
     return latest[0] if latest else None
 
 
+def _has_report_html(order: Order) -> bool:
+    try:
+        views = list(getattr(order, "result_views", []) or [])
+    except Exception:
+        return False
+    latest = next(iter(sorted(views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
+    return bool(latest and getattr(latest, "report_html", None))
+
+
 def _active_yaml(order: Order) -> YamlLog | None:
     return next((x for x in sorted(order.yaml_logs, key=lambda x: (x.version_no or 0, x.updated_at or x.created_at), reverse=True) if getattr(x, "is_active", True)), None)
 
@@ -290,6 +299,15 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
     else:
         result_status = 'completed'
         result_status_label = '完了'
+    editor_seed_text = ""
+    editor_seed_source = "empty"
+    if delivery and delivery.delivery_text and 'DEBUG' not in delivery.delivery_text and '空文字' not in delivery.delivery_text:
+        editor_seed_text = delivery.delivery_text
+        editor_seed_source = "delivery"
+    elif order.order_kind == "free" and (order.free_result_text or '').strip():
+        editor_seed_text = (order.free_result_text or '').strip()
+        editor_seed_source = "free_result"
+
     return templates.TemplateResponse(
         request=request,
         name="staff_order_detail.html",
@@ -309,6 +327,8 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
             "result_status": result_status,
             "result_status_label": result_status_label,
             "auto_ai_ready": bool((order.ai_status == "completed") and result_status != "completed"),
+            "editor_seed_text": editor_seed_text,
+            "editor_seed_source": editor_seed_source,
         },
     )
 
@@ -364,6 +384,11 @@ def staff_save_delivery(
 
     reader = _ensure_reader_for_save(db, order, staff)
     actor_type, actor_id = _staff_actor(staff)
+
+    has_report_html = _has_report_html(order)
+    if send_line_report and not has_report_html:
+        print(f"send_line_report ignored: report_html missing for order {order.order_code}")
+        send_line_report = None
 
     latest = sorted(order.deliveries, key=lambda d: d.updated_at or d.created_at, reverse=True)
     delivery = latest[0] if latest else None

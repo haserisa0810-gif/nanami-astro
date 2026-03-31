@@ -66,7 +66,20 @@
         <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
           <button type="submit" name="action" value="draft">下書き保存</button>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px"><input type="checkbox" name="send_line_text" value="1" checked> 納品完了時にLINEで本文を送る</label>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px"><input type="checkbox" name="send_line_report" value="1"> 納品完了時にLINEで鑑定書URLも送る</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;{% if not (result_view and result_view.report_html) %}opacity:.55;cursor:not-allowed{% endif %}">
+            <input
+              type="checkbox"
+              name="send_line_report"
+              value="1"
+              {% if not (result_view and result_view.report_html) %}disabled{% endif %}
+            >
+            納品完了時にLINEで鑑定書URLも送る
+          </label>
+          {% if not (result_view and result_view.report_html) %}
+            <p class="muted" style="margin-top:6px">
+              鑑定書がまだ作成されていないため、この送信は使えません。先に「鑑定書を作成」を押してください。
+            </p>
+          {% endif %}
           <button type="submit" name="action" value="deliver">納品完了にする</button>
           <button type="submit" name="action" value="resend_notify" class="secondary">通知を再送</button>
         </div>

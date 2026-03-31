@@ -145,6 +145,17 @@ class Order(TimestampMixin, Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     customer: Mapped[Optional[Customer]] = relationship(back_populates="orders")
+    source_free_order: Mapped[Optional[Order]] = relationship(
+        "Order",
+        remote_side="Order.id",
+        foreign_keys=[source_free_order_id],
+        back_populates="derived_paid_orders",
+    )
+    derived_paid_orders: Mapped[list[Order]] = relationship(
+        "Order",
+        foreign_keys=[source_free_order_id],
+        back_populates="source_free_order",
+    )
     menu: Mapped[Menu] = relationship(back_populates="orders")
     assigned_reader: Mapped[Optional[Astrologer]] = relationship(back_populates="orders")
     deliveries: Mapped[list[OrderDelivery]] = relationship(back_populates="order", cascade="all, delete-orphan")

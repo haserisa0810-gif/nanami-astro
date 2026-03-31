@@ -68,16 +68,16 @@
 </div>
 {% endif %}
 
-<div class="card">
+<!--<div class="card">
   <h2>次の操作</h2>
   <p><strong>今回の無料鑑定ID：</strong><span class="code">{{ order.free_reading_code or '-' }}</span></p>
-  <p class="muted">{{ footer_message }}</p>
+  <p class="muted">有料鑑定をご希望の方には、LINE申込み時にこの無料鑑定IDを送ってもらう運用が自然です。内部では案件詳細から本文を整えて下書き保存できます。</p>
   <div class="row" style="margin-top:14px">
-    <a class="btn" href="/order/start?free_reading_code={{ order.free_reading_code }}">この内容を引き継いで有料鑑定へ進む</a>
+    <a class="btn" href="/staff/orders/{{ order.order_code }}">案件詳細を開いて修正する</a>
     <a class="btn secondary" href="/dashboard">スタッフダッシュボードへ</a>
     <a class="btn secondary" href="/free-reading/start">無料鑑定画面に戻る</a>
   </div>
-</div>
+</div> -->
 
 <details class="card"><summary><strong>内部データ（YAML）</strong> <span class="muted">必要な時だけコピーします</span></summary>
   <div style="margin-top:12px">

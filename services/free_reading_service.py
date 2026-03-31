@@ -115,7 +115,7 @@ def process_free_reading(order_id: int) -> None:
                 observations_text=None,
                 analysis_type='single',
                 astrology_system='western',
-                ai_model=None,
+                ai_model='gemini-2.5-flash-lite',
                 day_change_at_23=False,
                 name=order.user_name,
                 name_b=None,

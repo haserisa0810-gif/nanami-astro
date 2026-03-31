@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import html
@@ -8,8 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from models import Order, YamlLog
+from services.shichu_formatter import extract_shichu_data, render_shichu_summary_html, render_shichu_table_html
 
 SIGN_JA = ["牡羊", "牡牛", "双子", "蟹", "獅子", "乙女", "天秤", "蠍", "射手", "山羊", "水瓶", "魚"]
+VEDIC_PLANET_LABELS = {
+    "Sun": "SURYA", "Moon": "CHANDRA", "Mars": "MANGALA", "Mercury": "BUDHA", "Jupiter": "GURU",
+    "Venus": "SHUKRA", "Saturn": "SHANI", "Rahu": "RAHU", "Ketu": "KETU", "Ascendant": "LAGNA",
+}
 PLANET_SYMBOLS = {
     "Sun": "☉", "Moon": "☽", "Mercury": "☿", "Venus": "♀", "Mars": "♂", "Jupiter": "♃", "Saturn": "♄",
     "Uranus": "♅", "Neptune": "♆", "Pluto": "♇", "ASC": "ASC", "MC": "MC", "North Node": "☊", "South Node": "☋",
@@ -20,6 +26,10 @@ HOUSE_MEANINGS = {
     4: "4H：家庭・居場所・基盤の領域", 5: "5H：創造・自己表現・楽しみの領域", 6: "6H：日常・仕事・健康・習慣の領域",
     7: "7H：対人関係・パートナーシップの領域", 8: "8H：共有・深い結びつき・変容の領域", 9: "9H：思想・探求・遠方の領域",
     10: "10H：社会的地位・職業・使命の領域", 11: "11H：社会・仲間・理想・未来の領域", 12: "12H：無意識・癒し・見えない領域"
+}
+VEDIC_ROLE_DEFAULTS = {
+    "Sun": "魂・父性・権威", "Moon": "心・母性・感情", "Mars": "行動力・闘志・突破力", "Mercury": "知性・言語・商才",
+    "Jupiter": "知恵・拡大・保護", "Venus": "愛・美意識・享受", "Saturn": "責任・忍耐・課題", "Rahu": "執着・拡張・欲望", "Ketu": "手放し・霊性・切離"
 }
 PLANET_ROLE_DEFAULTS = {
     "Sun": "人生のテーマ・自己表現", "Moon": "感情・安心感のパターン", "Mercury": "思考・コミュニケーション",
@@ -78,9 +88,18 @@ def _deep_get(obj: Any, *paths: str) -> Any:
     return None
 
 
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _raw_western(raw: dict[str, Any]) -> dict[str, Any]:
     western = raw.get('western')
     return western if isinstance(western, dict) else raw
+
+
+def _raw_vedic(raw: dict[str, Any]) -> dict[str, Any]:
+    vedic = raw.get('vedic')
+    return vedic if isinstance(vedic, dict) else raw if raw.get('system') == 'vedic' else {}
 
 
 def _planet_items(raw: dict[str, Any]) -> list[dict[str, Any]]:
@@ -114,6 +133,34 @@ def _planet_items(raw: dict[str, Any]) -> list[dict[str, Any]]:
             "note": p.get("note") or PLANET_ROLE_DEFAULTS.get(name, "-"),
             "house_desc": HOUSE_MEANINGS.get(house_num, ""),
             "lon": p.get("lon") if isinstance(p.get("lon"), (int, float)) else p.get("longitude") if isinstance(p.get("longitude"), (int, float)) else None,
+        })
+    return out
+
+
+def _vedic_items(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    vedic = _raw_vedic(raw)
+    planets = vedic.get('planets') or []
+    if not isinstance(planets, list):
+        return out
+    for p in planets:
+        if not isinstance(p, dict):
+            continue
+        name = _safe_text(p.get('name') or p.get('planet'))
+        sign = _safe_text(p.get('rashi_name') or p.get('sign') or '-')
+        deg = p.get('deg_in_sign')
+        deg_text = f" {int(round(float(deg)))}°" if isinstance(deg, (int, float)) else ""
+        house_no = p.get('house_no')
+        house_text = f"{int(house_no)}ハウス" if isinstance(house_no, (int, float)) else '-'
+        house_desc = HOUSE_MEANINGS.get(int(house_no), '') if isinstance(house_no, (int, float)) else ''
+        out.append({
+            'name': VEDIC_PLANET_LABELS.get(name, name.upper()),
+            'sign': f"{sign}{deg_text}",
+            'house': house_text,
+            'note': VEDIC_ROLE_DEFAULTS.get(name, '-'),
+            'house_desc': house_desc,
+            'rashi_name': sign,
+            'lon': p.get('sidereal_lon_deg') if isinstance(p.get('sidereal_lon_deg'), (int, float)) else None,
         })
     return out
 
@@ -178,6 +225,123 @@ def _chart_svg(raw: dict[str, Any], size: int = 520) -> str:
     return ''.join(parts)
 
 
+def _vedic_chart_svg(raw: dict[str, Any], size: int = 520) -> str:
+    vedic = _raw_vedic(raw)
+    planets = _vedic_items(raw)
+    if not vedic or not planets:
+        return ""
+    margin = 16
+    s = size - margin * 2
+    x0 = y0 = margin
+    x1 = y1 = x0 + s
+    xm = x0 + s / 2
+    ym = y0 + s / 2
+    # South Indian style fixed sign layout
+    boxes = {
+        1:  (x0, y0 + s*0.75, x0+s*0.25, y1),
+        2:  (x0, y0 + s*0.50, x0+s*0.25, y0+s*0.75),
+        3:  (x0, y0 + s*0.25, x0+s*0.25, y0+s*0.50),
+        4:  (x0, y0, x0+s*0.25, y0+s*0.25),
+        5:  (x0+s*0.25, y0, xm, y0+s*0.25),
+        6:  (xm, y0, x0+s*0.75, y0+s*0.25),
+        7:  (x0+s*0.75, y0, x1, y0+s*0.25),
+        8:  (x0+s*0.75, y0+s*0.25, x1, y0+s*0.50),
+        9:  (x0+s*0.75, y0+s*0.50, x1, y0+s*0.75),
+        10: (x0+s*0.75, y0+s*0.75, x1, y1),
+        11: (xm, y0+s*0.75, x0+s*0.75, y1),
+        12: (x0+s*0.25, y0+s*0.75, xm, y1),
+    }
+    # house mapping by ascendant sign number
+    asc = _dict(vedic.get('ascendant'))
+    asc_rashi_no = int(asc.get('rashi_no') or 1)
+    house_by_sign = {((asc_rashi_no - 1 + h - 1) % 12) + 1: h for h in range(1, 13)}
+    occupants = {i: [] for i in range(1,13)}
+    for p in vedic.get('planets') or []:
+        if not isinstance(p, dict):
+            continue
+        sign_no = p.get('rashi_no')
+        if not isinstance(sign_no, int):
+            continue
+        label = VEDIC_PLANET_LABELS.get(_safe_text(p.get('name')), _safe_text(p.get('name')).upper())
+        deg = p.get('deg_in_sign')
+        deg_txt = f" {int(round(float(deg)))}°" if isinstance(deg, (int, float)) else ""
+        occupants[sign_no].append(label + deg_txt)
+    parts = [f"<svg viewBox='0 0 {size} {size}' width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>"]
+    parts.append(f"<rect x='{x0}' y='{y0}' width='{s}' height='{s}' fill='none' stroke='rgba(122,154,184,0.62)' stroke-width='2'/>")
+    # internal lines
+    for xx in [x0+s*0.25, xm, x0+s*0.75]:
+        parts.append(f"<line x1='{xx}' y1='{y0}' x2='{xx}' y2='{y1}' stroke='rgba(122,154,184,0.20)' stroke-width='1'/>")
+    for yy in [y0+s*0.25, ym, y0+s*0.75]:
+        parts.append(f"<line x1='{x0}' y1='{yy}' x2='{x1}' y2='{yy}' stroke='rgba(122,154,184,0.20)' stroke-width='1'/>")
+    parts.append(f"<rect x='{x0+s*0.25}' y='{y0+s*0.25}' width='{s*0.5}' height='{s*0.5}' fill='rgba(35,29,46,0.92)' stroke='rgba(122,154,184,0.28)' stroke-width='1.2'/>")
+    for sign_no, (bx0, by0, bx1, by1) in boxes.items():
+        cx = (bx0 + bx1) / 2
+        cy = (by0 + by1) / 2
+        house_no = house_by_sign.get(sign_no, sign_no)
+        sign_label = _safe_text(_dict(next((p for p in vedic.get('planets', []) if isinstance(p, dict) and p.get('rashi_no') == sign_no), {})).get('rashi_name')) or SIGN_JA[sign_no-1]
+        occ = occupants.get(sign_no) or []
+        text = '<br/>'.join(html.escape(t) for t in occ[:4])
+        # sign / house small labels
+        parts.append(f"<text x='{bx0+8:.1f}' y='{by0+16:.1f}' fill='rgba(122,154,184,0.92)' font-size='11'>{sign_no}</text>")
+        parts.append(f"<text x='{bx1-8:.1f}' y='{by0+16:.1f}' text-anchor='end' fill='rgba(232,224,212,0.74)' font-size='10'>{house_no}H</text>")
+        parts.append(f"<text x='{cx:.1f}' y='{cy-12:.1f}' text-anchor='middle' fill='rgba(232,224,212,0.92)' font-size='13' font-family='Noto Serif JP, serif'>{html.escape(sign_label)}</text>")
+        if occ:
+            dy = 4
+            for idx, line in enumerate(occ[:4]):
+                parts.append(f"<text x='{cx:.1f}' y='{cy+dy+idx*14:.1f}' text-anchor='middle' fill='rgba(232,224,212,0.88)' font-size='11'>{html.escape(line)}</text>")
+        if sign_no == asc_rashi_no:
+            parts.append(f"<text x='{cx:.1f}' y='{by1-8:.1f}' text-anchor='middle' fill='rgba(122,154,184,0.95)' font-size='11'>Lagna</text>")
+    parts.append(f"<text x='{xm:.1f}' y='{ym-8:.1f}' text-anchor='middle' fill='rgba(122,154,184,0.95)' font-size='14' font-family='Cinzel, serif'>RASHI CHART</text>")
+    parts.append(f"<text x='{xm:.1f}' y='{ym+14:.1f}' text-anchor='middle' fill='rgba(232,224,212,0.70)' font-size='11'>South Indian style / Lahiri</text>")
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
+def _replace_nth_tbody(tpl: str, body_html: str, nth: int) -> str:
+    pattern = re.compile(r"<tbody>.*?</tbody>", flags=re.S)
+    matches = list(pattern.finditer(tpl))
+    if len(matches) < nth:
+        return tpl
+    m = matches[nth - 1]
+    return tpl[:m.start()] + "<tbody>" + body_html + "</tbody>" + tpl[m.end():]
+
+
+def _replace_first_reading_text(tpl: str, body_html: str) -> str:
+    return re.sub(r'<div class="reading-text">.*?</div>', f'<div class="reading-text">{body_html}</div>', tpl, count=1, flags=re.S)
+
+
+def _render_planet_rows(planets: list[dict[str, Any]]) -> str:
+    rows = []
+    if not planets:
+        return "<tr><td colspan='4' class='pt-role'>主要天体データはありません。</td></tr>"
+    for p in planets[:10]:
+        name = html.escape(_safe_text(p.get('name')).upper())
+        sign = html.escape(_safe_text(p.get('sign')))
+        house = html.escape(_safe_text(p.get('house')))
+        note = html.escape(_safe_text(p.get('note')))
+        house_desc = html.escape(_safe_text(p.get('house_desc')))
+        rows.append(f"<tr><td class='pt-name'>{name}</td><td class='pt-sign'>{sign}</td><td class='pt-house'>{house}</td><td class='pt-role'>{note}<span class='pt-house-desc'>{house_desc}</span></td></tr>")
+    return ''.join(rows)
+
+
+def _template_name(payload: dict[str, Any]) -> str:
+    systems = payload.get('systems') or {}
+    if systems.get('western') and systems.get('vedic') and systems.get('shichu'):
+        return 'report-integrated.html'
+    if systems.get('western') and systems.get('vedic'):
+        return 'report-western-vedic.html'
+    if systems.get('western') and systems.get('shichu'):
+        return 'report-western-shicyu.html'
+    if systems.get('vedic') and systems.get('shichu'):
+        return 'report-vedic-shicyu.html'
+    return 'report_template_source.html'
+
+
+def _replace_chart_block(tpl: str, placeholder_note: str, inner_html: str) -> str:
+    pattern = re.compile(rf'<div class="chart-img-wrap[^>]*">.*?{re.escape(placeholder_note)}.*?</div>', flags=re.S)
+    return pattern.sub(inner_html, tpl, count=1)
+
+
 def build_result_payload(order: Order, yaml_log: YamlLog, delivery_text: str | None = None) -> dict[str, Any]:
     try:
         data = json.loads(yaml_log.summary_json or "{}") if yaml_log.summary_json else {}
@@ -217,6 +381,8 @@ def build_result_payload(order: Order, yaml_log: YamlLog, delivery_text: str | N
     if reader_text:
         sections.append({"heading": "占い師メモ", "body": reader_text})
     planet_list = _planet_items(raw)
+    vedic_list = _vedic_items(raw)
+    shichu_data = extract_shichu_data(raw)
     horoscope_image_url = _safe_text(
         _first_meaningful(
             _deep_get(raw, 'western.chart_image_url'),
@@ -227,15 +393,27 @@ def build_result_payload(order: Order, yaml_log: YamlLog, delivery_text: str | N
         )
     )
     chart_svg = _chart_svg(raw)
+    vedic_chart_svg = _vedic_chart_svg(raw)
+    vedic_raw = _raw_vedic(raw)
+    asc = _dict(_deep_get(raw, 'western.angles.Asc') if False else {})
+    systems = {
+        'western': bool(planet_list or chart_svg or horoscope_image_url),
+        'vedic': bool(vedic_list or vedic_chart_svg or vedic_raw),
+        'shichu': bool(shichu_data.get('exists')),
+    }
     return {
         "title": title,
         "order_code": order.order_code,
         "summary": summary,
         "sections": sections,
         "planet_list": planet_list,
+        "vedic_planet_list": vedic_list,
+        "shichu": shichu_data,
         "advice_list": [],
         "horoscope_image_url": horoscope_image_url,
         "chart_svg": chart_svg,
+        "vedic_chart_svg": vedic_chart_svg,
+        "systems": systems,
         "raw_json": raw,
     }
 
@@ -251,70 +429,109 @@ def render_result_html(payload: dict[str, Any]) -> str:
                 parts.append(f"<p><strong>{label}</strong><br>{_nl2br(val)}</p>")
         parts.append("</section>")
     chart_svg = payload.get('chart_svg') or ''
+    vedic_chart_svg = payload.get('vedic_chart_svg') or ''
     if chart_svg:
-        parts.append(f"<section><h2>ホロスコープ</h2><div style='max-width:620px;margin:0 auto'>{chart_svg}</div></section>")
+        parts.append(f"<section><h2>西洋ホロスコープ</h2><div style='max-width:620px;margin:0 auto'>{chart_svg}</div></section>")
     elif payload.get('horoscope_image_url'):
-        parts.append(f"<section><h2>ホロスコープ</h2><img src='{html.escape(payload['horoscope_image_url'])}' alt='horoscope' style='max-width:100%;height:auto'></section>")
+        parts.append(f"<section><h2>西洋ホロスコープ</h2><img src='{html.escape(payload['horoscope_image_url'])}' alt='horoscope' style='max-width:100%;height:auto'></section>")
+    if vedic_chart_svg:
+        parts.append(f"<section><h2>インド占星術チャート</h2><div style='max-width:620px;margin:0 auto'>{vedic_chart_svg}</div></section>")
+    shichu = payload.get('shichu') or {}
+    if shichu.get('exists'):
+        parts.append("<section><h2>四柱推命 命式</h2>" + render_shichu_table_html(shichu) + render_shichu_summary_html(shichu) + "</section>")
     for sec in payload.get("sections") or []:
         parts.append(f"<section><h2>{html.escape(sec.get('heading') or '本文')}</h2><div style='white-space:pre-wrap'>{_nl2br(sec.get('body') or '')}</div></section>")
     return "\n".join(parts)
 
 
 def render_report_html(order: Order, payload: dict[str, Any]) -> str:
-    template_path = Path(__file__).resolve().parent.parent / 'templates' / 'report_template_source.html'
+    template_path = Path(__file__).resolve().parent.parent / 'templates' / _template_name(payload)
     tpl = template_path.read_text(encoding='utf-8')
     sections = payload.get('sections') or []
     planets = payload.get('planet_list') or []
+    vedic_planets = payload.get('vedic_planet_list') or []
+    shichu = payload.get('shichu') or {}
     birth_label = order.birth_date.strftime('%Y年%m月%d日') if getattr(order, 'birth_date', None) else '-'
     if order.birth_time:
         birth_label += f" {order.birth_time}"
     place_label = ' '.join([v for v in [order.birth_prefecture, order.birth_place] if v]) or '-'
-    asc_sign = '-'
-    for p in planets:
-        if _safe_text(p.get('name')).upper() == 'ASC':
-            asc_sign = _safe_text(p.get('sign')).split()[0] or '-'
-            break
-    tpl = tpl.replace('〇〇 さまの<br><em>星の物語</em>', f"{html.escape(order.user_name)} さまの<br><em>星の物語</em>")
+
+    # title and header system labels
+    tpl = tpl.replace('鑑定日：20XX年XX月XX日', f"鑑定日：{html.escape(_safe_text(getattr(order, 'updated_at', '') or ''))}") if getattr(order, 'updated_at', None) else tpl
     tpl = tpl.replace('19XX年XX月XX日 XX:XX', html.escape(birth_label), 1)
     tpl = tpl.replace('〇〇県〇〇市', html.escape(place_label), 1)
-    tpl = tpl.replace('〇〇座', html.escape(asc_sign), 1)
+    tpl = tpl.replace('〇〇 さま', html.escape(order.user_name) + ' さま', 1)
 
-    chart_svg = payload.get('chart_svg') or ''
-    chart_img = payload.get('horoscope_image_url') or ''
-    chart_block = ''
-    if chart_svg:
-        chart_block = (
-            "<div class='section'><span class='section-label'>CHART</span><h2 class='section-title'>ホロスコープ</h2>"
-            "<div class='divider'></div>"
-            f"<div style='max-width:620px;margin:0 auto'>{chart_svg}</div>"
-            + (f"<div style='margin-top:12px;text-align:center'><img src='{html.escape(chart_img)}' alt='horoscope' style='max-width:100%;height:auto;display:none' onerror=\"this.remove()\" onload=\"this.style.display='inline-block'\"></div>" if chart_img else "")
-            + "</div>"
-        )
-    elif chart_img:
-        chart_block = (
-            "<div class='section'><span class='section-label'>CHART</span><h2 class='section-title'>ホロスコープ</h2>"
-            "<div class='divider'></div>"
-            f"<div style='max-width:620px;margin:0 auto'><img src='{html.escape(chart_img)}' alt='horoscope' style='width:100%;height:auto;border:1px solid var(--border);border-radius:18px'></div></div>"
-        )
-    marker = '<!-- 惑星配置テーブル -->'
-    if chart_block and marker in tpl:
-        tpl = tpl.replace(marker, chart_block + "\n\n" + marker, 1)
+    asc_sign = '-'
+    sun_sign = '-'
+    moon_sign = '-'
+    for p in planets:
+        n = _safe_text(p.get('name')).upper()
+        sign = _safe_text(p.get('sign')).split()[0] or '-'
+        if n == 'ASC':
+            asc_sign = sign
+        elif n == 'SUN':
+            sun_sign = sign
+        elif n == 'MOON':
+            moon_sign = sign
 
-    rows = []
-    if not planets:
-        rows.append("<tr><td colspan='4' class='pt-role'>主要天体データはありません。</td></tr>")
-    else:
-        for p in planets[:8]:
-            name = html.escape(_safe_text(p.get('name')).upper())
-            sign = html.escape(_safe_text(p.get('sign')))
-            house = html.escape(_safe_text(p.get('house')))
-            note = html.escape(_safe_text(p.get('note')))
-            house_desc = html.escape(_safe_text(p.get('house_desc')))
-            rows.append(f"<tr><td class='pt-name'>{name}</td><td class='pt-sign'>{sign}</td><td class='pt-house'>{house}</td><td class='pt-role'>{note}<span class='pt-house-desc'>{house_desc}</span></td></tr>")
-    tpl = re.sub(r"<tbody>.*?</tbody>", "<tbody>" + ''.join(rows) + "</tbody>", tpl, flags=re.S)
+    vedic_raw = _raw_vedic(payload.get('raw_json') or {})
+    lagna = _safe_text(_dict(vedic_raw.get('ascendant')).get('rashi_name')) or '-'
+    vedic_moon = '-'
+    for p in vedic_raw.get('planets') or []:
+        if isinstance(p, dict) and p.get('name') == 'Moon':
+            vedic_moon = _safe_text(p.get('rashi_name')) or '-'
+            break
+
+    tpl = tpl.replace('ASCENDANT</span>\n      〇〇座', f'ASCENDANT</span>\n      {html.escape(asc_sign)}', 1)
+    tpl = tpl.replace('ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座', f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}')
+    tpl = tpl.replace('ラグナ 〇〇座 ／ 月 〇〇座', f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}')
+
+    # Chart replacements
+    western_chart = ''
+    if payload.get('chart_svg'):
+        western_chart = f"<div class=\"chart-img-wrap round\">{payload['chart_svg']}</div>"
+    elif payload.get('horoscope_image_url'):
+        western_chart = f"<div class=\"chart-img-wrap round\"><img src=\"{html.escape(payload['horoscope_image_url'])}\" alt=\"ホロスコープ\"></div>"
+    if western_chart:
+        tpl = _replace_chart_block(tpl, '西洋チャート画像をここに', western_chart)
+
+    vedic_chart = payload.get('vedic_chart_svg') or ''
+    if vedic_chart:
+        tpl = _replace_chart_block(tpl, 'インドチャート画像をここに', f"<div class=\"chart-img-wrap square\">{vedic_chart}</div>")
+
+    if shichu.get('exists'):
+        shichu_table = render_shichu_table_html(shichu)
+        # replace chart placeholder block in chart section with actual table
+        tpl = _replace_chart_block(tpl, '命式表画像またはテキスト表をここに', shichu_table)
+
+    # tables by template
+    if planets:
+        tpl = _replace_nth_tbody(tpl, _render_planet_rows(planets), 1)
+    if vedic_planets:
+        nth = 2 if planets else 1
+        tpl = _replace_nth_tbody(tpl, _render_planet_rows(vedic_planets), nth)
+    if shichu.get('exists'):
+        shichu_body = re.search(r'<tbody>(.*?)</tbody>', render_shichu_table_html(shichu), flags=re.S)
+        if shichu_body:
+            # first shichu tbody is after planet tables in these templates
+            nth = 1 + (1 if planets else 0) + (1 if vedic_planets else 0)
+            tpl = _replace_nth_tbody(tpl, shichu_body.group(1), nth)
 
     body = _nl2br(sections[0].get('body') if sections else '')
-    tpl = tpl.replace('ここに鑑定文をそのまま貼り付けてください。\n\n改行はそのまま反映されます。段落ごとに空行を入れると読みやすくなります。\n\nさらに長い文章も、このエリアにすべて収まります。', body)
+    tpl = _replace_first_reading_text(tpl, body)
+
+    # second shichu summary section if template has another shichu-table in body area
+    if shichu.get('exists'):
+        matches = list(re.finditer(r'<table class="shicyu-table">.*?</table>', tpl, flags=re.S))
+        if len(matches) >= 2:
+            rendered = render_shichu_table_html(shichu)
+            m = matches[1]
+            tpl = tpl[:m.start()] + rendered + tpl[m.end():]
+        summary_html = render_shichu_summary_html(shichu)
+        if summary_html:
+            # append after first reading block if no dedicated area exists
+            tpl = tpl.replace('</div>\n</section>', '</div>' + summary_html + '\n</section>', 1)
     return tpl
 
 
