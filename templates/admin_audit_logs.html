@@ -1,4 +1,4 @@
 {% extends "platform_base.html" %}{% set title = "監査ログ" %}{% block content %}
-<div class="topnav"><a class="btn secondary" href="/admin/dashboard">ダッシュボード</a></div>
+<div class="topnav"><a class="btn secondary" href="/admin/dashboard">管理画面</a></div>
 <div class="card"><h1>監査ログ</h1><table><thead><tr><th>日時</th><th>操作</th><th>対象</th><th>変更前</th><th>変更後</th></tr></thead><tbody>{% for log in logs %}<tr><td>{{ log.created_at }}</td><td>{{ log.action }}</td><td>{{ log.target_type }} #{{ log.target_id or '-' }}</td><td style="max-width:260px;word-break:break-all">{{ log.before_json or '-' }}</td><td style="max-width:260px;word-break:break-all">{{ log.after_json or '-' }}</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

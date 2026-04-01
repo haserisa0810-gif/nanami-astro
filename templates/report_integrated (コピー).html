@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>西洋×インド統合鑑定 | nanami astro</title>
+<title>統合鑑定レポート | nanami astro</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&family=Noto+Serif+JP:wght@300;400;500&family=Cinzel:wght@400;500&display=swap" rel="stylesheet">
@@ -15,6 +15,7 @@
   --gold:#c9a96e;
   --gold-soft:#e8d5b0;
   --blue:#7a9ab8;
+  --green:#8fa87a;
   --text:#e8e0d4;
   --muted:#b1a59a;
 }
@@ -58,7 +59,6 @@ header{
   letter-spacing:0.05em;
   margin-bottom:8px;
 }
-.report-name em{color:var(--gold-soft);}
 .report-subtitle{font-size:12px;letter-spacing:0.2em;color:var(--muted);margin-top:16px;}
 .report-date-info{
   margin-top:32px; display:flex; justify-content:center; gap:48px;
@@ -87,10 +87,11 @@ header{
 .charts-top{
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:40px;
+  gap:28px;
   align-items:start;
 }
-.chart-block{display:flex;flex-direction:column;gap:14px;min-width:0;}
+.charts-bottom{margin-top:28px;}
+.chart-block{display:flex;flex-direction:column;gap:10px;}
 .chart-label-row{display:flex;align-items:center;gap:10px;margin-bottom:2px;}
 .chart-system-badge{
   font-family:'Cinzel',serif; font-size:8px; letter-spacing:0.35em;
@@ -98,44 +99,23 @@ header{
 }
 .chart-system-badge.western{border-color:rgba(201,169,110,0.35);color:var(--gold);}
 .chart-system-badge.vedic{border-color:rgba(122,154,184,0.35);color:var(--blue);}
+.chart-system-badge.shichu{border-color:rgba(143,168,122,0.35);color:var(--green);}
 .chart-name{font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.25em;color:var(--muted);}
 .chart-img-wrap{
-  position:relative;
   width:100%;
-  background:linear-gradient(180deg, rgba(43,35,58,0.96) 0%, rgba(35,29,46,0.98) 100%);
+  background:var(--card);
   border:1px solid var(--border);
   overflow:hidden;
   display:flex; align-items:center; justify-content:center;
   padding:14px;
 }
-.chart-img-wrap::before{
-  content:'';
-  position:absolute;
-  inset:10px;
-  border:1px solid rgba(180,150,100,0.10);
-  pointer-events:none;
-}
-.chart-img-wrap.round{height:260px;}
-.chart-img-wrap.square{height:300px;}
-.chart-img-wrap img{
-  position:relative;
-  z-index:1;
-  max-width:100%;
-  max-height:100%;
-  width:auto;
-  height:auto;
-  object-fit:contain;
-  display:block;
-  filter:brightness(0.96) contrast(1.04);
-}
-.chart-img-wrap.round img{max-height:88%;}
-.chart-img-wrap.square img{max-height:100%;}
-.chart-placeholder-icon{position:relative;z-index:1;font-size:28px;color:var(--border);}
-.chart-placeholder-label{position:relative;z-index:1;font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.3em;color:var(--muted);}
-.chart-placeholder-note{position:relative;z-index:1;font-size:10px;color:rgba(177,165,154,0.5);letter-spacing:0.05em;}
+.chart-img-wrap.round{height:320px;}
+.chart-img-wrap.square{height:320px;}
+.chart-img-wrap.wide{min-height:220px;}
+.chart-img-wrap img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
 .chart-caption{font-size:10px;color:var(--muted);letter-spacing:0.1em;text-align:center;}
 .reading-text{font-size:14px;line-height:2.15;color:var(--text);white-space:pre-line;}
-.planet-table{width:100%;border-collapse:collapse;}
+.planet-table,.shichu-table{width:100%;border-collapse:collapse;}
 .planet-table tr{border-bottom:1px solid rgba(180,150,100,0.07);}
 .planet-table tr:last-child{border-bottom:none;}
 .planet-table td{padding:13px 8px;vertical-align:top;font-size:13px;}
@@ -155,6 +135,22 @@ header{
 }
 .system-heading-label.western{color:var(--gold);}
 .system-heading-label.vedic{color:var(--blue);}
+.system-heading-label.shichu{color:var(--green);}
+.shichu-wrap{
+  background:rgba(35,29,46,0.48);
+  border:1px solid var(--border);
+  padding:14px;
+}
+.shichu-table td,.shichu-table th{
+  padding:10px 12px; border:1px solid var(--border);
+  font-size:12px; text-align:center; vertical-align:middle;
+}
+.shichu-table th{
+  font-family:'Cinzel',serif; font-size:9px; letter-spacing:0.2em;
+  color:var(--green); font-weight:400; background:rgba(143,168,122,0.06);
+}
+.shichu-table td{color:var(--text);}
+.shichu-table td.muted{color:var(--muted);font-size:11px;}
 footer{
   position:relative; z-index:1;
   text-align:center; padding:48px;
@@ -162,16 +158,16 @@ footer{
 }
 .footer-logo{font-family:'Cinzel',serif;font-size:14px;letter-spacing:0.25em;color:var(--gold);margin-bottom:12px;}
 .footer-note{font-size:11px;color:var(--muted);letter-spacing:0.1em;line-height:1.8;}
-@media (max-width:820px){
+
+@media (max-width: 820px){
   .charts-top{grid-template-columns:1fr;}
 }
-@media (max-width:640px){
+@media (max-width: 640px){
   header{padding:32px 20px 28px;flex-direction:column;align-items:flex-start;gap:12px;}
   .report-hero{padding:56px 20px 48px;}
   .report-date-info{flex-direction:column;gap:16px;}
   .section,.charts-section{padding:48px 20px;}
-  .chart-img-wrap.round{height:240px;}
-  .chart-img-wrap.square{height:280px;}
+  .chart-img-wrap.round,.chart-img-wrap.square{height:280px;}
   footer{padding:40px 20px;}
 }
 </style>
@@ -182,14 +178,14 @@ footer{
 <header>
   <div class="logo">nanami astro</div>
   <div class="report-meta">
-    <span>WESTERN × VEDIC</span><br>
+    <span>INTEGRATED READING</span><br>
     <span>鑑定日：{{REPORT_DATE}}</span>
   </div>
 </header>
 
 <div class="report-hero">
-  <span class="report-tag">WESTERN × VEDIC REPORT</span>
-  <h1 class="report-name">〇〇 さまの<br><em>西洋+インド占星術統合鑑定</em></h1>
+  <span class="report-tag">INTEGRATED READING REPORT</span>
+  <h1 class="report-name">{{CUSTOMER_NAME}} さまの<br><em>{{REPORT_TITLE}}</em></h1>
   <p class="report-subtitle">{{REPORT_SUBTITLE}}</p>
   <div class="report-date-info">
     <div class="report-date-item">
@@ -231,6 +227,8 @@ footer{
       <div class="chart-caption">{{VEDIC_CAPTION}}</div>
     </div>
   </div>
+
+  {{SHICHU_SECTION}}
 </div>
 
 <div class="section">
@@ -260,12 +258,14 @@ footer{
   <table class="planet-table">
     <tbody>{{VEDIC_ROWS}}</tbody>
   </table>
+
+  {{SHICHU_DATA_SECTION}}
 </div>
 
 <footer>
   <div class="footer-logo">nanami astro</div>
   <p class="footer-note">
-    本レポートは占星術に基づく参考情報です。将来の出来事を保証するものではありません。<br>
+    本レポートは占星術・四柱推命に基づく参考情報です。将来の出来事を保証するものではありません。<br>
     ご自身の判断と責任のもとでご活用ください。
   </p>
 </footer>

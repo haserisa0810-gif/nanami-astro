@@ -7,7 +7,7 @@ import json
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from db import get_db
@@ -20,13 +20,37 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 
+def _normalize_free_link_code(text: str | None) -> str | None:
+    value = (text or '').strip().upper()
+    if not value:
+        return None
+    import re
+    m = re.search(r'(F-[A-Z0-9-]+|A[A-Z0-9]{6,})', value)
+    return m.group(1) if m else None
+
+
+def _find_source_free_order(db: Session, code: str | None):
+    normalized = _normalize_free_link_code(code)
+    if not normalized:
+        return None
+    return db.scalar(
+        select(Order).where(
+            Order.order_kind == "free",
+            or_(
+                Order.free_reading_code == normalized,
+                Order.order_code == normalized,
+            ),
+        )
+    )
+
+
 @router.get("/menu", response_class=HTMLResponse)
 def menu_page(request: Request, db: Session = Depends(get_db), free_reading_code: str | None = None):
     menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
     initial_free_order = None
     if free_reading_code:
-        initial_free_order = db.scalar(select(Order).where(Order.free_reading_code == free_reading_code, Order.order_kind == "free"))
-    return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": None, "prefecture_options": PREFECTURE_OPTIONS, "initial_free_order": initial_free_order, "initial_free_reading_code": free_reading_code})
+        initial_free_order = _find_source_free_order(db, free_reading_code)
+    return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": None, "prefecture_options": PREFECTURE_OPTIONS, "initial_free_order": initial_free_order, "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code})
 
 
 @router.get("/order/start", response_class=HTMLResponse)
@@ -56,17 +80,15 @@ def create_order_page(
         birth_date_obj = date.fromisoformat(birth_date)
     except ValueError:
         menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
-        return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": "生年月日の形式が正しくありません。", "prefecture_options": PREFECTURE_OPTIONS, "initial_free_reading_code": free_reading_code, "initial_free_order": None}, status_code=400)
+        return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": "生年月日の形式が正しくありません。", "prefecture_options": PREFECTURE_OPTIONS, "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code, "initial_free_order": None}, status_code=400)
 
     customer = None
 
     location = resolve_birth_location((birth_prefecture or '').strip() or None, (birth_place or '').strip() or None)
     if user_contact:
         customer = get_or_create_customer(db, display_name=user_name.strip(), email=user_contact.strip() if "@" in user_contact else None)
-    source_free_order = None
     free_reading_code = (free_reading_code or '').strip().upper() or None
-    if free_reading_code:
-        source_free_order = db.scalar(select(Order).where(Order.free_reading_code == free_reading_code, Order.order_kind == 'free'))
+    source_free_order = _find_source_free_order(db, free_reading_code)
     order = create_order(
         db,
         menu=menu,

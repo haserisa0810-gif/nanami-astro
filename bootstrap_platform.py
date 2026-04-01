@@ -14,6 +14,17 @@ from models import AdminUser, AppSetting, Astrologer, Menu
 load_dotenv()
 
 
+def _safe_seed_password(raw: str | None) -> str:
+    return (raw or "").strip()
+
+
+def _can_hash_password(raw: str | None) -> bool:
+    value = _safe_seed_password(raw)
+    return bool(value) and len(value.encode("utf-8")) <= 72
+
+
+def _true_env(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _ensure_order_free_columns() -> None:
@@ -67,6 +78,18 @@ def _ensure_order_location_columns() -> None:
         for name, ddl in required.items():
             if name not in columns:
                 conn.execute(text(ddl))
+
+
+def _ensure_order_staff_memo_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {col["name"] for col in inspector.get_columns("orders")}
+    except Exception:
+        return
+    if "staff_memo" in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN staff_memo TEXT"))
 
 
 
@@ -175,6 +198,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_order_free_columns()
     _ensure_order_location_columns()
+    _ensure_order_staff_memo_column()
     _ensure_astrologer_line_columns()
     _ensure_staff_security_columns()
     _ensure_yaml_log_columns()
@@ -203,18 +227,23 @@ def seed_defaults(db: Session) -> None:
             )
 
     admin_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
-    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin1234")
+    admin_password = _safe_seed_password(os.getenv("DEFAULT_ADMIN_PASSWORD", "admin1234"))
     admin_name = os.getenv("DEFAULT_ADMIN_NAME", "運営管理者")
-    if not db.scalar(select(AdminUser).where(AdminUser.login_email == admin_email)):
-        db.add(
-            AdminUser(
-                login_email=admin_email,
-                password_hash=hash_password(admin_password),
-                display_name=admin_name,
-                is_active=True,
-                is_temp_password=True,
+    if not db.scalar(select(AdminUser).where(AdminUser.login_email == admin_email)) and _can_hash_password(admin_password):
+        try:
+            db.add(
+                AdminUser(
+                    login_email=admin_email,
+                    password_hash=hash_password(admin_password),
+                    display_name=admin_name,
+                    is_active=True,
+                    is_temp_password=True,
+                )
             )
-        )
+        except Exception as exc:
+            print(f"[bootstrap] skip default admin seed: {exc}")
+    elif not _can_hash_password(admin_password):
+        print("[bootstrap] skip default admin seed: invalid password length")
 
     default_settings = {
         "line_session_prune_minutes": str(int(os.getenv("LINE_SESSION_TTL_SECONDS", str(60 * 60 * 6))) // 60),
@@ -227,21 +256,27 @@ def seed_defaults(db: Session) -> None:
             db.add(AppSetting(key=key, value=value))
 
     reader_email = os.getenv("DEFAULT_READER_EMAIL", "reader@example.com")
-    reader_password = os.getenv("DEFAULT_READER_PASSWORD", "reader1234")
+    reader_password = _safe_seed_password(os.getenv("DEFAULT_READER_PASSWORD", "reader1234"))
     reader_name = os.getenv("DEFAULT_READER_NAME", "七海先生")
-    if not db.scalar(select(Astrologer).where(Astrologer.login_email == reader_email)):
-        db.add(
-            Astrologer(
-                display_name=reader_name,
-                login_email=reader_email,
-                password_hash=hash_password(reader_password),
-                is_temp_password=True,
-                status="active",
-                commission_rate=60.00,
-                line_accepting_enabled=True,
-                line_accepting_status="open",
+    enable_default_reader_seed = _true_env("ENABLE_DEFAULT_READER_SEED", "false")
+    if enable_default_reader_seed and not db.scalar(select(Astrologer).where(Astrologer.login_email == reader_email)) and _can_hash_password(reader_password):
+        try:
+            db.add(
+                Astrologer(
+                    display_name=reader_name,
+                    login_email=reader_email,
+                    password_hash=hash_password(reader_password),
+                    is_temp_password=True,
+                    status="active",
+                    commission_rate=60.00,
+                    line_accepting_enabled=True,
+                    line_accepting_status="open",
+                )
             )
-        )
+        except Exception as exc:
+            print(f"[bootstrap] skip default reader seed: {exc}")
+    elif enable_default_reader_seed and not _can_hash_password(reader_password):
+        print("[bootstrap] skip default reader seed: invalid password length")
 
     db.commit()
 

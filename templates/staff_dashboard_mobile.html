@@ -36,7 +36,7 @@
 </div>
 <div class="card">
   <h2>最近の案件</h2>
-  <div class="orders-desktop desktop-only table-scroll">
+  <div class="desktop-only table-scroll">
     <table>
       <thead><tr><th>注文ID</th><th>種別</th><th>顧客</th><th>商品</th><th>状態</th><th>担当</th><th>作成日時</th></tr></thead>
       <tbody>
@@ -54,7 +54,7 @@
       </tbody>
     </table>
   </div>
-  <div class="orders-mobile mobile-only mobile-list">
+  <div class="mobile-only mobile-list">
     {% for order in recent_orders %}
     <div class="mobile-item">
       <div style="font-weight:700;margin-bottom:10px"><a href="/staff/orders/{{ order.order_code }}">{{ order.order_code }}</a></div>
@@ -71,12 +71,3 @@
   </div>
 </div>
 {% endblock %}
-
-<style>
-.orders-mobile{display:none !important;}
-.orders-desktop{display:block !important;}
-@media (max-width:768px){
-  .orders-desktop{display:none !important;}
-  .orders-mobile{display:grid !important;}
-}
-</style>

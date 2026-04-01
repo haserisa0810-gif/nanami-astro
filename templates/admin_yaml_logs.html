@@ -1,4 +1,4 @@
 {% extends "platform_base.html" %}{% set title = "YAMLログ" %}{% block content %}
-<div class="topnav"><a class="btn secondary" href="/admin/dashboard">ダッシュボード</a><a class="btn secondary" href="/admin/customers">顧客一覧</a></div>
+<div class="topnav"><a class="btn secondary" href="/admin/dashboard">管理画面</a><a class="btn secondary" href="/admin/customers">顧客一覧</a></div>
 <div class="card"><h1>YAMLログ</h1><table><thead><tr><th>注文ID</th><th>顧客</th><th>作成日</th><th>本文</th></tr></thead><tbody>{% for log in logs %}<tr><td>{{ log.order.order_code if log.order else '-' }}</td><td>{{ log.customer.display_name if log.customer else (log.order.user_name if log.order else '-') }}</td><td>{{ log.created_at }}</td><td><pre style="white-space:pre-wrap">{{ log.yaml_body }}</pre></td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

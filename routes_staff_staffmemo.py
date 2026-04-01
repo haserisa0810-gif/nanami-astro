@@ -302,21 +302,24 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
         result_status_label = '完了'
     editor_seed_text = ""
     editor_seed_source = "empty"
-    linked_free_order = getattr(order, 'source_free_order', None)
-    receipt_line = f"受付番号: {order.order_code}" if order.order_kind == "free" and order.order_code else ""
+    source_free_code = (order.source_free_order.free_reading_code or '').strip() if getattr(order, 'source_free_order', None) else ''
+    own_free_code = (order.free_reading_code or '').strip() if order.order_kind == "free" else ''
+    free_code_for_seed = source_free_code or own_free_code
 
     if delivery and delivery.delivery_text and 'DEBUG' not in delivery.delivery_text and '空文字' not in delivery.delivery_text:
         editor_seed_text = delivery.delivery_text
-        if receipt_line and receipt_line not in editor_seed_text:
-            editor_seed_text = editor_seed_text.rstrip() + f"\n\n{receipt_line}"
+        if free_code_for_seed and f"無料鑑定ID: {free_code_for_seed}" not in editor_seed_text:
+            editor_seed_text = editor_seed_text.rstrip() + f"\n\n無料鑑定ID: {free_code_for_seed}"
         editor_seed_source = "delivery"
     elif order.order_kind == "free" and (order.free_result_text or '').strip():
         editor_seed_text = (order.free_result_text or '').strip()
-        if receipt_line and receipt_line not in editor_seed_text:
-            editor_seed_text = editor_seed_text.rstrip() + f"\n\n{receipt_line}"
+        if free_code_for_seed and f"無料鑑定ID: {free_code_for_seed}" not in editor_seed_text:
+            editor_seed_text = editor_seed_text.rstrip() + f"\n\n無料鑑定ID: {free_code_for_seed}"
         editor_seed_source = "free_result"
-    elif linked_free_order and (linked_free_order.free_result_text or '').strip():
-        editor_seed_text = (linked_free_order.free_result_text or '').strip()
+    elif getattr(order, 'source_free_order', None) and (order.source_free_order.free_result_text or '').strip():
+        editor_seed_text = (order.source_free_order.free_result_text or '').strip()
+        if free_code_for_seed and f"無料鑑定ID: {free_code_for_seed}" not in editor_seed_text:
+            editor_seed_text = editor_seed_text.rstrip() + f"\n\n無料鑑定ID: {free_code_for_seed}"
         editor_seed_source = "source_free_result"
 
     return templates.TemplateResponse(

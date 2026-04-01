@@ -89,6 +89,8 @@ def build_delivery_completed_user_message(order: Order, *, mode: str = "delivery
     payload = _extract_result_payload(order)
     delivery_text = _latest_delivery_text(order)
     result_url = build_order_result_url(order)
+    is_free_order = (getattr(order, "order_kind", "") or "").strip() == "free"
+    free_reading_code = (getattr(order, "free_reading_code", None) or "").strip()
 
     # mode の解釈:
     #   "delivery"     → 本文テキストのみ送る（URLなし）
@@ -117,6 +119,13 @@ def build_delivery_completed_user_message(order: Order, *, mode: str = "delivery
         extra_lines.append("【主要な星配置】\n" + planet_text)
     if include_url:
         extra_lines.append("【ホロスコープ図・ハウス解説・鑑定書】\n" + result_url)
+    if is_free_order and free_reading_code:
+        extra_lines.append(
+            "【無料鑑定ID】\n"
+            f"{free_reading_code}\n\n"
+            "有料鑑定をご希望の場合は、LINEのお申込み時にこの無料鑑定IDをそのまま送ってください。\n"
+            "今回の内容を引き継いでご案内しやすくなります。"
+        )
 
     parts = [f"{opening}\n予約番号【{order.order_code}】"]
     if include_text and main_body:

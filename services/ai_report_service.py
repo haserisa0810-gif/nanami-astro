@@ -7,6 +7,7 @@ from db import get_session
 from models import Case
 from services.ai_report import call_gemini_report
 from services.prompt_builder import build_report_prompt
+from services.punctuation_fixer import fix_punctuation  # 先頭のimportに追加
 
 
 def _hash_text(value: str) -> str:
@@ -53,6 +54,9 @@ def generate_ai_report_for_case(case_id: int, force: bool = False) -> str:
         prompt_hash = _hash_text(prompt)
 
         report_text = call_gemini_report(prompt)
+        
+        # ↓ これを追加
+        report_text = fix_punctuation(report_text)
 
         case.ai_report_text = report_text
         case.ai_report_status = "completed"

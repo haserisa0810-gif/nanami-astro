@@ -6,6 +6,7 @@ FastAPI のルート定義のみを担当する薄い層。
 from __future__ import annotations
 
 import os
+import re
 import traceback
 from pathlib import Path
 from typing import Any, Literal
@@ -69,6 +70,44 @@ def _calc_helpers():
     from services.transit_calc import calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot
     from services.western_calc import calc_western_from_payload
     return calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot, calc_western_from_payload
+
+
+def _parse_jsonish_response(raw: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    cleaned = (raw or "").strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    if cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    candidates: list[str] = []
+    if cleaned:
+        candidates.append(cleaned)
+        start_obj = cleaned.find('{')
+        end_obj = cleaned.rfind('}')
+        if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
+            candidates.append(cleaned[start_obj:end_obj+1])
+        start_arr = cleaned.find('[')
+        end_arr = cleaned.rfind(']')
+        if start_arr != -1 and end_arr != -1 and end_arr > start_arr:
+            candidates.append(cleaned[start_arr:end_arr+1])
+
+    for cand in candidates:
+        try:
+            parsed = json.loads(cand)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                return {**fallback, "items": parsed}
+        except Exception:
+            pass
+
+    merged = dict(fallback)
+    merged.setdefault("raw_text", raw or "")
+    merged["summary"] = cleaned or merged.get("summary") or "生成結果を取得できませんでした。"
+    return merged
 
 AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3"]
 AnalysisType = Literal["single", "compatibility"]
@@ -1008,33 +1047,19 @@ async def daily_theme_generate(request: Request):
             report_type="raw_prompt",
         )
 
-        cleaned = (raw or "").strip()
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:]
-        if cleaned.startswith("```"):
-            cleaned = cleaned[3:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        cleaned = cleaned.strip()
-
-        result: dict[str, Any]
-        try:
-            result = json.loads(cleaned)
-        except Exception:
-            result = {
-                "period": period,
-                "axis": axis,
-                "date": snapshot.get("transit_date", date_str or ""),
-                "summary": cleaned or "生成結果を取得できませんでした。",
-                "core_themes": [],
-                "push": [],
-                "caution": [],
-                "recommended_actions": [],
-                "avoid_actions": [],
-                "social_post": "",
-                "type_translation_axis": "",
-                "raw_text": raw or "",
-            }
+        result = _parse_jsonish_response(raw, {
+            "period": period,
+            "axis": axis,
+            "date": snapshot.get("transit_date", date_str or ""),
+            "summary": "生成結果を取得できませんでした。",
+            "core_themes": [],
+            "push": [],
+            "caution": [],
+            "recommended_actions": [],
+            "avoid_actions": [],
+            "social_post": "",
+            "type_translation_axis": "",
+        })
 
         result.setdefault("period", period)
         result.setdefault("axis", axis)

@@ -341,15 +341,10 @@
     }
 
     .tri-chart-grid {
-      margin: 12px 0 20px;
-    }
-    .tri-chart-grid-top {
       display:grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 16px;
-    }
-    .tri-chart-grid-bottom {
-      margin-top: 16px;
+      margin: 12px 0 20px;
     }
     .tri-chart-card {
       border:1px solid #e7ded5;
@@ -393,25 +388,6 @@
       overflow:auto;
     }
     .tri-chart-stage svg { width:100%; height:auto; display:block; }
-    .tri-chart-stage.vedic-stage {
-      min-height: 360px;
-      padding: 8px;
-    }
-    .tri-chart-stage.shichu-stage {
-      min-height: 260px;
-      padding: 14px;
-    }
-    .tri-chart-stage.vedic-stage svg {
-      width: 100%;
-      max-width: 420px;
-      margin: 0 auto;
-    }
-    .tri-chart-stage.shichu-stage table {
-      width: 100%;
-    }
-    @media (max-width: 920px) {
-      .tri-chart-grid-top { grid-template-columns: 1fr; }
-    }
     .tri-chart-empty { color:#8c94a3; font-size:13px; }
     .mini-card {
       padding: 18px;
@@ -806,27 +782,23 @@
 
         <h2>チャート一覧</h2>
         <div class="tri-chart-grid">
-          <div class="tri-chart-grid-top">
-            <div class="tri-chart-card">
-              <div class="tri-chart-title"><span class="tri-chart-badge western">WESTERN</span> 西洋占星術</div>
-              <div class="tri-chart-stage">
-                <svg id="westernChart" viewBox="0 0 720 720" role="img" aria-label="ホロスコープチャート"></svg>
-              </div>
-              <div id="westernLegend" class="chip-list" style="margin-top:10px;"></div>
+          <div class="tri-chart-card">
+            <div class="tri-chart-title"><span class="tri-chart-badge western">WESTERN</span> 西洋占星術</div>
+            <div class="tri-chart-stage">
+              <svg id="westernChart" viewBox="0 0 720 720" role="img" aria-label="ホロスコープチャート"></svg>
             </div>
-            <div class="tri-chart-card">
-              <div class="tri-chart-title"><span class="tri-chart-badge vedic">VEDIC</span> インド占星術</div>
-              <div id="vedicChart" class="tri-chart-stage vedic-stage">
-                <div class="tri-chart-empty">インド占星術チャートを読み込み中です。</div>
-              </div>
-              <div id="vedicLegend" class="chip-list" style="margin-top:10px;"></div>
-            </div>
+            <div id="westernLegend" class="chip-list" style="margin-top:10px;"></div>
           </div>
-          <div class="tri-chart-grid-bottom">
-            <div class="tri-chart-card">
-              <div class="tri-chart-title"><span class="tri-chart-badge shichu">四柱推命</span> 命式表</div>
-              <div id="shichuVisual" class="tri-chart-stage shichu-stage"></div>
+          <div class="tri-chart-card">
+            <div class="tri-chart-title"><span class="tri-chart-badge vedic">VEDIC</span> インド占星術</div>
+            <div id="vedicChart" class="tri-chart-stage">
+              <div class="tri-chart-empty">インド占星術チャートを読み込み中です。</div>
             </div>
+            <div id="vedicLegend" class="chip-list" style="margin-top:10px;"></div>
+          </div>
+          <div class="tri-chart-card">
+            <div class="tri-chart-title"><span class="tri-chart-badge shichu">四柱推命</span> 命式表</div>
+            <div id="shichuVisual" class="tri-chart-stage"></div>
           </div>
         </div>
 
@@ -1344,14 +1316,14 @@
     for(var signNo=1; signNo<=12; signNo++){
       var b=boxes[signNo], bx0=b[0], by0=b[1], bx1=b[2], by1=b[3], cx=(bx0+bx1)/2, cy=(by0+by1)/2;
       var signLabel=signJp[signNo-1], houseNo=houseBySign[signNo], items=occ[signNo]||[];
-      parts.push('<text x="'+(bx0+8)+'" y="'+(by0+18)+'" fill="rgba(56,93,132,0.92)" font-size="12" font-weight="600">'+signNo+'</text>');
-      parts.push('<text x="'+(bx1-8)+'" y="'+(by0+18)+'" text-anchor="end" fill="#6b7280" font-size="11" font-weight="600">'+houseNo+'H</text>');
-      parts.push('<text x="'+cx+'" y="'+(cy-16)+'" text-anchor="middle" fill="#1f2937" font-size="16" font-weight="700">'+escapeHtml(signLabel)+'</text>');
-      items.slice(0,4).forEach(function(line,idx){ parts.push('<text x="'+cx+'" y="'+(cy+10+idx*16)+'" text-anchor="middle" fill="#334155" font-size="12" font-weight="600">'+escapeHtml(line)+'</text>'); });
-      if(signNo===ascNo) parts.push('<text x="'+cx+'" y="'+(by1-10)+'" text-anchor="middle" fill="rgba(56,93,132,0.98)" font-size="12" font-weight="700">Lagna</text>');
+      parts.push('<text x="'+(bx0+8)+'" y="'+(by0+16)+'" fill="rgba(56,93,132,0.92)" font-size="11">'+signNo+'</text>');
+      parts.push('<text x="'+(bx1-8)+'" y="'+(by0+16)+'" text-anchor="end" fill="#6b7280" font-size="10">'+houseNo+'H</text>');
+      parts.push('<text x="'+cx+'" y="'+(cy-12)+'" text-anchor="middle" fill="#1f2937" font-size="13">'+escapeHtml(signLabel)+'</text>');
+      items.slice(0,4).forEach(function(line,idx){ parts.push('<text x="'+cx+'" y="'+(cy+6+idx*14)+'" text-anchor="middle" fill="#334155" font-size="11">'+escapeHtml(line)+'</text>'); });
+      if(signNo===ascNo) parts.push('<text x="'+cx+'" y="'+(by1-8)+'" text-anchor="middle" fill="rgba(56,93,132,0.98)" font-size="11">Lagna</text>');
     }
-    parts.push('<text x="'+xm+'" y="'+(ym-10)+'" text-anchor="middle" fill="rgba(56,93,132,0.95)" font-size="16" font-weight="700">RASHI CHART</text>');
-    parts.push('<text x="'+xm+'" y="'+(ym+16)+'" text-anchor="middle" fill="#64748b" font-size="12">South Indian style / Lahiri</text>');
+    parts.push('<text x="'+xm+'" y="'+(ym-8)+'" text-anchor="middle" fill="rgba(56,93,132,0.95)" font-size="14">RASHI CHART</text>');
+    parts.push('<text x="'+xm+'" y="'+(ym+14)+'" text-anchor="middle" fill="#64748b" font-size="11">South Indian style / Lahiri</text>');
     parts.push('</svg>');
     root.innerHTML=parts.join('');
     legend.innerHTML=src.planets.slice(0,10).map(function(p){

@@ -131,6 +131,7 @@ class Order(TimestampMixin, Base):
     location_note: Mapped[Optional[str]] = mapped_column(String(255))
     gender: Mapped[Optional[str]] = mapped_column(String(20))
     consultation_text: Mapped[Optional[str]] = mapped_column(Text)
+    staff_memo: Mapped[Optional[str]] = mapped_column(Text)
     menu_id: Mapped[int] = mapped_column(ForeignKey("menus.id"), nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending_payment", nullable=False, index=True)

@@ -5,16 +5,27 @@ import os
 from datetime import date
 import re
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 
 from db import SessionLocal
 from models import Menu, Order
 from services.order_service import create_order, get_or_create_customer
 from services.location import infer_prefecture_name, resolve_birth_location
-import os
 
 _START_WORDS = {'予約', '予約したい', '申し込み', '申込み', '鑑定したい', '鑑定申し込み'}
+
+_COURSE_OPTIONS = {
+    '1': {'key': 'light', 'name': 'ライト鑑定', 'price': 3000, 'description': '西洋占星術'},
+    '2': {'key': 'standard', 'name': 'スタンダード鑑定', 'price': 5000, 'description': '相性鑑定 または 西洋+インド'},
+    '3': {'key': 'premium', 'name': 'じっくり鑑定', 'price': 10000, 'description': '西洋+インド+四柱推命'},
+}
+
+_COURSE_INPUT_MAP = {
+    '1': '1', 'ライト': '1', 'ライト鑑定': '1', '3000': '1', '3,000': '1', '３０００': '1',
+    '2': '2', 'スタンダード': '2', 'スタンダード鑑定': '2', '5000': '2', '5,000': '2', '５０００': '2',
+    '3': '3', 'じっくり': '3', 'じっくり鑑定': '3', '10000': '3', '10,000': '3', '１００００': '3',
+}
 
 
 def should_start_order(text: str | None) -> bool:
@@ -40,46 +51,52 @@ def get_order_by_code(order_code: str | None) -> Order | None:
 def correction_select_prompt() -> str:
     return (
         '修正したい項目の番号を送ってください。\n\n'
-        '1. お名前\n'
-        '2. 生年月日\n'
-        '3. 出生時間\n'
-        '4. 出生地\n'
-        '5. 性別\n'
-        '6. ご相談内容\n\n'
+        '1. コース\n'
+        '2. お名前\n'
+        '3. 生年月日\n'
+        '4. 出生時間\n'
+        '5. 出生地\n'
+        '6. 性別\n'
+        '7. ご相談内容\n\n'
         'キャンセルする場合は「キャンセル」と送ってください。'
     )
 
 
 def apply_correction_to_order(order_code: str | None, field_code: str, new_value: str) -> tuple[bool, str]:
-    """DBのorderを直接上書きする。戻り値: (success, display_label)"""
     if not order_code or field_code not in _EDITABLE_FIELDS:
         return False, ''
-    field_key, label = _EDITABLE_FIELDS[field_code]
+    _, label = _EDITABLE_FIELDS[field_code]
     with SessionLocal() as db:
         order = db.query(Order).filter(Order.order_code == order_code).first()
         if not order:
             return False, label
         value = (new_value or '').strip()
         if field_code == '1':
+            menu = _resolve_menu_for_course(db, _normalize_course(value))
+            if not menu:
+                return False, label
+            order.menu = menu
+            order.price = menu.price
+        elif field_code == '2':
             if not value:
                 return False, label
             order.user_name = value
-        elif field_code == '2':
+        elif field_code == '3':
             normalized = _normalize_birth_date(value)
             if not normalized:
                 return False, label
             from datetime import date as _date
             order.birth_date = _date.fromisoformat(normalized)
-        elif field_code == '3':
-            order.birth_time = None if value in {'', '不明', 'わからない', '不詳'} else value
         elif field_code == '4':
-            order.birth_place = None if value in {'', '不明', 'わからない', '不詳'} else value
+            order.birth_time = None if value in {'', '不明', 'わからない', '不詳'} else value
         elif field_code == '5':
+            order.birth_place = None if value in {'', '不明', 'わからない', '不詳'} else value
+        elif field_code == '6':
             normalized = _normalize_gender(value)
             if not normalized:
                 return False, label
             order.gender = normalized
-        elif field_code == '6':
+        elif field_code == '7':
             order.consultation_text = None if value in {'', 'なし', '特になし', '不要', '未記入'} else value
         db.commit()
         return True, label
@@ -102,29 +119,54 @@ def append_correction_note(order_code: str | None, message_text: str) -> bool:
 def _start_prompt() -> str:
     return (
         'ご予約ありがとうございます。\n'
-        '以下をまとめて1通で送ってください。\n\n'
+        '以下を1通でまとめて送ってください（改行あり・なしどちらでもOKです）\n\n'
+        '【コース】1 / 2 / 3\n'
+        '1. ライト鑑定（3,000円）西洋占星術\n'
+        '2. スタンダード鑑定（5,000円）相性鑑定 または 総合鑑定（西洋占星術+インド占星術）\n'
+        '3. じっくり鑑定（10,000円）西洋占星術+インド占星術+四柱推命\n\n'
         '【お名前】\n'
-        '【生年月日】 例: 1976-08-10 または 19760810\n'
-        '【出生時間】 不明可\n'
-        '【出生地】 不明可\n'
-        '【性別】 女性 / 男性 / その他 / 回答しない\n'
-        '【ご相談内容】 任意\n\n'
-        '例\n'
-        '【お名前】山田花子\n'
-        '【生年月日】19760810\n'
-        '【出生時間】14:30\n'
-        '【出生地】東京都\n'
-        '【性別】女性\n'
-        '【ご相談内容】仕事運を見てほしい'
+        '【生年月日】1976-08-10 または 19760810\n'
+        '【出生時間】不明可\n'
+        '【出生地】不明可\n'
+        '【性別】女性 / 男性 / その他 / 回答しない\n'
+        '【ご相談内容】任意\n'
+        '※5,000円の相性鑑定をご希望の場合は、ご相談内容に以下もあわせてご記入ください。\n'
+        '　お相手の生年月日 / 出生時間（不明可） / 出生地（不明可） / 関係性\n'
+        '【無料鑑定ID または 受付番号】お持ちなら任意'
     )
 
 
+_COURSE_LABELS = ('コース', 'プラン', 'メニュー', '鑑定コース')
 _DATE_LABELS = ('生年月日', '誕生日', '生年月')
 _NAME_LABELS = ('お名前', '名前', '氏名')
 _TIME_LABELS = ('出生時間', '生まれた時間', '生誕時間', '時間')
 _PLACE_LABELS = ('出生地', '生まれた場所', '生誕地', '場所')
 _GENDER_LABELS = ('性別',)
 _CONSULT_LABELS = ('ご相談内容', '相談内容', '相談', 'ご質問', '質問')
+_FREE_ID_LABELS = ('無料鑑定ID', '無料鑑定id', '無料ID', 'フリーID', '受付番号')
+
+
+def _normalize_free_link_code(text: str | None) -> str | None:
+    value = (text or '').strip().upper()
+    if not value:
+        return None
+    m = re.search(r'(F-[A-Z0-9-]+|A[A-Z0-9]{6,})', value)
+    return m.group(1) if m else None
+
+
+def _find_source_free_order(db, code: str | None) -> Order | None:
+    normalized = _normalize_free_link_code(code)
+    if not normalized:
+        return None
+    return db.scalar(
+        select(Order).where(
+            Order.order_kind == 'free',
+            or_(
+                Order.free_reading_code == normalized,
+                Order.order_code == normalized,
+            ),
+        )
+    )
 
 
 def _normalize_birth_date(text: str | None) -> str | None:
@@ -140,7 +182,6 @@ def _normalize_birth_date(text: str | None) -> str | None:
     return value
 
 
-
 def _normalize_gender(text: str | None) -> str | None:
     value = (text or '').strip()
     mapping = {
@@ -152,9 +193,35 @@ def _normalize_gender(text: str | None) -> str | None:
     return mapping.get(value.lower(), mapping.get(value))
 
 
+def _normalize_course(text: str | None) -> str | None:
+    value = (text or '').strip()
+    if not value:
+        return None
+    return _COURSE_INPUT_MAP.get(value.lower(), _COURSE_INPUT_MAP.get(value))
+
+
+def _course_label(course_code: str | None) -> str:
+    item = _COURSE_OPTIONS.get(str(course_code or ''))
+    if not item:
+        return '未選択'
+    return f"{item['name']}（¥{item['price']:,}）"
+
 
 def _extract_labeled_value(text: str, labels: tuple[str, ...]) -> str | None:
-    lines = [ln.strip() for ln in (text or '').replace('：', ':').splitlines()]
+    raw = (text or '').replace('：', ':')
+    for label in labels:
+        patterns = [
+            rf'【{re.escape(label)}】\s*(.*?)(?=(?:\s*【[^】]+】)|$)',
+            rf'{re.escape(label)}\s*:\s*(.*?)(?=(?:\s*【[^】]+】)|$)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, raw, flags=re.DOTALL)
+            if match:
+                value = match.group(1).strip()
+                if value:
+                    return value
+
+    lines = [ln.strip() for ln in raw.splitlines()]
     normalized = [ln for ln in lines if ln]
     for i, line in enumerate(normalized):
         for label in labels:
@@ -175,18 +242,35 @@ def _extract_labeled_value(text: str, labels: tuple[str, ...]) -> str | None:
     return None
 
 
+def _extract_free_reading_code(text: str) -> str | None:
+    labeled = _extract_labeled_value(text, _FREE_ID_LABELS)
+    normalized = _normalize_free_link_code(labeled)
+    if normalized:
+        return normalized
+    return _normalize_free_link_code(text)
+
 
 def _parse_bundle_input(text: str) -> tuple[dict, list[str], list[str]]:
-    draft = {}
-    missing = []
-    errors = []
+    draft: dict[str, object] = {}
+    missing: list[str] = []
+    errors: list[str] = []
 
+    course = _extract_labeled_value(text, _COURSE_LABELS)
     name = _extract_labeled_value(text, _NAME_LABELS)
     birth_date = _extract_labeled_value(text, _DATE_LABELS)
     birth_time = _extract_labeled_value(text, _TIME_LABELS)
     birth_place = _extract_labeled_value(text, _PLACE_LABELS)
     gender = _extract_labeled_value(text, _GENDER_LABELS)
     consultation = _extract_labeled_value(text, _CONSULT_LABELS)
+    free_reading_code = _extract_free_reading_code(text)
+
+    normalized_course = _normalize_course(course)
+    if not course:
+        missing.append('コース')
+    elif not normalized_course:
+        errors.append('コースは 1 / 2 / 3 のいずれかで入力してください。')
+    else:
+        draft['course_code'] = normalized_course
 
     if not name:
         missing.append('お名前')
@@ -220,6 +304,8 @@ def _parse_bundle_input(text: str) -> tuple[dict, list[str], list[str]]:
         draft['gender'] = normalized_gender
 
     draft['consultation_text'] = None if (consultation or '').strip() in {'', 'なし', '特になし', '不要', '未記入'} else consultation
+    if free_reading_code:
+        draft['free_reading_code'] = free_reading_code
     return draft, missing, errors
 
 
@@ -233,35 +319,42 @@ def _resume_prompt(state: str) -> str:
 
 
 _EDITABLE_FIELDS = {
-    '1': ('user_name', 'お名前'),
-    '2': ('birth_date', '生年月日'),
-    '3': ('birth_time', '出生時間'),
-    '4': ('birth_place', '出生地'),
-    '5': ('gender', '性別'),
-    '6': ('consultation_text', 'ご相談内容'),
+    '1': ('course_code', 'コース'),
+    '2': ('user_name', 'お名前'),
+    '3': ('birth_date', '生年月日'),
+    '4': ('birth_time', '出生時間'),
+    '5': ('birth_place', '出生地'),
+    '6': ('gender', '性別'),
+    '7': ('consultation_text', 'ご相談内容'),
 }
 
 
 def _confirm_message(draft: dict) -> str:
     gender_map = {'1': '女性', '2': '男性', '3': 'その他', '4': '回答しない'}
-    consultation = (draft.get('consultation_text') or '').strip() or '未記入（総合鑑定）'
+    consultation = (draft.get('consultation_text') or '').strip() or '未記入'
+    free_part = ''
+    if (draft.get('free_reading_code') or '').strip():
+        free_part = f"【無料鑑定ID / 受付番号】\n{draft.get('free_reading_code')}\n\n"
     return (
         'ありがとうございます。\n以下の内容で予約受付します。\n\n'
+        f"【コース】\n{_course_label(draft.get('course_code'))}\n\n"
         f"【お名前】\n{draft.get('user_name','-')}\n\n"
         f"【生年月日】\n{draft.get('birth_date','-')}\n\n"
         f"【出生時間】\n{draft.get('birth_time') or '不明'}\n\n"
         f"【出生地】\n{draft.get('birth_place') or '不明'}\n\n"
         f"【性別】\n{gender_map.get(draft.get('gender',''), '未指定')}\n\n"
+        + free_part +
         f"【ご相談内容】\n{consultation}\n\n"
         'よろしければ「確定」と送ってください。\n'
         '修正したい場合は次から選んでください。\n\n'
-        '1. 名前\n'
-        '2. 生年月日\n'
-        '3. 出生時間\n'
-        '4. 出生地\n'
-        '5. 性別\n'
-        '6. ご相談内容\n'
-        '7. 最初からやり直す'
+        '1. コース\n'
+        '2. 名前\n'
+        '3. 生年月日\n'
+        '4. 出生時間\n'
+        '5. 出生地\n'
+        '6. 性別\n'
+        '7. ご相談内容\n'
+        '8. 最初からやり直す'
     )
 
 
@@ -274,17 +367,20 @@ def _edit_prompt(field_code: str, draft: dict) -> str:
     current_value = draft.get(field_key)
     gender_map = {'1': '女性', '2': '男性', '3': 'その他', '4': '回答しない'}
     display_value = current_value or '未入力'
-    if field_key == 'gender':
+    if field_key == 'course_code':
+        display_value = _course_label(current_value)
+    elif field_key == 'gender':
         display_value = gender_map.get(str(current_value or ''), '未入力')
     elif field_key == 'consultation_text':
-        display_value = (current_value or '').strip() or '未記入（総合鑑定）'
+        display_value = (current_value or '').strip() or '未記入'
     instructions = {
-        '1': '新しいお名前をそのまま送ってください。',
-        '2': '新しい生年月日を送ってください。例: 1976-08-10 または 19760810',
-        '3': '新しい出生時間を送ってください。不明の場合は「不明」で大丈夫です。',
-        '4': '新しい出生地を送ってください。不明の場合は「不明」で大丈夫です。',
-        '5': '性別を送ってください。女性 / 男性 / その他 / 回答しない',
-        '6': '新しいご相談内容を送ってください。不要なら「なし」で大丈夫です。',
+        '1': 'コースを送ってください。1 / 2 / 3',
+        '2': '新しいお名前をそのまま送ってください。',
+        '3': '新しい生年月日を送ってください。例: 1976-08-10 または 19760810',
+        '4': '新しい出生時間を送ってください。不明の場合は「不明」で大丈夫です。',
+        '5': '新しい出生地を送ってください。不明の場合は「不明」で大丈夫です。',
+        '6': '性別を送ってください。女性 / 男性 / その他 / 回答しない',
+        '7': '新しいご相談内容を送ってください。不要なら「なし」で大丈夫です。',
     }
     return (
         f'【{label}】を修正します。\n'
@@ -298,40 +394,76 @@ def _apply_single_field_edit(field_code: str, raw_value: str, draft: dict) -> tu
     value = (raw_value or '').strip()
     updated = dict(draft)
     if field_code == '1':
+        normalized = _normalize_course(value)
+        if not normalized:
+            return None, 'コースは 1 / 2 / 3 のいずれかで入力してください。'
+        updated['course_code'] = normalized
+        return updated, None
+    if field_code == '2':
         if not value:
             return None, 'お名前が空です。もう一度送ってください。'
         updated['user_name'] = value
         return updated, None
-    if field_code == '2':
+    if field_code == '3':
         normalized = _normalize_birth_date(value)
         if not normalized:
             return None, '生年月日は 1976-08-10 または 19760810 の形で入力してください。'
         updated['birth_date'] = normalized
         return updated, None
-    if field_code == '3':
+    if field_code == '4':
         updated['birth_time'] = None if value in {'', '不明', 'わからない', '不詳'} else value
         return updated, None
-    if field_code == '4':
+    if field_code == '5':
         updated['birth_place'] = None if value in {'', '不明', 'わからない', '不詳'} else value
         return updated, None
-    if field_code == '5':
+    if field_code == '6':
         normalized = _normalize_gender(value)
         if not normalized:
             return None, '性別は 女性 / 男性 / その他 / 回答しない のいずれかで入力してください。'
         updated['gender'] = normalized
         return updated, None
-    if field_code == '6':
+    if field_code == '7':
         updated['consultation_text'] = None if value in {'', 'なし', '特になし', '不要', '未記入'} else value
         return updated, None
     return None, '修正項目を認識できませんでした。'
 
 
-def _resolve_default_menu(db) -> Menu | None:
-    preferred_name = (os.getenv('LINE_DEFAULT_MENU_NAME') or '総合鑑定').strip()
-    menu = db.scalar(select(Menu).where(Menu.name == preferred_name, Menu.is_active == True))
-    if menu:
-        return menu
-    return db.scalar(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc()))
+def _resolve_menu_for_course(db, course_code: str | None) -> Menu | None:
+    course = _COURSE_OPTIONS.get(str(course_code or ''))
+    if not course:
+        return None
+
+    preferred_names = {
+        '1': ['ライト鑑定', '西洋占星術鑑定'],
+        '2': ['スタンダード鑑定', '相性・西洋インド鑑定'],
+        '3': ['じっくり鑑定', '統合鑑定'],
+    }.get(str(course_code), [])
+
+    for name in preferred_names:
+        menu = db.scalar(select(Menu).where(Menu.name == name, Menu.is_active == True))
+        if menu:
+            return menu
+
+    neutral_name = course['name']
+    existing = db.scalar(select(Menu).where(Menu.name == neutral_name))
+    if existing:
+        existing.price = int(course['price'])
+        existing.description = str(course['description'])
+        existing.lead_time_hours = 48 if str(course_code) in {'1', '2'} else 72
+        existing.is_active = True
+        db.flush()
+        return existing
+
+    new_menu = Menu(
+        name=neutral_name,
+        description=str(course['description']),
+        price=int(course['price']),
+        lead_time_hours=48 if str(course_code) in {'1', '2'} else 72,
+        is_active=True,
+    )
+    db.add(new_menu)
+    db.flush()
+    return new_menu
 
 
 def handle_order_message(
@@ -346,6 +478,8 @@ def handle_order_message(
 
     if text == 'キャンセル':
         return '今回の受付はキャンセルしました。\nまた必要になったら「予約」と送ってください。', {'state': 'idle', 'draft_order': {}}, True, None
+    if should_start_order(text):
+        return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
     if text == 'やり直し':
         return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
     if text == '続き':
@@ -354,25 +488,25 @@ def handle_order_message(
         return _resume_prompt(state), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
 
     if state in {'idle', 'completed'}:
-        if not should_start_order(text):
-            return _not_started_message(), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
-        return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
+        return _not_started_message(), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
 
     if state == 'input_bundle':
         parsed_draft, missing, errors = _parse_bundle_input(text)
         if missing or errors:
-            parts = []
+            parts: list[str] = []
             if missing:
                 parts.append('未入力: ' + ' / '.join(missing))
             if errors:
                 parts.extend(errors)
-            parts.append('\n次の形式でまとめて送ってください。')
+            parts.append('\n次の形式でまとめて送ってください。改行なしでも大丈夫です。')
+            parts.append('【コース】1 / 2 / 3')
             parts.append('【お名前】')
-            parts.append('【生年月日】 例: 1976-08-10 または 19760810')
-            parts.append('【出生時間】 不明可')
-            parts.append('【出生地】 不明可')
-            parts.append('【性別】 女性 / 男性 / その他 / 回答しない')
-            parts.append('【ご相談内容】 任意')
+            parts.append('【生年月日】1976-08-10 または 19760810')
+            parts.append('【出生時間】不明可')
+            parts.append('【出生地】不明可')
+            parts.append('【性別】女性 / 男性 / その他 / 回答しない')
+            parts.append('【ご相談内容】任意')
+            parts.append('【無料鑑定ID または 受付番号】任意')
             return '\n'.join(parts), {'state': 'input_bundle', 'draft_order': draft}, False, None
         draft.update(parsed_draft)
         return _confirm_message(draft), {'state': 'confirm', 'draft_order': draft}, False, None
@@ -389,7 +523,7 @@ def handle_order_message(
         return _confirm_message(updated_draft), {'state': 'confirm', 'draft_order': updated_draft}, False, None
 
     if state == 'confirm':
-        if text == '7':
+        if text == '8':
             return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
         if text in _EDITABLE_FIELDS:
             return _edit_prompt(text, draft), {'state': 'edit_field', 'draft_order': draft, 'edit_field': text}, False, None
@@ -397,16 +531,18 @@ def handle_order_message(
             return '「確定」と送るか、修正番号を送ってください。', {'state': state, 'draft_order': draft}, False, None
 
         with SessionLocal() as db:
-            menu = _resolve_default_menu(db)
+            menu = _resolve_menu_for_course(db, draft.get('course_code'))
             if not menu:
-                return 'メニュー情報の取得に失敗しました。最初からやり直してください。', {'state': 'input_bundle', 'draft_order': {}}, False, None
+                return 'コース情報の取得に失敗しました。最初からやり直してください。', {'state': 'input_bundle', 'draft_order': {}}, False, None
             customer = get_or_create_customer(db, display_name=draft.get('user_name') or line_display_name, line_user_id=user_id)
             location = resolve_birth_location(infer_prefecture_name(draft.get('birth_place')), draft.get('birth_place'))
+            free_reading_code = (draft.get('free_reading_code') or '').strip().upper()
+            source_free_order = _find_source_free_order(db, free_reading_code)
             order = create_order(
                 db,
                 menu=menu,
                 user_name=draft.get('user_name') or (line_display_name or 'LINEユーザー'),
-                birth_date=date.fromisoformat(draft['birth_date']),
+                birth_date=date.fromisoformat(str(draft['birth_date'])),
                 user_contact=user_id,
                 birth_time=draft.get('birth_time'),
                 birth_prefecture=location.get('birth_prefecture'),
@@ -424,11 +560,14 @@ def handle_order_message(
                 status='pending_payment',
                 inputs_json=json.dumps(draft, ensure_ascii=False),
             )
+            if source_free_order:
+                order.source_free_order_id = source_free_order.id
             db.commit()
             base_url = (os.getenv('BASE_URL') or '').rstrip('/')
             payment_link = f"{base_url}/payment/{order.order_code}" if base_url else f"/payment/{order.order_code}"
             reply = (
                 f'ご予約ありがとうございます。\n予約番号は【{order.order_code}】です。\n\n'
+                f'コース: {_course_label(draft.get("course_code"))}\n\n'
                 'ご入力内容は受付済みです。\n'
                 'こちらからお申し込みをお願いいたします。\n\n'
                 f'{payment_link}\n\n'

@@ -306,16 +306,12 @@ def _replace_nth_tbody(tpl: str, body_html: str, nth: int) -> str:
     return tpl[:m.start()] + "<tbody>" + body_html + "</tbody>" + tpl[m.end():]
 
 
-def _replace_table_after_heading(tpl: str, heading_label: str, body_html: str, table_class: str = 'planet-table') -> str:
-    pattern = re.compile(
-        rf'(\<span class="system-heading-label[^"]*">{re.escape(heading_label)}\</span>.*?\<table class="{re.escape(table_class)}">\s*\<tbody\>)(.*?)(\</tbody\>)',
-        flags=re.S,
-    )
-    return pattern.sub(rf'\1{body_html}\3', tpl, count=1)
-
-
 def _replace_first_reading_text(tpl: str, body_html: str) -> str:
-    return re.sub(r'<div class="reading-text">.*?</div>', f'<div class="reading-text">{body_html}</div>', tpl, count=1, flags=re.S)
+    if '{{INTEGRATED_READING}}' in tpl:
+        return tpl.replace('{{INTEGRATED_READING}}', body_html, 1)
+    tpl = re.sub(r'<div class="reading-text">.*?</div>', f'<div class="reading-text">{body_html}</div>', tpl, count=1, flags=re.S)
+    tpl = re.sub(r'<p class="reading-text">.*?</p>', f'<p class="reading-text">{body_html}</p>', tpl, count=1, flags=re.S)
+    return tpl
 
 
 def _render_planet_rows(planets: list[dict[str, Any]]) -> str:
@@ -467,6 +463,7 @@ def render_report_html(order: Order, payload: dict[str, Any]) -> str:
         birth_label += f" {order.birth_time}"
     place_label = ' '.join([v for v in [order.birth_prefecture, order.birth_place] if v]) or '-'
 
+    # title and header system labels
     tpl = tpl.replace('鑑定日：20XX年XX月XX日', f"鑑定日：{html.escape(_safe_text(getattr(order, 'updated_at', '') or ''))}") if getattr(order, 'updated_at', None) else tpl
     tpl = tpl.replace('19XX年XX月XX日 XX:XX', html.escape(birth_label), 1)
     tpl = tpl.replace('〇〇県〇〇市', html.escape(place_label), 1)
@@ -489,7 +486,7 @@ def render_report_html(order: Order, payload: dict[str, Any]) -> str:
     lagna = _safe_text(_dict(vedic_raw.get('ascendant')).get('rashi_name')) or '-'
     vedic_moon = '-'
     for p in vedic_raw.get('planets') or []:
-        if isinstance(p, dict) and _safe_text(p.get('name')).lower() == 'moon':
+        if isinstance(p, dict) and p.get('name') == 'Moon':
             vedic_moon = _safe_text(p.get('rashi_name')) or '-'
             break
 
@@ -497,66 +494,34 @@ def render_report_html(order: Order, payload: dict[str, Any]) -> str:
     tpl = tpl.replace('ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座', f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}')
     tpl = tpl.replace('ラグナ 〇〇座 ／ 月 〇〇座', f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}')
 
-    western_chart = ''
+    # Chart replacements
     if payload.get('chart_svg'):
-        western_chart = f'<div class="chart-img-wrap round">{payload["chart_svg"]}</div>'
+        western_chart = f"<div class=\"chart-img-wrap round\">{payload['chart_svg']}</div>"
     elif payload.get('horoscope_image_url'):
-        western_chart = f'<div class="chart-img-wrap round"><img src="{html.escape(payload["horoscope_image_url"])}" alt="ホロスコープ"></div>'
+        western_chart = f"<div class=\"chart-img-wrap round\"><img src=\"{html.escape(payload['horoscope_image_url'])}\" alt=\"ホロスコープ\"></div>"
+    else:
+        western_chart = '<div class="chart-img-wrap round"><div class="chart-placeholder-label">NO DATA</div></div>'
 
-    vedic_chart = ''
-    if payload.get('vedic_chart_svg'):
-        vedic_chart = f'<div class="chart-img-wrap square">{payload["vedic_chart_svg"]}</div>'
+    vedic_chart_svg = payload.get('vedic_chart_svg') or ''
+    vedic_chart = f"<div class=\"chart-img-wrap square\">{vedic_chart_svg}</div>" if vedic_chart_svg else '<div class="chart-img-wrap square"><div class="chart-placeholder-label">NO DATA</div></div>'
 
-    shichu_chart = ''
     if shichu.get('exists'):
-        shichu_chart = render_shichu_table_html(shichu)
+        shichu_data_table = render_shichu_table_html(shichu)
+        shichu_chart = f'<div class="shichu-chart-wrap">{shichu_data_table}</div>'
+    else:
+        shichu_data_table = '<table class="shicyu-table"><tbody><tr><td>データはありません。</td></tr></tbody></table>'
+        shichu_chart = '<div class="chart-img-wrap wide"><div class="chart-placeholder-label">NO DATA</div></div>'
 
-    # explicit placeholder replacement first
-    placeholders = {
-        '{{WESTERN_CHART_BLOCK}}': western_chart,
-        '{{VEDIC_CHART_BLOCK}}': vedic_chart,
-        '{{SHICHU_CHART_BLOCK}}': shichu_chart,
-        '{{WESTERN_ROWS}}': _render_planet_rows(planets),
-        '{{VEDIC_ROWS}}': _render_planet_rows(vedic_planets),
-        '{{SHICHU_DATA_TABLE}}': render_shichu_table_html(shichu) if shichu.get('exists') else '',
-        '{{INTEGRATED_READING}}': _nl2br(sections[0].get('body') if sections else ''),
-    }
-    for key, val in placeholders.items():
-        if key in tpl:
-            tpl = tpl.replace(key, val or '')
+    tpl = tpl.replace('{{WESTERN_CHART_BLOCK}}', western_chart, 1)
+    tpl = tpl.replace('{{VEDIC_CHART_BLOCK}}', vedic_chart, 1)
+    tpl = tpl.replace('{{SHICHU_CHART_BLOCK}}', shichu_chart, 1)
 
-    # legacy chart placeholder replacement
-    if western_chart:
-        tpl = _replace_chart_block(tpl, '西洋チャート画像をここに', western_chart)
-    if vedic_chart:
-        tpl = _replace_chart_block(tpl, 'インドチャート画像をここに', vedic_chart)
-    if shichu_chart:
-        tpl = _replace_chart_block(tpl, '命式表画像またはテキスト表をここに', shichu_chart)
-
-    # robust section-specific table replacement for legacy templates
-    if planets:
-        tpl = _replace_table_after_heading(tpl, 'WESTERN ASTROLOGY', _render_planet_rows(planets), 'planet-table')
-    if vedic_planets:
-        tpl = _replace_table_after_heading(tpl, 'VEDIC ASTROLOGY', _render_planet_rows(vedic_planets), 'planet-table')
-    if shichu.get('exists'):
-        shichu_body = re.search(r'<tbody>(.*?)</tbody>', render_shichu_table_html(shichu), flags=re.S)
-        if shichu_body:
-            tpl = _replace_table_after_heading(tpl, '四柱推命', shichu_body.group(1), 'shicyu-table')
+    tpl = tpl.replace('{{WESTERN_ROWS}}', _render_planet_rows(planets), 1)
+    tpl = tpl.replace('{{VEDIC_ROWS}}', _render_planet_rows(vedic_planets), 1)
+    tpl = tpl.replace('{{SHICHU_DATA_TABLE}}', shichu_data_table, 1)
 
     body = _nl2br(sections[0].get('body') if sections else '')
     tpl = _replace_first_reading_text(tpl, body)
-    tpl = re.sub(r'<p class="reading-text">.*?</p>', f'<p class="reading-text">{body}</p>', tpl, count=1, flags=re.S)
-
-    if shichu.get('exists'):
-        matches = list(re.finditer(r'<table class="shicyu-table">.*?</table>', tpl, flags=re.S))
-        if len(matches) >= 2:
-            rendered = render_shichu_table_html(shichu)
-            m = matches[1]
-            tpl = tpl[:m.start()] + rendered + tpl[m.end():]
-        summary_html = render_shichu_summary_html(shichu)
-        if summary_html and '</div>\n</section>' in tpl:
-            tpl = tpl.replace('</div>\n</section>', '</div>' + summary_html + '\n</section>', 1)
-
     return tpl
 
 

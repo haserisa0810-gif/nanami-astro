@@ -27,13 +27,8 @@
     .stat{background:#faf8f5;border:1px solid #eee2d5;border-radius:16px;padding:16px}
     .code{font-family:ui-monospace,SFMono-Regular,monospace;background:#faf8f5;border:1px solid #eee2d5;border-radius:8px;padding:2px 6px}
     .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-    .mobile-only{display:none !important}
-    .desktop-only{display:block !important}
-    .mobile-list{display:grid;gap:12px}
-    .mobile-item{border:1px solid #e7e1d9;border-radius:14px;padding:14px;background:#fff}
-    .mobile-item .label{font-size:12px;color:#666;margin-bottom:2px}
-    .mobile-item .value{font-size:14px;word-break:break-word}
-    .mobile-grid{display:grid;grid-template-columns:92px 1fr;gap:8px 12px;align-items:start}
+    .mobile-only{display:none}
+    .desktop-only{display:block}
     @media (max-width: 768px){
       .wrap{margin:16px auto;padding:0 12px}
       .card{padding:16px;border-radius:16px}
@@ -44,9 +39,13 @@
       button,.btn{padding:10px 14px}
       .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
       .table-scroll table{min-width:720px}
-      .desktop-only{display:none !important}
-      .mobile-only{display:block !important}
-      .mobile-grid{grid-template-columns:86px 1fr;gap:8px 10px}
+      .desktop-only{display:none}
+      .mobile-only{display:block}
+      .mobile-list{display:grid;gap:12px}
+      .mobile-item{border:1px solid #e7e1d9;border-radius:14px;padding:14px;background:#fff}
+      .mobile-item .label{font-size:12px;color:#666;margin-bottom:2px}
+      .mobile-item .value{font-size:14px;word-break:break-word}
+      .mobile-grid{display:grid;grid-template-columns:92px 1fr;gap:8px 12px;align-items:start}
     }
   </style>
 </head>

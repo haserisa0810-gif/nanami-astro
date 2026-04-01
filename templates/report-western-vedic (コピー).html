@@ -80,7 +80,7 @@ header {
 /* ===== 図セクション ===== */
 .charts-section {
   position: relative; z-index: 1;
-  max-width: 980px; margin: 0 auto;
+  max-width: 820px; margin: 0 auto;
   padding: 72px 48px;
   border-bottom: 1px solid var(--border);
 }
@@ -88,19 +88,18 @@ header {
 /* 上段：西洋＋インド 横並び */
 .charts-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 40px;
-  align-items: start;
-  margin-bottom: 36px;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 32px;
 }
 
 /* 下段：四柱 横幅フル */
 .charts-bottom { }
 
-.chart-block { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.chart-block { display: flex; flex-direction: column; gap: 12px; }
 
 .chart-label-row {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
 }
 .chart-system-badge {
   font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.35em;
@@ -117,44 +116,29 @@ header {
 /* プレースホルダー／実画像共通ラッパー */
 .chart-img-wrap {
   position: relative;
-  width: 100%;
-  background: linear-gradient(180deg, rgba(43,35,58,0.96) 0%, rgba(35,29,46,0.98) 100%);
+  background: var(--card);
   border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
   overflow: hidden;
-  padding: 14px;
 }
-.chart-img-wrap::before {
-  content: '';
-  position: absolute;
-  inset: 10px;
-  border: 1px solid rgba(180,150,100,0.10);
-  pointer-events: none;
-}
-.chart-img-wrap.round  { height: 260px; }
-.chart-img-wrap.square { height: 300px; }
-.chart-img-wrap.wide   { min-height: 220px; padding: 18px 20px; }
+/* 西洋（円）：正方形 */
+.chart-img-wrap.round  { aspect-ratio: 1; }
+/* インド（正方形グリッド）：正方形 */
+.chart-img-wrap.square { aspect-ratio: 1; }
+/* 四柱（命式表）：横長 */
+.chart-img-wrap.wide   { aspect-ratio: 16/7; min-height: 120px; }
 
 .chart-img-wrap img {
-  position: relative;
-  z-index: 1;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
+  width: 100%; height: 100%;
   object-fit: contain;
   display: block;
-  filter: brightness(0.96) contrast(1.04);
+  filter: brightness(0.95) contrast(1.05);
 }
-.chart-img-wrap.round img  { max-height: 88%; }
-.chart-img-wrap.square img { max-height: 100%; }
-.chart-img-wrap.wide img   { max-height: 100%; width: 100%; object-fit: contain; }
-
-.chart-placeholder-icon  { position: relative; z-index: 1; font-size: 28px; color: var(--border); }
-.chart-placeholder-label { position: relative; z-index: 1; font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
-.chart-placeholder-note  { position: relative; z-index: 1; font-size: 10px; color: rgba(177,165,154,0.5); letter-spacing: 0.05em; }
+.chart-placeholder-icon  { font-size: 28px; color: var(--border); }
+.chart-placeholder-label { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
+.chart-placeholder-note  { font-size: 10px; color: rgba(177,165,154,0.5); letter-spacing: 0.05em; }
 
 .chart-caption { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-align: center; }
 
@@ -203,19 +187,6 @@ header {
 .shicyu-table td { color: var(--text); }
 .shicyu-table td.muted { color: var(--muted); font-size: 11px; }
 
-
-.shichu-chart-wrap {
-  width: 100%;
-  background: linear-gradient(180deg, rgba(35,29,46,0.98) 0%, rgba(24,20,32,0.98) 100%);
-  border: 1px solid var(--border);
-  padding: 18px 20px;
-}
-.shichu-chart-wrap .shicyu-table {
-  margin: 0;
-  table-layout: fixed;
-}
-.shichu-chart-wrap + .chart-caption { margin-top: 12px; }
-
 /* フッター */
 footer {
   position: relative; z-index: 1;
@@ -230,10 +201,8 @@ footer {
   .report-hero { padding: 56px 20px 48px; }
   .report-date-info { flex-direction: column; gap: 16px; }
   .charts-section, .section { padding: 48px 20px; }
-  .charts-top { grid-template-columns: 1fr; gap: 28px; }
-  .chart-img-wrap.round { height: 240px; }
-  .chart-img-wrap.square { height: 280px; }
-  .chart-img-wrap.wide { min-height: 200px; }
+  .charts-top { grid-template-columns: 1fr; gap: 24px; }
+  .chart-img-wrap.wide { aspect-ratio: 4/3; }
   footer { padding: 40px 20px; }
 }
 </style>
@@ -245,16 +214,16 @@ footer {
 <header>
   <div class="logo">nanami astro</div>
   <div class="report-meta">
-    <span>INTEGRATED READING</span><br>
+    <span>WESTERN × VEDIC</span><br>
     <span>鑑定日：20XX年XX月XX日</span>
   </div>
 </header>
 
 <!-- タイトル -->
 <div class="report-hero">
-  <span class="report-tag">INTEGRATED READING REPORT</span>
-  <h1 class="report-name">〇〇 さまの<br><em>三占術統合鑑定</em></h1>
-  <p class="report-subtitle">西洋占星術 ✦ インド占星術 ✦ 四柱推命</p>
+  <span class="report-tag">WESTERN × VEDIC REPORT</span>
+  <h1 class="report-name">〇〇 さまの<br><em>西洋×インド統合鑑定</em></h1>
+  <p class="report-subtitle">西洋占星術 ✦ インド占星術</p>
   <div class="report-date-info">
     <div class="report-date-item">
       <span class="report-date-label">BIRTH</span>
@@ -277,34 +246,41 @@ footer {
   <h2 class="section-title">チャート</h2>
   <div class="divider"></div>
 
+  <!-- 上段：西洋＋インド -->
   <div class="charts-top">
+
+    <!-- 西洋占星術 -->
     <div class="chart-block">
       <div class="chart-label-row">
         <span class="chart-system-badge western">WESTERN</span>
         <span class="chart-name">ホロスコープ</span>
       </div>
-      {{WESTERN_CHART_BLOCK}}
+      <div class="chart-img-wrap round">
+        <!-- 画像差し替え: <img src="western.png" alt="ホロスコープ"> -->
+        <div class="chart-placeholder-icon">◯</div>
+        <div class="chart-placeholder-label">HOROSCOPE</div>
+        <div class="chart-placeholder-note">西洋チャート画像をここに</div>
+      </div>
       <p class="chart-caption">ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座</p>
     </div>
 
+    <!-- インド占星術 -->
     <div class="chart-block">
       <div class="chart-label-row">
         <span class="chart-system-badge vedic">VEDIC</span>
         <span class="chart-name">ラーシチャート</span>
       </div>
-      {{VEDIC_CHART_BLOCK}}
+      <div class="chart-img-wrap square">
+        <!-- 画像差し替え: <img src="vedic.png" alt="ラーシチャート"> -->
+        <div class="chart-placeholder-icon">⊞</div>
+        <div class="chart-placeholder-label">RASHI CHART</div>
+        <div class="chart-placeholder-note">インドチャート画像をここに</div>
+      </div>
       <p class="chart-caption">ラグナ 〇〇座 ／ 月 〇〇座</p>
     </div>
+
   </div>
 
-  <div class="charts-bottom">
-    <div class="chart-block">
-      <div class="chart-label-row">
-        <span class="chart-system-badge shicyu">四柱推命</span>
-        <span class="chart-name">命式表</span>
-      </div>
-      {{SHICHU_CHART_BLOCK}}
-    </div>
   </div>
 </div>
 
@@ -313,7 +289,9 @@ footer {
   <span class="section-label">READING</span>
   <h2 class="section-title">統合鑑定</h2>
   <div class="divider"></div>
-  <div class="reading-text">{{INTEGRATED_READING}}</div>
+  <p class="reading-text">ここに統合鑑定文をそのまま貼り付けてください。
+
+改行はそのまま反映されます。段落ごとに空行を入れると読みやすくなります。</p>
 </div>
 
 <!-- 天体・命式データ -->
@@ -327,7 +305,52 @@ footer {
     <span class="system-heading-label western">WESTERN ASTROLOGY</span>
     <div class="system-heading-line"></div>
   </div>
-  <table class="planet-table"><tbody>{{VEDIC_ROWS}}</tbody></table>
+  <table class="planet-table">
+    <tbody>
+      <tr>
+        <td class="pt-name">SUN</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">人生のテーマ・自己表現<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">MOON</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">感情・安心感のパターン<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">MERCURY</td>
+        <td class="pt-sign">〇〇座</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">思考・コミュニケーション<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">VENUS</td>
+        <td class="pt-sign">〇〇座</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">愛情表現・価値観<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">MARS</td>
+        <td class="pt-sign">〇〇座</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">行動力・エネルギー<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">ASC</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">1ハウス</td>
+        <td class="pt-role">第一印象・外への出方<span class="pt-house-desc">1H：外見・第一印象・自己の出方の領域</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">MC</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">10ハウス</td>
+        <td class="pt-role">社会的な方向性・キャリア<span class="pt-house-desc">10H：社会的地位・職業・使命の領域</span></td>
+      </tr>
+    </tbody>
+  </table>
 
   <!-- インド占星術 -->
   <div class="system-heading">
@@ -375,19 +398,13 @@ footer {
     </tbody>
   </table>
 
-  <!-- 四柱推命 -->
-  <div class="system-heading">
-    <span class="system-heading-label shicyu">四柱推命</span>
-    <div class="system-heading-line"></div>
-  </div>
-  {{SHICHU_DATA_TABLE}}
 
 </div>
 
 <footer>
   <div class="footer-logo">nanami astro</div>
   <p class="footer-note">
-    本レポートは占星術・四柱推命に基づく参考情報です。将来の出来事を保証するものではありません。<br>
+    本レポートは占星術に基づく参考情報です。将来の出来事を保証するものではありません。<br>
     ご自身の判断と責任のもとでご活用ください。
   </p>
 </footer>

@@ -154,7 +154,7 @@ def process_free_reading(order_id: int) -> None:
             order.result_html = render_result_html(payload)
             order.free_result_text = report_web.strip()
             order.ai_status = 'completed'
-            update_order_status(db, order, to_status='completed', actor_type='system', note='free reading completed')
+            # 無料鑑定はAI生成完了後も手動で完了管理できるよう、order.status は自動で completed にしない
             db.add(YamlLog(
                 order_id=order.id,
                 customer_id=order.customer_id,
