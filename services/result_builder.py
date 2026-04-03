@@ -102,6 +102,28 @@ def _raw_vedic(raw: dict[str, Any]) -> dict[str, Any]:
     return vedic if isinstance(vedic, dict) else raw if raw.get('system') == 'vedic' else {}
 
 
+def _is_compatibility_raw(raw: dict[str, Any]) -> bool:
+    return isinstance(raw.get('personA'), dict) and isinstance(raw.get('personB'), dict)
+
+
+def _compat_people(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    if _is_compatibility_raw(raw):
+        return _dict(raw.get('personA')), _dict(raw.get('personB'))
+    return {}, {}
+
+
+def _format_birth_label(value: Any, birth_time: Any = None) -> str:
+    text = _safe_text(value).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        y, m, d = text.split('-')
+        text = f"{y}年{m}月{d}日"
+    if birth_time:
+        bt = _safe_text(birth_time).strip()
+        if bt:
+            text = (text + f" {bt}").strip()
+    return text or '-'
+
+
 def _planet_items(raw: dict[str, Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     western = _raw_western(raw)
@@ -173,7 +195,7 @@ def _chart_svg(raw: dict[str, Any], size: int = 520) -> str:
     outer = size * 0.42
     mid = size * 0.34
     inner = size * 0.16
-    parts = [f"<svg viewBox='0 0 {size} {size}' width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>"]
+    parts = [f"<svg viewBox='0 0 {size} {size}' width='{size}' height='{size}' style='display:block;max-width:100%;height:auto' xmlns='http://www.w3.org/2000/svg'>"]
     parts.append("<defs><filter id='glow'><feGaussianBlur stdDeviation='2.2' result='b'/><feMerge><feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>")
     parts.append(f"<circle cx='{cx}' cy='{cy}' r='{outer}' fill='none' stroke='rgba(201,169,110,0.72)' stroke-width='1.5'/>")
     parts.append(f"<circle cx='{cx}' cy='{cy}' r='{mid}' fill='none' stroke='rgba(201,169,110,0.34)' stroke-width='1'/>")
@@ -221,6 +243,131 @@ def _chart_svg(raw: dict[str, Any], size: int = 520) -> str:
         sym = PLANET_SYMBOLS.get(_safe_text(p.get('name')), _safe_text(p.get('name'))[:2])
         parts.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='16' fill='rgba(41,33,58,0.96)' stroke='rgba(201,169,110,0.66)' stroke-width='1.7' filter='url(#glow)'/>")
         parts.append(f"<text x='{x:.1f}' y='{y+1:.1f}' text-anchor='middle' dominant-baseline='middle' fill='rgba(232,224,212,0.98)' font-size='16'>{html.escape(sym)}</text>")
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
+def _synastry_aspects(person_a: dict[str, Any], person_b: dict[str, Any]) -> list[dict[str, Any]]:
+    a_map = { _safe_text(p.get('name')): p for p in _planet_items(person_a) if _safe_text(p.get('name')) }
+    b_map = { _safe_text(p.get('name')): p for p in _planet_items(person_b) if _safe_text(p.get('name')) }
+    preferred = [
+        ('Sun', 'Moon'), ('Moon', 'Sun'), ('Venus', 'Mars'), ('Mars', 'Venus'),
+        ('Sun', 'ASC'), ('ASC', 'Sun'), ('Moon', 'Moon'), ('MC', 'MC'),
+    ]
+    aspect_defs = [
+        ('Conjunction', 0, 7), ('Sextile', 60, 5), ('Square', 90, 6),
+        ('Trine', 120, 6), ('Opposition', 180, 7),
+    ]
+    found: list[dict[str, Any]] = []
+    for left, right in preferred:
+        pa = a_map.get(left)
+        pb = b_map.get(right)
+        if not pa or not pb:
+            continue
+        la = pa.get('lon')
+        lb = pb.get('lon')
+        if la is None or lb is None:
+            continue
+        diff = abs((float(la) - float(lb) + 180.0) % 360.0 - 180.0)
+        hit = None
+        for label, target, orb in aspect_defs:
+            if abs(diff - target) <= orb:
+                hit = (label, target)
+                break
+        if not hit:
+            continue
+        found.append({
+            'planet1': left, 'planet2': right, 'aspect': hit[0], 'angle': hit[1], 'diff': round(diff, 1),
+        })
+        if len(found) >= 4:
+            break
+    return found
+
+
+def _synastry_chart_svg(person_a: dict[str, Any], person_b: dict[str, Any], size: int = 520) -> str:
+    planets_a = _planet_items(person_a)
+    planets_b = _planet_items(person_b)
+    if not planets_a or not planets_b:
+        return ''
+    cx = cy = size / 2
+    outer = size * 0.42
+    sign_r = size * 0.34
+    house_r = size * 0.26
+    outer_planet_r = size * 0.29
+    inner_planet_r = size * 0.19
+    aspect_r = size * 0.15
+    parts = [f"<svg viewBox='0 0 {size} {size}' width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>"]
+    parts.append("<defs><filter id='glow'><feGaussianBlur stdDeviation='1.8' result='b'/><feMerge><feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>")
+    sign_fill = ['#fff7f7','#fff9f2','#fffdf3','#f7fff8','#f2fff8','#f4fffd','#f4fbff','#f7f5ff','#fbf4ff','#fff4fb','#fff4f6','#f9f4ff']
+    sign_jp = SIGN_JA
+    # sign ring
+    for i in range(12):
+        s = -90 + i * 30
+        e = s + 30
+        p1 = (cx + outer * math.cos(math.radians(s)), cy + outer * math.sin(math.radians(s)))
+        p2 = (cx + outer * math.cos(math.radians(e)), cy + outer * math.sin(math.radians(e)))
+        p3 = (cx + sign_r * math.cos(math.radians(e)), cy + sign_r * math.sin(math.radians(e)))
+        p4 = (cx + sign_r * math.cos(math.radians(s)), cy + sign_r * math.sin(math.radians(s)))
+        parts.append(f"<path d='M {p4[0]:.1f} {p4[1]:.1f} L {p1[0]:.1f} {p1[1]:.1f} A {outer:.1f} {outer:.1f} 0 0 1 {p2[0]:.1f} {p2[1]:.1f} L {p3[0]:.1f} {p3[1]:.1f} A {sign_r:.1f} {sign_r:.1f} 0 0 0 {p4[0]:.1f} {p4[1]:.1f} Z' fill='{sign_fill[i]}' stroke='#e7e2dc' stroke-width='1'/>")
+        mid = math.radians(-75 + i * 30)
+        tx = cx + ((outer + sign_r) / 2) * math.cos(mid)
+        ty = cy + ((outer + sign_r) / 2) * math.sin(mid)
+        parts.append(f"<text x='{tx:.1f}' y='{ty:.1f}' text-anchor='middle' dominant-baseline='middle' font-size='15' font-weight='700' fill='#111'>{sign_jp[i]}</text>")
+    for r, stroke, sw in [(outer, '#d9d2cb', 1.5), (sign_r, '#e7e2dc', 1.2), (house_r, '#eee6df', 1), (outer_planet_r, '#f1ebe5', 1), (inner_planet_r, '#f1ebe5', 1), (aspect_r, '#e7e2dc', 1)]:
+        parts.append(f"<circle cx='{cx}' cy='{cy}' r='{r:.1f}' fill='none' stroke='{stroke}' stroke-width='{sw}'/>")
+    houses = (_raw_western(person_a).get('houses') or person_a.get('houses') or [])
+    if isinstance(houses, list):
+        for i, h in enumerate(houses[:12]):
+            lon = h.get('lon') if isinstance(h, dict) and isinstance(h.get('lon'), (int, float)) else None
+            if lon is None and isinstance(h, dict):
+                lon = h.get('abs_pos') if isinstance(h.get('abs_pos'), (int, float)) else None
+            if lon is None:
+                lon = i * 30
+            ang = math.radians(float(lon) - 90)
+            x2 = cx + outer * math.cos(ang)
+            y2 = cy + outer * math.sin(ang)
+            x1 = cx + aspect_r * math.cos(ang)
+            y1 = cy + aspect_r * math.sin(ang)
+            parts.append(f"<line x1='{x1:.1f}' y1='{y1:.1f}' x2='{x2:.1f}' y2='{y2:.1f}' stroke='#d2cbc4' stroke-width='1'/>")
+    glyph = PLANET_SYMBOLS
+    def place(points, radius, fill, stroke, text_fill):
+        occupied: list[float] = []
+        placed = []
+        for p in points:
+            lon = p.get('lon')
+            if lon is None:
+                continue
+            deg = float(lon)
+            r = radius
+            for other in occupied:
+                diff = abs((deg - other + 180.0) % 360.0 - 180.0)
+                if diff < 6:
+                    r -= 12
+            occupied.append(deg)
+            ang = math.radians(deg - 90)
+            x = cx + r * math.cos(ang)
+            y = cy + r * math.sin(ang)
+            sym = glyph.get(_safe_text(p.get('name')), _safe_text(p.get('name'))[:2] or '•')
+            parts.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='12' fill='{fill}' stroke='{stroke}' stroke-width='1.3' filter='url(#glow)'/>")
+            parts.append(f"<text x='{x:.1f}' y='{y+0.5:.1f}' text-anchor='middle' dominant-baseline='middle' font-size='12.5' font-weight='700' fill='{text_fill}'>{html.escape(sym)}</text>")
+            placed.append((x, y, p))
+        return placed
+    major = {'Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','ASC','MC'}
+    pa = [p for p in planets_a if _safe_text(p.get('name')) in major]
+    pb = [p for p in planets_b if _safe_text(p.get('name')) in major]
+    placed_a = place(pa, inner_planet_r, '#fffaf1', '#c9a96e', '#5d4721')
+    placed_b = place(pb, outer_planet_r, '#f5f1ff', '#9b8ec4', '#4c4268')
+    map_a = {_safe_text(p.get('name')): (x, y) for x, y, p in placed_a}
+    map_b = {_safe_text(p.get('name')): (x, y) for x, y, p in placed_b}
+    aspect_colors = {'Conjunction':'#9da3af','Sextile':'#7aa7d8','Square':'#dd8b8b','Trine':'#7aa7d8','Opposition':'#dd8b8b'}
+    for asp in _synastry_aspects(person_a, person_b):
+        a_pt = map_a.get(asp['planet1'])
+        b_pt = map_b.get(asp['planet2'])
+        if not a_pt or not b_pt:
+            continue
+        parts.append(f"<line x1='{a_pt[0]:.1f}' y1='{a_pt[1]:.1f}' x2='{b_pt[0]:.1f}' y2='{b_pt[1]:.1f}' stroke='{aspect_colors.get(asp['aspect'], '#a0a0a0')}' stroke-width='1.2' opacity='0.82'/>")
+    parts.append(f"<text x='{cx - 78:.1f}' y='{size - 16:.1f}' font-size='11' fill='#8b6e32'>内円：あなた</text>")
+    parts.append(f"<text x='{cx + 14:.1f}' y='{size - 16:.1f}' font-size='11' fill='#6d60a0'>外円：お相手</text>")
     parts.append('</svg>')
     return ''.join(parts)
 
@@ -333,6 +480,9 @@ def _render_planet_rows(planets: list[dict[str, Any]]) -> str:
 
 
 def _template_name(payload: dict[str, Any]) -> str:
+    raw = _dict(payload.get('raw_json'))
+    if _is_compatibility_raw(raw):
+        return 'report_compatibility.html'
     systems = payload.get('systems') or {}
     if systems.get('western') and systems.get('vedic') and systems.get('shichu'):
         return 'report-integrated.html'
@@ -362,6 +512,7 @@ def build_result_payload(order: Order, yaml_log: YamlLog, delivery_text: str | N
     structure = data.get("structure_summary") if isinstance(data.get("structure_summary"), dict) else {}
     raw = data.get("raw_json") if isinstance(data.get("raw_json"), dict) else {}
     payload_json = data.get("payload_json") if isinstance(data.get("payload_json"), dict) else {}
+    inputs_json = data.get("inputs") if isinstance(data.get("inputs"), dict) else {}
     order_data = data.get("order") if isinstance(data.get("order"), dict) else {}
     title = f"{order.menu.name if order.menu else '鑑定結果'}"
     summary = {
@@ -403,12 +554,28 @@ def build_result_payload(order: Order, yaml_log: YamlLog, delivery_text: str | N
             order_data.get('horoscope_image_url'),
         )
     )
-    chart_svg = _chart_svg(raw)
+    compat_a, compat_b = _compat_people(raw)
+    compat_planet_list_a = _planet_items(compat_a) if compat_a else []
+    compat_planet_list_b = _planet_items(compat_b) if compat_b else []
+    compat_chart_svg = _synastry_chart_svg(compat_a, compat_b) if compat_a and compat_b else ''
+    compat_aspects = _synastry_aspects(compat_a, compat_b) if compat_a and compat_b else []
+    chart_svg = compat_chart_svg or _chart_svg(raw)
     vedic_chart_svg = _vedic_chart_svg(raw)
     vedic_raw = _raw_vedic(raw)
-    asc = _dict(_deep_get(raw, 'western.angles.Asc') if False else {})
+    person_a = {
+        'name': _safe_text(inputs_json.get('user_name') or order_data.get('user_name') or order.user_name),
+        'birth_label': _format_birth_label(inputs_json.get('birth_date') or order_data.get('birth_date') or getattr(order, 'birth_date', ''), inputs_json.get('birth_time') or order_data.get('birth_time') or getattr(order, 'birth_time', None)),
+        'place_label': ' '.join([v for v in [_safe_text(inputs_json.get('prefecture') or order_data.get('birth_prefecture') or getattr(order, 'birth_prefecture', '')), _safe_text(inputs_json.get('birth_place') or order_data.get('birth_place') or getattr(order, 'birth_place', ''))] if v]).strip() or '-',
+        'sun_sign': next((_safe_text(p.get('sign')).split()[0] for p in (compat_planet_list_a or planet_list) if _safe_text(p.get('name')).upper() == 'SUN'), '-'),
+    }
+    person_b = {
+        'name': _safe_text(inputs_json.get('name_b') or inputs_json.get('partner_name') or order_data.get('partner_name') or order_data.get('person_b_name') or order_data.get('name_b') or 'お相手'),
+        'birth_label': _format_birth_label(inputs_json.get('birth_date_b') or order_data.get('birth_date_b') or order_data.get('partner_birth_date'), inputs_json.get('birth_time_b') or order_data.get('birth_time_b') or order_data.get('partner_birth_time')), 
+        'place_label': ' '.join([v for v in [_safe_text(inputs_json.get('prefecture_b') or order_data.get('prefecture_b') or order_data.get('partner_prefecture')), _safe_text(inputs_json.get('birth_place_b') or order_data.get('birth_place_b') or order_data.get('partner_birth_place'))] if v]).strip() or '-',
+        'sun_sign': next((_safe_text(p.get('sign')).split()[0] for p in compat_planet_list_b if _safe_text(p.get('name')).upper() == 'SUN'), '-'),
+    }
     systems = {
-        'western': bool(planet_list or chart_svg or horoscope_image_url),
+        'western': bool(planet_list or compat_planet_list_a or compat_planet_list_b or chart_svg or horoscope_image_url),
         'vedic': bool(vedic_list or vedic_chart_svg or vedic_raw),
         'shichu': bool(shichu_data.get('exists')),
     }
@@ -417,7 +584,11 @@ def build_result_payload(order: Order, yaml_log: YamlLog, delivery_text: str | N
         "order_code": order.order_code,
         "summary": summary,
         "sections": sections,
-        "planet_list": planet_list,
+        "planet_list": compat_planet_list_a or planet_list,
+        "compat_planet_list_b": compat_planet_list_b,
+        "compatibility_aspects": compat_aspects,
+        "person_a": person_a,
+        "person_b": person_b,
         "vedic_planet_list": vedic_list,
         "shichu": shichu_data,
         "advice_list": [],
@@ -463,9 +634,53 @@ def render_report_html(order: Order, payload: dict[str, Any]) -> str:
     vedic_planets = payload.get('vedic_planet_list') or []
     shichu = payload.get('shichu') or {}
     birth_label = order.birth_date.strftime('%Y年%m月%d日') if getattr(order, 'birth_date', None) else '-'
+    compat_b_planets = payload.get('compat_planet_list_b') or []
+    person_a = payload.get('person_a') or {}
+    person_b = payload.get('person_b') or {}
+    compat_aspects = payload.get('compatibility_aspects') or []
     if order.birth_time:
         birth_label += f" {order.birth_time}"
     place_label = ' '.join([v for v in [order.birth_prefecture, order.birth_place] if v]) or '-'
+
+    if _template_name(payload) == 'report_compatibility.html':
+        person_a_name = html.escape(_safe_text(person_a.get('name') or order.user_name) + ' さま')
+        person_b_name = html.escape(_safe_text(person_b.get('name') or 'お相手') + ' さま')
+        person_a_birth = html.escape(_safe_text(person_a.get('birth_label') or birth_label))
+        person_b_birth = html.escape(_safe_text(person_b.get('birth_label') or '-'))
+        person_a_place = html.escape(_safe_text(person_a.get('place_label') or place_label))
+        person_b_place = html.escape(_safe_text(person_b.get('place_label') or '-'))
+        person_a_sub = html.escape(f"{_safe_text(person_a.get('birth_label') or birth_label)} ／ {_safe_text(person_a.get('sun_sign') or '-')}座")
+        person_b_sub = html.escape(f"{_safe_text(person_b.get('birth_label') or '-')} ／ {_safe_text(person_b.get('sun_sign') or '-')}座")
+        body = _nl2br(sections[0].get('body') if sections else '')
+        chart_html = ''
+        if payload.get('chart_svg'):
+            chart_html = f'<div style="display:flex;justify-content:center;align-items:center;margin:18px 0 6px;min-height:420px;">{payload["chart_svg"]}</div>'
+        elif payload.get('horoscope_image_url'):
+            chart_html = f'<div style="display:flex;justify-content:center;margin:18px 0 6px;"><img src="{html.escape(payload["horoscope_image_url"])}" alt="synastry chart" style="max-width:100%;width:420px;height:auto"></div>'
+        aspect_html = ''
+        if compat_aspects:
+            chips = []
+            for a in compat_aspects:
+                chips.append(f'<span style="display:inline-block;padding:6px 10px;margin:4px 6px 0 0;border:1px solid rgba(180,150,100,0.18);border-radius:999px;font-size:11px;color:var(--muted);">{html.escape(_safe_text(a.get("planet1")))} × {html.escape(_safe_text(a.get("planet2")))}<span style="margin-left:6px;color:var(--gold);">{html.escape(_safe_text(a.get("aspect")))}</span></span>')
+            aspect_html = '<div style="margin-top:10px">' + ''.join(chips) + '</div>'
+        chart_section = '<div class="section"><span class="section-label">SYNASTRY CHART</span><h2 class="section-title">お二人の天体配置図</h2><div class="divider"></div>' + chart_html + '<p style="margin-top:8px;font-size:12px;color:var(--muted);text-align:center;">内円：あなた ／ 外円：お相手</p>' + aspect_html + '</div>'
+        tpl = tpl.replace('鑑定日：20XX年XX月XX日', f"鑑定日：{html.escape(_safe_text(getattr(order, 'updated_at', '') or ''))}") if getattr(order, 'updated_at', None) else tpl
+        tpl = tpl.replace('〇〇 さま', person_a_name, 1)
+        tpl = tpl.replace('19XX年XX月XX日 ／ 〇〇座', person_a_sub, 1)
+        tpl = tpl.replace('〇〇 さま', person_b_name, 1)
+        tpl = tpl.replace('19XX年XX月XX日 ／ 〇〇座', person_b_sub, 1)
+        tpl = tpl.replace('〇〇 さま', person_a_name, 1)
+        tpl = tpl.replace('19XX年XX月XX日 XX:XX', person_a_birth, 1)
+        tpl = tpl.replace('〇〇県〇〇市', person_a_place, 1)
+        tpl = tpl.replace('〇〇 さま', person_b_name, 1)
+        tpl = tpl.replace('19XX年XX月XX日 XX:XX', person_b_birth, 1)
+        tpl = tpl.replace('〇〇県〇〇市', person_b_place, 1)
+        tpl = tpl.replace('<div class="section">\n  <span class="section-label">PLANET POSITIONS</span>', chart_section + '\n\n<div class="section">\n  <span class="section-label">PLANET POSITIONS</span>', 1)
+        tpl = _replace_table_after_heading(tpl, 'PERSON A', _render_planet_rows(payload.get('planet_list') or []), 'planet-table')
+        tpl = _replace_table_after_heading(tpl, 'PERSON B', _render_planet_rows(compat_b_planets), 'planet-table')
+        tpl = _replace_first_reading_text(tpl, body)
+        tpl = re.sub(r'<p class="reading-text">.*?</p>', f'<p class="reading-text">{body}</p>', tpl, count=1, flags=re.S)
+        return tpl
 
     tpl = tpl.replace('鑑定日：20XX年XX月XX日', f"鑑定日：{html.escape(_safe_text(getattr(order, 'updated_at', '') or ''))}") if getattr(order, 'updated_at', None) else tpl
     tpl = tpl.replace('19XX年XX月XX日 XX:XX', html.escape(birth_label), 1)

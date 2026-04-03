@@ -1,66 +1,168 @@
-"""
-日運（今日の空気）専用ルート。
-main routes.py から分離して、他修正の影響を受けにくくする。
-"""
 from __future__ import annotations
 
 import json
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
-from services.daily_theme_service import enrich_daily_theme_result
+router = APIRouter()
+templates = Jinja2Templates(directory="templates")
+
+SOFT_ACTION_LINE = "少し整える時間を意識すると、流れが落ち着きやすくなります。"
+DEFAULT_CAUTION = [
+    "勢いだけで決めず、ひと呼吸おいて全体の流れを見直す。",
+    "直感と現実のどちらか一方に偏りすぎない。"
+]
+DEFAULT_AVOID = [
+    "思いつきのまま一気に話を進めること。",
+    "細部にこだわりすぎて全体のタイミングを逃すこと。"
+]
 
 
 def _calc_helpers():
-    from services.transit_calc import calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot
+    from services.transit_calc import (
+        calc_transits_single,
+        calc_transits_synastry,
+        calc_transits_long_term,
+        calc_global_transit_snapshot,
+    )
     from services.western_calc import calc_western_from_payload
-    return calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot, calc_western_from_payload
+    return (
+        calc_transits_single,
+        calc_transits_synastry,
+        calc_transits_long_term,
+        calc_global_transit_snapshot,
+        calc_western_from_payload,
+    )
 
 
 def _parse_jsonish_response(raw: str, fallback: dict[str, object]) -> dict[str, object]:
+    import ast
+    import re
+
     cleaned = (raw or "").strip()
+
     if cleaned.startswith("```json"):
         cleaned = cleaned[7:]
     if cleaned.startswith("```"):
         cleaned = cleaned[3:]
     if cleaned.endswith("```"):
         cleaned = cleaned[:-3]
+
     cleaned = cleaned.strip()
 
-    candidates: list[str] = []
-    if cleaned:
-        candidates.append(cleaned)
-        start_obj = cleaned.find("{")
-        end_obj = cleaned.rfind("}")
-        if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
-            candidates.append(cleaned[start_obj:end_obj+1])
-        start_arr = cleaned.find("[")
-        end_arr = cleaned.rfind("]")
-        if start_arr != -1 and end_arr != -1 and end_arr > start_arr:
-            candidates.append(cleaned[start_arr:end_arr+1])
+    def _normalize(text: str) -> str:
+        t = (text or "").strip()
 
-    for cand in candidates:
+        start_obj = t.find("{")
+        end_obj = t.rfind("}")
+        if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
+            t = t[start_obj:end_obj + 1].strip()
+
+        t = t.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+        return t
+
+    def _try_json(text: str):
         try:
-            parsed = json.loads(cand)
+            parsed = json.loads(text)
             if isinstance(parsed, dict):
                 return parsed
             if isinstance(parsed, list):
                 return {**fallback, "items": parsed}
         except Exception:
-            pass
+            return None
+        return None
+
+    def _try_literal_eval(text: str):
+        try:
+            parsed = ast.literal_eval(text)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                return {**fallback, "items": parsed}
+        except Exception:
+            return None
+        return None
+
+    norm = _normalize(cleaned)
+
+    parsed = _try_json(norm)
+    if parsed:
+        return parsed
+
+    try:
+        first = json.loads(norm)
+        if isinstance(first, str):
+            second = _try_json(_normalize(first))
+            if second:
+                return second
+    except Exception:
+        pass
+
+    parsed = _try_literal_eval(norm)
+    if parsed:
+        return parsed
+
+    m = re.search(r'"summary"\s*:\s*"(.+?)"', norm, flags=re.DOTALL)
+    if m:
+        merged = dict(fallback)
+        merged["summary"] = m.group(1).replace('\\"', '"').strip()
+        merged.setdefault("raw_text", raw or "")
+        return merged
 
     merged = dict(fallback)
     merged.setdefault("raw_text", raw or "")
     merged["summary"] = cleaned or merged.get("summary") or "生成結果を取得できませんでした。"
     return merged
 
-router = APIRouter()
-templates = Jinja2Templates(directory="templates")
+
+def _sentences(text: str) -> list[str]:
+    parts = []
+    normalized = (text or "").replace("\n", "")
+    for chunk in normalized.split("。"):
+        chunk = chunk.strip()
+        if chunk:
+            parts.append(chunk + "。")
+    return parts
+
+
+def _fill_daily_theme_fallbacks(result: dict[str, object]) -> dict[str, object]:
+    if not isinstance(result, dict):
+        return result
+
+    summary = str(result.get("summary") or "").strip()
+    if not summary:
+        return result
+
+    sents = _sentences(summary)
+
+    if not result.get("core_themes"):
+        result["core_themes"] = sents[:2] if sents else []
+
+    if not result.get("push"):
+        result["push"] = sents[1:3] if len(sents) >= 2 else sents[:1]
+
+    if not result.get("caution"):
+        result["caution"] = DEFAULT_CAUTION[:]
+
+    if not result.get("avoid_actions"):
+        result["avoid_actions"] = DEFAULT_AVOID[:]
+
+    if not result.get("recommended_actions"):
+        result["recommended_actions"] = [SOFT_ACTION_LINE]
+
+    if not str(result.get("social_post") or "").strip():
+        result["social_post"] = summary
+
+    if not str(result.get("type_translation_axis") or "").strip():
+        result["type_translation_axis"] = summary
+
+    return result
 
 
 @router.get("/daily-theme", response_class=HTMLResponse)
@@ -77,7 +179,6 @@ def daily_theme_page(request: Request):
 
 @router.post("/daily-theme/generate-types", response_class=JSONResponse)
 async def daily_theme_generate_types(request: Request):
-    """生成済みの『今日の空気』を元に、タイプ別運勢をまとめて生成する。"""
     try:
         body = await request.json()
         base_theme = body.get("theme") or {}
@@ -188,9 +289,14 @@ async def daily_theme_generate_types(request: Request):
 
 @router.post("/daily-theme/generate", response_class=JSONResponse)
 async def daily_theme_generate(request: Request):
-    """その日の全体トランジットから、占い師用の『今日の空気』を生成する。"""
     try:
-        calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot, calc_western_from_payload = _calc_helpers()
+        (
+            calc_transits_single,
+            calc_transits_synastry,
+            calc_transits_long_term,
+            calc_global_transit_snapshot,
+            calc_western_from_payload,
+        ) = _calc_helpers()
 
         body = await request.json()
         date_str = (body.get("date") or "").strip()
@@ -240,6 +346,8 @@ async def daily_theme_generate(request: Request):
         )
 
         from services.ai_report import generate_report as _gen
+        from services.daily_theme_service import enrich_daily_theme_result
+
         raw = _gen(
             {
                 "_meta": {
@@ -267,11 +375,18 @@ async def daily_theme_generate(request: Request):
             "type_translation_axis": "",
         })
 
+        summary_text = (result.get("summary") or "").strip() if isinstance(result, dict) else ""
+        if summary_text.startswith("{") and ('"date"' in summary_text or "'date'" in summary_text):
+            reparsed = _parse_jsonish_response(summary_text, result)
+            if isinstance(reparsed, dict) and reparsed.get("summary") != summary_text:
+                result = reparsed
+
         result.setdefault("period", period)
         result.setdefault("axis", axis)
         result.setdefault("date", snapshot.get("transit_date", date_str or ""))
         result["source_transit"] = snapshot
         result = enrich_daily_theme_result(result)
+        result = _fill_daily_theme_fallbacks(result)
         return JSONResponse(content=result)
 
     except HTTPException:

@@ -21,7 +21,7 @@ from services.location import PREFECTURE_OPTIONS, format_location_summary, resol
 from services.yaml_log_service import create_yaml_log, upsert_yaml_log
 from services.reader_availability import line_status_label
 from services.result_builder import build_result_payload, render_report_html, render_result_html
-from services.notification_service import notify_line_delivery
+from services.notification_service import notify_delivery_email, notify_line_delivery
 from services.astrologer_summary import build_full_astrologer_summary
 from services.auto_order_ai_service import process_order_auto_reading
 
@@ -52,6 +52,55 @@ def _run_async_safely(coro) -> None:
             loop.run_until_complete(coro)
         finally:
             loop.close()
+
+
+def _customer_line_id(order: Order) -> str | None:
+    customer_line_id = (getattr(getattr(order, "customer", None), "line_user_id", None) or "").strip()
+    if customer_line_id:
+        return customer_line_id
+    user_contact = (getattr(order, "user_contact", None) or "").strip()
+    if user_contact.startswith("U"):
+        return user_contact
+    return None
+
+
+def _customer_email(order: Order) -> str | None:
+    user_contact = (getattr(order, "user_contact", None) or "").strip()
+    if user_contact and "@" in user_contact and not user_contact.startswith("U"):
+        return user_contact
+    customer_email = (getattr(getattr(order, "customer", None), "email", None) or "").strip()
+    return customer_email or None
+
+
+def _source_label(order: Order) -> str:
+    source = (getattr(order, "source", None) or "").strip().lower()
+    if source == "line":
+        return "LINE"
+    if source in {"self", "web", "site", "homepage"}:
+        return "ホームページ"
+    return source or "不明"
+
+
+def _notification_mode(send_line_text: str | None, send_line_report: str | None, *, default_delivery: bool = False) -> str | None:
+    if send_line_text and send_line_report:
+        return "delivery_with_report"
+    if send_line_report and not send_line_text:
+        return "report_only"
+    if send_line_text and not send_line_report:
+        return "delivery"
+    if default_delivery:
+        return "delivery"
+    return None
+
+
+def _queue_customer_delivery_notification(order: Order, *, mode: str | None, has_line_contact: bool) -> None:
+    if not mode:
+        return
+    if has_line_contact:
+        _run_async_safely(notify_line_delivery(order, mode=mode))
+    else:
+        _run_async_safely(notify_delivery_email(order, mode=mode))
+
 
 
 def _meaningful_text(value: str | None) -> str:
@@ -340,6 +389,10 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
             "auto_ai_ready": bool((order.ai_status == "completed") and result_status != "completed"),
             "editor_seed_text": editor_seed_text,
             "editor_seed_source": editor_seed_source,
+            "source_label": _source_label(order),
+            "has_line_contact": bool(_customer_line_id(order)),
+            "customer_line_id": _customer_line_id(order),
+            "customer_email": _customer_email(order),
         },
     )
 
@@ -406,15 +459,12 @@ def staff_save_delivery(
     latest = sorted(order.deliveries, key=lambda d: d.updated_at or d.created_at, reverse=True)
     delivery = latest[0] if latest else None
 
+    has_line_contact = bool(_customer_line_id(order))
+
     if action == "resend_notify":
         db.commit()
-        if send_line_text and send_line_report:
-            _run_async_safely(notify_line_delivery(order, mode="delivery_with_report"))
-        elif send_line_report and not send_line_text:
-            _run_async_safely(notify_line_delivery(order, mode="report_only"))
-        elif send_line_text and not send_line_report:
-            _run_async_safely(notify_line_delivery(order, mode="delivery"))
-        # 両方OFFの場合はLINE通知しない
+        mode = _notification_mode(send_line_text, send_line_report, default_delivery=not has_line_contact)
+        _queue_customer_delivery_notification(order, mode=mode, has_line_contact=has_line_contact)
         return _redirect(f"/staff/orders/{order_code}")
 
     cleaned_delivery_text = (delivery_text or '').strip()
@@ -450,13 +500,9 @@ def staff_save_delivery(
     _sync_payout(db, order, reader)
     db.commit()
 
-    if action == "deliver" and (send_line_text or send_line_report):
-        if send_line_text and send_line_report:
-            _run_async_safely(notify_line_delivery(order, mode="delivery_with_report"))
-        elif send_line_report and not send_line_text:
-            _run_async_safely(notify_line_delivery(order, mode="report_only"))
-        else:
-            _run_async_safely(notify_line_delivery(order, mode="delivery"))
+    if action == "deliver":
+        mode = _notification_mode(send_line_text, send_line_report, default_delivery=not has_line_contact)
+        _queue_customer_delivery_notification(order, mode=mode, has_line_contact=has_line_contact)
 
     return _redirect(f"/staff/orders/{order_code}")
 

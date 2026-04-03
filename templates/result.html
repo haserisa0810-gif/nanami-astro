@@ -992,6 +992,7 @@
   /* ─── ホロスコープ・テキスト整形 ────────────────── */
   function getWesternSource(obj){
     if(!obj||typeof obj!=='object') return null;
+    if(obj.personA&&obj.personB) return {compatibility:true, personA:obj.personA, personB:obj.personB};
     if(Array.isArray(obj.planets)||Array.isArray(obj.houses)||Array.isArray(obj.aspects)) return obj;
     if(obj.western&&typeof obj.western==='object') return obj.western;
     return null;
@@ -1226,6 +1227,45 @@
     if(!svg||!legend) return;
     var src=getWesternSource(obj);
     if(!src){ svg.innerHTML='<text x="50%" y="50%" text-anchor="middle" fill="#606571" font-size="18">ホロスコープ結果はありません。</text>'; legend.innerHTML=''; return; }
+    if(src.compatibility&&src.personA&&src.personB){
+      var a=src.personA.western&&typeof src.personA.western==='object'?src.personA.western:src.personA;
+      var b=src.personB.western&&typeof src.personB.western==='object'?src.personB.western:src.personB;
+      var cx=360,cy=360,oR=300,sR=255,hR=210,outerPR=178,innerPR=128,aspectR=108;
+      var signJp=['牡羊','牡牛','双子','蟹','獅子','乙女','天秤','蠍','射手','山羊','水瓶','魚'];
+      var signPal=['#fff7f7','#fff9f2','#fffdf3','#f7fff8','#f2fff8','#f4fffd','#f4fbff','#f7f5ff','#fbf4ff','#fff4fb','#fff4f6','#f9f4ff'];
+      var glyphMap={Sun:'☉',Moon:'☽',Mercury:'☿',Venus:'♀',Mars:'♂',Jupiter:'♃',Saturn:'♄',Uranus:'♅',Neptune:'♆',Pluto:'♇','North Node':'☊','South Node':'☋',ASC:'ASC',MC:'MC'};
+      var houses=(Array.isArray(a.houses)?a.houses:[]).slice(0,12).map(function(h,i){return{lon:normalizeLonH(h,i)};});
+      var majorNames=['Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','ASC','MC'];
+      function toPlanets(src0){return (Array.isArray(src0.planets)?src0.planets:[]).map(function(p){return{name:p.name||p.id,sign:p.sign,pos:p.pos,house:p.house,retrograde:p.retrograde,lon:normalizeLon(p)};}).filter(function(p){return p.lon!==null&&majorNames.indexOf(p.name)>=0;});}
+      var planetsA=toPlanets(a), planetsB=toPlanets(b);
+      var ascDeg=Number(a&&a.angles&&a.angles.asc);
+      var rotBase=isFinite(ascDeg)?ascDeg:0;
+      function rot(deg){return((deg-rotBase)%360+360)%360;}
+      var parts=[];
+      parts.push('<rect x="0" y="0" width="720" height="720" fill="transparent"/>');
+      for(var i=0;i<12;i++){
+        var s=rot(i*30),e=rot((i+1)*30);
+        var p1=polarPoint(cx,cy,oR,s),p2=polarPoint(cx,cy,oR,e),p3=polarPoint(cx,cy,sR,e),p4=polarPoint(cx,cy,sR,s);
+        parts.push('<path d="M '+p4.x+' '+p4.y+' L '+p1.x+' '+p1.y+' A '+oR+' '+oR+' 0 0 1 '+p2.x+' '+p2.y+' L '+p3.x+' '+p3.y+' A '+sR+' '+sR+' 0 0 0 '+p4.x+' '+p4.y+' Z" fill="'+signPal[i]+'" stroke="#e7e2dc" stroke-width="1"/>');
+        var mid=rot(i*30+15), txt=polarPoint(cx,cy,(oR+sR)/2,mid);
+        parts.push('<text x="'+txt.x+'" y="'+txt.y+'" text-anchor="middle" dominant-baseline="middle" font-size="16" font-weight="700" fill="#111">'+signJp[i]+'</text>');
+      }
+      ['#d9d2cb|2|'+oR,'#e7e2dc|1.5|'+sR,'#e7e2dc|1.2|'+hR,'#f0ebe6|1|'+outerPR,'#f0ebe6|1|'+innerPR,'#e7e2dc|1|'+aspectR].forEach(function(v){var p=v.split('|');parts.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+p[2]+'" fill="none" stroke="'+p[0]+'" stroke-width="'+p[1]+'"/>');});
+      houses.forEach(function(h,idx){ var d=rot(h.lon), o=polarPoint(cx,cy,oR,d), in_=polarPoint(cx,cy,58,d); parts.push('<line x1="'+o.x+'" y1="'+o.y+'" x2="'+in_.x+'" y2="'+in_.y+'" stroke="#d2cbc4" stroke-width="1.1"/>'); });
+      function place(planets, radius, fill, stroke, textFill){ var occ=[]; var placed=[]; planets.forEach(function(p){ var deg=rot(p.lon), r=radius; occ.forEach(function(o){ var diff=Math.abs(((deg-o+540)%360)-180); if(diff<6) r-=14; }); occ.push(deg); var pt=polarPoint(cx,cy,r,deg); parts.push('<circle cx="'+pt.x+'" cy="'+pt.y+'" r="12" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.2"/>'); parts.push('<text x="'+pt.x+'" y="'+pt.y+'" text-anchor="middle" dominant-baseline="middle" font-size="12.5" font-weight="700" fill="'+textFill+'">'+(glyphMap[p.name]||p.name.slice(0,2))+'</text>'); placed.push({name:p.name,x:pt.x,y:pt.y,lon:p.lon,sign:p.sign,house:p.house,pos:p.pos}); }); return placed; }
+      var placedA=place(planetsA, innerPR, '#fffaf1', '#c9a96e', '#5d4721');
+      var placedB=place(planetsB, outerPR, '#f5f1ff', '#9b8ec4', '#4c4268');
+      var mapA={}, mapB={}; placedA.forEach(function(p){mapA[p.name]=p;}); placedB.forEach(function(p){mapB[p.name]=p;});
+      var preferred=[['Sun','Moon'],['Moon','Sun'],['Venus','Mars'],['Mars','Venus'],['Sun','ASC'],['ASC','Sun'],['Moon','Moon'],['MC','MC']];
+      var aspectDefs=[['Conjunction',0,7],['Sextile',60,5],['Square',90,6],['Trine',120,6],['Opposition',180,7]];
+      var chips=[];
+      preferred.forEach(function(pair){ if(chips.length>=4) return; var p1=mapA[pair[0]], p2=mapB[pair[1]]; if(!p1||!p2) return; var diff=Math.abs(((p1.lon-p2.lon+540)%360)-180), found=null; aspectDefs.forEach(function(a){ if(!found && Math.abs(diff-a[1])<=a[2]) found=a; }); if(!found) return; var col='#9da3af'; if(found[0]==='Sextile'||found[0]==='Trine') col='#7aa7d8'; if(found[0]==='Square'||found[0]==='Opposition') col='#dd8b8b'; parts.push('<line x1="'+p1.x+'" y1="'+p1.y+'" x2="'+p2.x+'" y2="'+p2.y+'" stroke="'+col+'" stroke-width="1.2" opacity="0.82"/>'); chips.push('<span class="chip">'+escapeHtml(pair[0])+' × '+escapeHtml(pair[1])+' <strong>'+escapeHtml(found[0])+'</strong></span>'); });
+      parts.push('<text x="210" y="698" text-anchor="middle" font-size="11" fill="#8b6e32">内円：あなた</text>');
+      parts.push('<text x="498" y="698" text-anchor="middle" font-size="11" fill="#6d60a0">外円：お相手</text>');
+      svg.innerHTML=parts.join('');
+      legend.innerHTML='<span class="chip">内円：あなた</span><span class="chip">外円：お相手</span>'+chips.join('');
+      return;
+    }
     var cx=360,cy=360,oR=300,sR=255,hR=210,pR=178,aR=155,lR=125;
     var signJp=['牡羊','牡牛','双子','蟹','獅子','乙女','天秤','蠍','射手','山羊','水瓶','魚'];
     var signPal=['#fff7f7','#fff9f2','#fffdf3','#f7fff8','#f2fff8','#f4fffd','#f4fbff','#f7f5ff','#fbf4ff','#fff4fb','#fff4f6','#f9f4ff'];

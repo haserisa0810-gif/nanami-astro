@@ -6,7 +6,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-# ★重要：失敗しても genai/types を必ず定義する
+from services.astro_hint_builder import build_astro_hint_line
+
+try:
+    from services.text_formatter import format_ai_text as fix_punctuation
+except Exception:
+    def fix_punctuation(text: str) -> str:
+        return text
+
 try:
     from google import genai
     from google.genai import types
@@ -52,18 +59,11 @@ def _resolve_model_name(requested_model: Any = None) -> tuple[str, str]:
 
 MODEL_NAME, MODEL_SOURCE = _resolve_model_name()
 
-
-# =========================
-# Prompt templates
-# =========================
-
 _PROMPTS_DIR = (Path(__file__).resolve().parents[1] / "prompts").resolve()
 
 
 def _read_prompt_file(name: str) -> str:
-    """Read a prompt template from prompts. Keeps prompts out of code."""
     p = (_PROMPTS_DIR / name).resolve()
-    # Guard against path traversal
     if _PROMPTS_DIR not in p.parents and p != _PROMPTS_DIR:
         raise ValueError("Invalid prompt path")
     if not p.exists():
@@ -72,22 +72,14 @@ def _read_prompt_file(name: str) -> str:
 
 
 def _render_prompt(template: str, ctx: dict[str, Any]) -> str:
-    """Very small renderer using str.format_map (placeholders like {foo})."""
-
     class _D(dict):
         def __missing__(self, key: str) -> str:
-            # Missing placeholders should not crash generation; show as blank.
             return ""
 
     return template.format_map(_D(ctx)).strip()
 
 
-# =========================
-# Utility
-# =========================
-
 def _extract_text(resp: Any) -> str:
-    """google-genai のレスポンスからテキストを安全に取り出す。"""
     if resp is None:
         return ""
 
@@ -127,10 +119,6 @@ def _extract_text(resp: Any) -> str:
 
 
 def _safe_get_meta(astro_data: Any) -> dict[str, Any]:
-    """
-    routes.py 側は astro_data["_meta"] に入れている前提。
-    旧実装や他経路との互換のために meta も見る。
-    """
     if not isinstance(astro_data, dict):
         return {}
 
@@ -152,15 +140,77 @@ def _merge_meta(base: dict[str, Any], extra: dict[str, Any] | None) -> dict[str,
     return out
 
 
+def _limit_text(value: Any, max_chars: int = 2500) -> str:
+    s = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    s = (s or "").strip()
+    if len(s) <= max_chars:
+        return s
+    return s[:max_chars] + "\n...(truncated)"
+
+
+def _extract_planets(astro_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def norm_planet(p: Any) -> dict[str, Any] | None:
+        if not isinstance(p, dict):
+            return None
+        name = (p.get("name") or p.get("id") or p.get("planet") or "").strip()
+        if not name:
+            return None
+        lon = p.get("abs_pos")
+        if lon is None:
+            lon = p.get("lon")
+        if lon is None:
+            lon = p.get("longitude")
+        if lon is None:
+            lon = p.get("position")
+        try:
+            lon_f = float(lon)
+        except Exception:
+            return None
+        return {"name": name, "lon": lon_f, "sign": p.get("sign")}
+
+    candidates: list[Any] = []
+    if isinstance(astro_data.get("planets"), list):
+        candidates = astro_data["planets"]
+    elif isinstance(astro_data.get("western"), dict) and isinstance(astro_data["western"].get("planets"), list):
+        candidates = astro_data["western"]["planets"]
+
+    out: list[dict[str, Any]] = []
+    for p in candidates:
+        np = norm_planet(p)
+        if np:
+            out.append(np)
+    return out
+
+
+def _extract_house_cusps(astro_data: dict[str, Any]) -> list[float] | None:
+    houses = astro_data.get("houses")
+    if not isinstance(houses, list) and isinstance(astro_data.get("western"), dict):
+        houses = astro_data["western"].get("houses")
+    if not isinstance(houses, list):
+        return None
+
+    cusps: list[float] = []
+    for h in houses:
+        if not isinstance(h, dict):
+            continue
+        lon = h.get("lon")
+        if lon is None:
+            lon = h.get("abs_pos")
+        if lon is None:
+            lon = h.get("longitude")
+        try:
+            cusps.append(float(lon))
+        except Exception:
+            continue
+
+    return cusps[:12] if len(cusps) >= 12 else None
+
+
 def _build_structure_summary(astro_data: Any) -> str:
-    """
-    astro_data が巨大な場合に、AIに渡す「要約の骨組み」を作る。
-    """
     try:
         if not isinstance(astro_data, dict):
             return ""
 
-        # If possible, derive light structure + risk flags for more grounded prompts.
         derived: dict[str, Any] = {}
         try:
             from services.structure_engine import (  # type: ignore
@@ -189,7 +239,6 @@ def _build_structure_summary(astro_data: Any) -> str:
         except Exception:
             pass
 
-        # integrated / compatibility も含めて “あり得るキー” を拾う
         keys = [
             "planets", "houses", "aspects", "angles", "skipped_bodies", "ephemeris",
             "nakshatra", "strength", "structure",
@@ -206,8 +255,6 @@ def _build_structure_summary(astro_data: Any) -> str:
         if derived:
             picked["_derived"] = derived
 
-        # 四柱推命は日柱・時柱・オプション差分がAI本文で落ちやすいので、
-        # 重要な値を短い digest として先頭級で渡す。
         if astro_data.get("system") == "shichusuimei" or astro_data.get("module") == "shichusuimei":
             summary = astro_data.get("summary") if isinstance(astro_data.get("summary"), dict) else {}
             raw = astro_data.get("raw") if isinstance(astro_data.get("raw"), dict) else {}
@@ -229,53 +276,13 @@ def _build_structure_summary(astro_data: Any) -> str:
             top_keys = [k for k in astro_data.keys() if k not in ("meta", "_meta")]
             return f"available_keys: {top_keys[:60]}"
 
-        # Keep it stable and readable for LLMs.
         return json.dumps(picked, ensure_ascii=False)
 
     except Exception:
         return ""
 
 
-def _extract_planets(astro_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract planet bodies for structure_engine in a tolerant way."""
-    def norm_planet(p: Any) -> dict[str, Any] | None:
-        if not isinstance(p, dict):
-            return None
-        name = (p.get("name") or p.get("id") or p.get("planet") or "").strip()
-        if not name:
-            return None
-        lon = p.get("abs_pos")
-        if lon is None:
-            lon = p.get("lon")
-        if lon is None:
-            lon = p.get("longitude")
-        if lon is None:
-            lon = p.get("position")
-        try:
-            lon_f = float(lon)
-        except Exception:
-            return None
-        return {"name": name, "lon": lon_f, "sign": p.get("sign")}
-
-    # Common locations
-    candidates: list[Any] = []
-    if isinstance(astro_data.get("planets"), list):
-        candidates = astro_data["planets"]
-    elif isinstance(astro_data.get("western"), dict) and isinstance(astro_data["western"].get("planets"), list):
-        candidates = astro_data["western"]["planets"]
-
-    out: list[dict[str, Any]] = []
-    for p in candidates:
-        np = norm_planet(p)
-        if np:
-            out.append(np)
-    return out
-
-
-
-
 def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
-    """Build a small, authoritative digest for free reading prompts."""
     try:
         if not isinstance(astro_data, dict):
             return ""
@@ -342,36 +349,91 @@ def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
         return ""
 
 
-def _extract_house_cusps(astro_data: dict[str, Any]) -> list[float] | None:
-    """Try to extract 12 house cusps if present."""
-    houses = astro_data.get("houses")
-    if not isinstance(houses, list) and isinstance(astro_data.get("western"), dict):
-        houses = astro_data["western"].get("houses")
-    if not isinstance(houses, list):
-        return None
+def _major_planet_digest(data: dict[str, Any]) -> list[str]:
+    planets = data.get("planets")
+    if not isinstance(planets, list) and isinstance(data.get("western"), dict):
+        planets = data["western"].get("planets")
+    if not isinstance(planets, list):
+        planets = []
 
-    cusps: list[float] = []
-    for h in houses:
-        if not isinstance(h, dict):
+    priority = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"]
+    rows: list[str] = []
+    by_name: dict[str, dict[str, Any]] = {}
+    for item in planets:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            if name and name not in by_name:
+                by_name[name] = item
+    for name in priority:
+        item = by_name.get(name)
+        if not item:
             continue
-        lon = h.get("lon")
-        if lon is None:
-            lon = h.get("abs_pos")
-        if lon is None:
-            lon = h.get("longitude")
-        try:
-            cusps.append(float(lon))
-        except Exception:
-            continue
+        sign = item.get("sign") or "-"
+        house = item.get("house")
+        house_text = f"/{int(house)}H" if isinstance(house, (int, float)) else ""
+        rows.append(f"{name}:{sign}{house_text}")
+    return rows[:9]
 
-    return cusps[:12] if len(cusps) >= 12 else None
+
+def _major_aspect_digest(data: dict[str, Any], limit: int = 8) -> list[str]:
+    aspects = data.get("aspects")
+    if not isinstance(aspects, list) and isinstance(data.get("western"), dict):
+        aspects = data["western"].get("aspects")
+    if not isinstance(aspects, list):
+        aspects = []
+
+    rows: list[str] = []
+    for a in aspects:
+        if not isinstance(a, dict):
+            continue
+        p1 = str(a.get("planet1") or "").strip()
+        p2 = str(a.get("planet2") or "").strip()
+        t = str(a.get("type") or a.get("aspect") or "").strip()
+        if p1 and p2 and t:
+            rows.append(f"{p1}-{p2}:{t}")
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _build_prompt_astro_digest(astro_data: dict[str, Any], *, compat_mode: bool = False) -> str:
+    try:
+        if compat_mode:
+            pa = astro_data.get("personA") if isinstance(astro_data.get("personA"), dict) else {}
+            pb = astro_data.get("personB") if isinstance(astro_data.get("personB"), dict) else {}
+            digest = {
+                "personA_core": _major_planet_digest(pa),
+                "personA_aspects": _major_aspect_digest(pa, limit=6),
+                "personB_core": _major_planet_digest(pb),
+                "personB_aspects": _major_aspect_digest(pb, limit=6),
+            }
+            return json.dumps(digest, ensure_ascii=False)
+
+        digest: dict[str, Any] = {
+            "major_positions": _major_planet_digest(astro_data),
+            "major_aspects": _major_aspect_digest(astro_data, limit=8),
+        }
+        if isinstance(astro_data.get("vedic"), dict):
+            vedic = astro_data["vedic"]
+            digest["vedic"] = {
+                "nakshatra": vedic.get("nakshatra"),
+                "strength": vedic.get("strength"),
+            }
+        if isinstance(astro_data.get("shichusuimei"), dict):
+            s4 = astro_data["shichusuimei"]
+            summary = s4.get("summary") if isinstance(s4.get("summary"), dict) else {}
+            digest["shichusuimei"] = {
+                "day_kanshi": summary.get("day_kanshi"),
+                "hour_kanshi": summary.get("hour_kanshi"),
+                "year_kanshi": summary.get("year_kanshi"),
+                "month_kanshi": summary.get("month_kanshi"),
+            }
+        return json.dumps(digest, ensure_ascii=False)
+    except Exception:
+        return _limit_text(astro_data, 2200)
 
 
 def _build_transit_summary(astro_data: dict[str, Any]) -> str:
-    """
-    astro_data に埋め込まれた transit データを、AIが読みやすい短文サマリーに変換する。
-    transit データがない場合は空文字を返す。
-    """
     try:
         transit = astro_data.get("transit") or astro_data.get("transit_data")
         if not isinstance(transit, dict):
@@ -390,7 +452,7 @@ def _build_transit_summary(astro_data: dict[str, Any]) -> str:
 
         if today_planets:
             planet_strs = [
-                f"{p['name']} {p.get('sign','')} {p.get('degree','')}°"
+                f"{p['name']} {p.get('sign', '')} {p.get('degree', '')}°"
                 for p in today_planets[:10]
                 if isinstance(p, dict) and p.get("name")
             ]
@@ -416,15 +478,6 @@ def _build_transit_summary(astro_data: dict[str, Any]) -> str:
         return ""
 
 
-def _is_incomplete_web(text: str) -> bool:
-    """Legacy helper kept for compatibility. Continuation mode is disabled."""
-    return False
-
-
-def _make_continue_prompt(*, previous_text: str) -> str:
-    return previous_text
-
-
 def _normalize_report_type(report_type: str | None) -> str:
     rt = (report_type or "").strip().lower()
     if rt in (
@@ -437,8 +490,6 @@ def _normalize_report_type(report_type: str | None) -> str:
         "raw_prompt",
     ):
         return rt
-
-    # 旧互換
     if rt in ("compatibility", "compat"):
         return "compat_web"
     if rt in ("single", ""):
@@ -463,7 +514,12 @@ def _parse_age_years(value: Any) -> int | None:
 def _detect_available_systems(astro_data: dict[str, Any], astrology_system: str) -> dict[str, bool]:
     western = bool(astro_data.get("western") or astro_data.get("planets") or astrology_system == "western")
     vedic = bool(astro_data.get("vedic") or astrology_system == "vedic")
-    shichu = bool(astro_data.get("shichusuimei") or astro_data.get("pillars") or astro_data.get("structure_report") or astrology_system in ("shichusuimei", "shichu"))
+    shichu = bool(
+        astro_data.get("shichusuimei")
+        or astro_data.get("pillars")
+        or astro_data.get("structure_report")
+        or astrology_system in ("shichusuimei", "shichu")
+    )
     if astrology_system == "integrated":
         western = True
         vedic = True
@@ -554,18 +610,72 @@ def _is_flash_model(model_name: str) -> bool:
     return model_name in {"gemini-2.5-flash", "gemini-2.5-flash-lite"}
 
 
-def _needs_longform_flash_retry(text: str, *, is_web: bool, model_name: str) -> bool:
+def _looks_truncated(text: str) -> bool:
+    body = (text or "").strip()
+    if not body:
+        return True
+    if len(body) < 800:
+        return True
+    if body.endswith(("は", "が", "を", "に", "で", "と", "も", "や", "へ", "、", ",", "・")):
+        return True
+    if not body.endswith(("。", "！", "？", "」", "』", "】")):
+        return True
+    return False
+
+
+def _expected_headers(compat_mode: bool) -> list[str]:
+    return (
+        [f"### {i})" for i in range(1, 9)] if compat_mode
+        else [f"###{i}" for i in range(1, 9)]
+    )
+
+
+def _has_enough_sections(text: str, compat_mode: bool) -> bool:
+    body = text or ""
+    if compat_mode:
+        count = 0
+        for i in range(1, 9):
+            if f"### {i})" in body or f"### {i}）" in body:
+                count += 1
+        return count >= 8
+    count = 0
+    for i in range(1, 9):
+        if f"###{i}" in body or f"### {i}" in body:
+            count += 1
+    return count >= 8
+
+
+def _needs_longform_flash_retry(text: str, *, is_web: bool, model_name: str, compat_mode: bool = False) -> bool:
     if not is_web or model_name != "gemini-2.5-flash":
         return False
     body = (text or "").strip()
     if len(body) < 1800:
+        return True
+    if compat_mode and not _has_enough_sections(body, True):
         return True
     if not any(body.endswith(ch) for ch in ("。", "！", "？", "」", "』", "】", ">")):
         return True
     return False
 
 
-def _flash_web_boost_prompt() -> str:
+def _flash_web_boost_prompt(compat_mode: bool = False) -> str:
+    if compat_mode:
+        return (
+            "【Gemini 2.5 Flash 専用の追加指示】\n"
+            "- この相性鑑定は短くまとめないこと。\n"
+            "- 必ず以下の8章をすべて出すこと。\n"
+            "  1. 個体の関係特性\n"
+            "  2. 感情的安心構造\n"
+            "  3. 愛情表現と魅力認識\n"
+            "  4. 親密性と距離感\n"
+            "  5. 衝突発生メカニズム\n"
+            "  6. 長期安定構造\n"
+            "  7. 強い引力と変容作用\n"
+            "  8. 実践的ヒント\n"
+            "- 各章は最低でも4文以上。\n"
+            "- 第8章で必ず最後まで完結させること。\n"
+            "- 文章末尾を途中で終わらせないこと。\n"
+        )
     return (
         "【Gemini 2.5 Flash 専用の追加指示】\n"
         "- この鑑定は短くまとめないこと。\n"
@@ -587,7 +697,7 @@ def _flash_web_boost_prompt() -> str:
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
-    s = (text or '').strip()
+    s = (text or "").strip()
     if not s:
         return {}
     if s.startswith("```"):
@@ -604,8 +714,8 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except Exception:
         pass
-    start = s.find('{')
-    end = s.rfind('}')
+    start = s.find("{")
+    end = s.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
             data = json.loads(s[start:end + 1])
@@ -615,7 +725,15 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     return {}
 
 
-def _call_model_once(*, client: Any, model_name: str, prompt: str, max_tokens: int, temperature: float, top_p: float = 0.95) -> tuple[str, Any]:
+def _call_model_once(
+    *,
+    client: Any,
+    model_name: str,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    top_p: float = 0.95,
+) -> tuple[str, Any]:
     config = types.GenerateContentConfig(
         temperature=temperature,
         top_p=top_p,
@@ -626,163 +744,348 @@ def _call_model_once(*, client: Any, model_name: str, prompt: str, max_tokens: i
         contents=prompt,
         config=config,
     )
-    return (_extract_text(resp) or '').strip(), resp
+    return (_extract_text(resp) or "").strip(), resp
 
 
 def _log_usage(resp: Any, *, model_name: str, source: str, attempt: int, stage: str) -> None:
-    usage = getattr(resp, 'usage_metadata', None)
+    usage = getattr(resp, "usage_metadata", None)
     if usage is None:
         return
     try:
-        print('[ai_report] usage', {
-            'model': model_name,
-            'source': source,
-            'attempt': attempt,
-            'stage': stage,
-            'prompt_token_count': getattr(usage, 'prompt_token_count', None),
-            'candidates_token_count': getattr(usage, 'candidates_token_count', None),
-            'total_token_count': getattr(usage, 'total_token_count', None),
+        print("[ai_report] usage", {
+            "model": model_name,
+            "source": source,
+            "attempt": attempt,
+            "stage": stage,
+            "prompt_token_count": getattr(usage, "prompt_token_count", None),
+            "candidates_token_count": getattr(usage, "candidates_token_count", None),
+            "total_token_count": getattr(usage, "total_token_count", None),
         })
     except Exception:
         pass
 
 
-def _outline_prompt(*, ctx: dict[str, Any], single_web_prompt: str) -> str:
+def _compat_names(astro_data: dict[str, Any], meta2: dict[str, Any]) -> tuple[str, str]:
+    person_a = astro_data.get("personA") if isinstance(astro_data.get("personA"), dict) else {}
+    person_b = astro_data.get("personB") if isinstance(astro_data.get("personB"), dict) else {}
+
+    name_a = (
+        person_a.get("name")
+        or meta2.get("name")
+        or meta2.get("user_name")
+        or "A"
+    )
+    name_b = (
+        person_b.get("name")
+        or meta2.get("name_b")
+        or "B"
+    )
+    return str(name_a).strip() or "A", str(name_b).strip() or "B"
+
+
+def _compat_name_rules(name_a: str, name_b: str) -> str:
     return (
-        'あなたは占い鑑定文の設計者です。最終本文はまだ書かず、鑑定の設計図だけをJSONで返してください。\n'
-        '目的は、長文鑑定を前半・後半の2回に分けて安定生成することです。\n\n'
-        '【元の鑑定指示】\n'
-        + single_web_prompt
-        + '\n\n【今回やること】\n'
-        + '- 本文は書かない。JSONのみ返す。\n'
-        + '- 8章ぶんの要点を作る。\n'
-        + '- 各章について、章の役割 / 主張 / 入れるべき具体例 / 痛い指摘 / 行動アドバイス を短く整理する。\n'
-        + '- 占術が複数ある場合は、占術別に分割せず統合した読み筋にする。\n'
-        + '- 名前が空なら呼びかけ不要。敬称は付けない。\n'
-        + '- 未来は断定しない。\n\n'
-        + '【返却形式】\n'
-        + '{\n'
-        + '  "voice": "文体の方針",\n'
-        + '  "central_theme": "全体を貫く一文",\n'
-        + '  "sections": [\n'
-        + '    {"id": 1, "title": "この人の核", "goal": "...", "points": ["..."], "examples": ["..."], "advice": ["..."], "warnings": ["..."]},\n'
-        + '    ... 8章ぶん ...\n'
-        + '  ]\n'
-        + '}\n\n'
-        + '【入力データ】\n'
-        + f'astro_raw: {ctx.get("astro_data")}\n'
-        + f'structure_calc: {ctx.get("structure_summary")}\n'
-        + f'meta: astrology_system:{ctx.get("astrology_system")}, available_systems:{ctx.get("available_systems")}, theme:{ctx.get("theme")}, message:{ctx.get("user_message")}, display_name:{ctx.get("display_name")}, life_phase:{ctx.get("life_phase_label")}, life_theme:{ctx.get("life_phase_theme")}, short_flow:{ctx.get("transit_focus")}\n'
-        + f'transit: {ctx.get("transit_summary")}\n'
+        "【登場人物名の固定ルール】\n"
+        f"- PersonA → {name_a}さん\n"
+        f"- PersonB → {name_b}さん\n"
+        "- 「PersonA」「PersonB」「A」「B」という表記は本文で使わないこと。\n"
+        f"- 必ず「{name_a}さん」「{name_b}さん」で書くこと。\n"
+        "- 二人称で雑に省略せず、誰の話か曖昧にしないこと。\n"
+    )
+
+
+def _default_outline(*, compat_mode: bool = False) -> dict[str, Any]:
+    section_titles = (
+        [
+            "個体の関係特性",
+            "感情的安心構造",
+            "愛情表現と魅力認識",
+            "親密性と距離感",
+            "衝突発生メカニズム",
+            "長期安定構造",
+            "強い引力と変容作用",
+            "実践的ヒント",
+        ] if compat_mode else [
+            "この人の核",
+            "表に出る姿",
+            "内側の本質とズレ",
+            "現実での出方",
+            "盲点と詰まりやすい癖",
+            "扱い方のコツ",
+            "人生の流れと現在地",
+            "これから3〜6ヶ月の流れ",
+        ]
+    )
+    return {
+        "voice": "落ち着いた分析調で、抽象だけでなく具体例も交えて書く",
+        "central_theme": "主要配置から見た関係構造の理解",
+        "sections": [
+            {
+                "id": i + 1,
+                "title": title,
+                "goal": "主要な読み筋を整理する",
+                "points": ["配置の特徴を拾う", "関係の出方を具体化する"],
+                "advice": ["現実で使える行動ヒントを1つ入れる", "断定しすぎない"],
+            }
+            for i, title in enumerate(section_titles)
+        ],
+    }
+
+
+def _outline_prompt(*, ctx: dict[str, Any], single_web_prompt: str) -> str:
+    compat_mode = bool(ctx.get("compat_mode"))
+    name_rules = _compat_name_rules(
+        str(ctx.get("name_a") or "A"),
+        str(ctx.get("name_b") or "B"),
+    ) if compat_mode else ""
+
+    section_titles = (
+        [
+            "個体の関係特性", "感情的安心構造", "愛情表現と魅力認識", "親密性と距離感",
+            "衝突発生メカニズム", "長期安定構造", "強い引力と変容作用", "実践的ヒント",
+        ] if compat_mode else [
+            "この人の核", "表に出る姿", "内側の本質とズレ", "現実での出方",
+            "盲点と詰まりやすい癖", "扱い方のコツ", "人生の流れと現在地", "これから3〜6ヶ月の流れ",
+        ]
+    )
+    sections_json = ",\n".join(
+        [f'    {{"id": {i+1}, "title": "{title}", "goal": "...", "points": ["..."], "advice": ["..."]}}' for i, title in enumerate(section_titles)]
+    )
+    return (
+        "あなたは占い鑑定文の設計者です。本文は書かず、有効なJSONのみ返してください。\n"
+        "長文本文を2回に分けて書くための設計図を作ります。説明文は禁止です。\n\n"
+        + name_rules
+        + "\n【必須条件】\n"
+        "- sections は必ず8件。\n"
+        "- 各 section は title / goal / points / advice を持つ。\n"
+        "- points と advice は各2〜4件の短文。\n"
+        "- 占術別にバラさず統合した読み筋にする。\n"
+        "- 名前が空なら呼びかけ不要。未来は断定しない。\n\n"
+        + "【返却形式】\n{\n  \"voice\": \"文体方針\",\n  \"central_theme\": \"全体テーマ\",\n  \"sections\": [\n"
+        + sections_json
+        + "\n  ]\n}\n\n"
+        + "【入力要約】\n"
+        + f"digest: {ctx.get('astro_digest')}\n"
+        + f"structure: {ctx.get('structure_summary')}\n"
+        + f"meta: system={ctx.get('astrology_system')}, compat={compat_mode}, theme={ctx.get('theme')}, display={ctx.get('display_name')}, phase={ctx.get('life_phase_label')}, flow={ctx.get('transit_focus')}\n"
+        + f"transit: {ctx.get('transit_summary')}\n"
     )
 
 
 def _part_prompt(*, outline: dict[str, Any], ctx: dict[str, Any], part: int) -> str:
+    compat_mode = bool(ctx.get("compat_mode"))
     if part == 1:
-        section_range = '1〜4章'
+        section_range = "1〜4章"
         extra = (
-            '- 1〜4章のみ書く。5〜8章には触れない。\n'
-            '- 導入から内面・現実まで、読み手が「自分のことだ」と感じる密度を優先する。\n'
-            '- 最低1800文字、理想2200〜3200文字。\n'
+            "- 1〜4章のみ書く。5〜8章には触れない。\n"
+            "- 前半は人物像や関係の土台を具体化する。\n"
+            "- 目安1200〜2200文字。\n"
         )
     else:
-        section_range = '5〜8章'
+        section_range = "5〜8章"
         extra = (
-            '- 5〜8章のみ書く。1〜4章の内容を繰り返さない。\n'
-            '- 盲点、扱い方、現在地、3〜6ヶ月の流れを具体化して締める。\n'
-            '- 最低1800文字、理想2200〜3200文字。\n'
+            "- 5〜8章のみ書く。1〜4章を繰り返さない。\n"
+            "- 後半は課題・扱い方・今後のヒントまで書き切る。\n"
+            "- 第8章の最後まで完結させる。\n"
+            "- 目安1200〜2200文字。\n"
         )
+
+    scope_line = (
+        "- 二者の相互作用として書く。相性の良し悪し判定ではなく、起きやすい仕組みを書く。\n"
+        if compat_mode else
+        "- 占術別の説明書きではなく、1人の人格として統合して描く。\n"
+    )
+
+    name_rules = _compat_name_rules(
+        str(ctx.get("name_a") or "A"),
+        str(ctx.get("name_b") or "B"),
+    ) if compat_mode else ""
+
     return (
-        'あなたは占い鑑定を行うプロの占い師です。以下の設計図に従い、このパートだけを完結した日本語本文として書いてください。\n\n'
-        '【重要】\n'
-        '- このパート以外の章は書かない。\n'
-        '- 箇条書きは禁止。自然な段落だけで書く。\n'
-        '- 短くまとめない。省略しない。\n'
-        '- 有料鑑定として成立する密度にする。\n'
-        '- 名前が空なら呼びかけ不要。敬称は付けない。\n'
-        '- 占術別の説明書きではなく、1人の人格として統合して描く。\n'
-        '- 章タイトルは本文内にそのまま表示してよい。\n'
+        "あなたは占い鑑定を行うプロの占い師です。以下の設計図に従い、このパートだけを完結した日本語本文として書いてください。\n\n"
+        + name_rules
+        + "\n【重要】\n"
+        "- このパート以外の章は書かない。\n"
+        "- 箇条書きは禁止。自然な段落だけで書く。\n"
+        "- 短くまとめず、根拠のある具体表現を入れる。\n"
+        "- 名前が空なら呼びかけ不要。敬称は付けない。\n"
+        + scope_line
+        + "- 章タイトルは本文内にそのまま表示してよい。\n"
         + extra
-        + '\n【今回書く範囲】\n'
+        + "\n【今回書く範囲】\n"
         + section_range
-        + '\n\n【設計図(JSON)】\n'
-        + json.dumps(outline, ensure_ascii=False)
-        + '\n\n【補助情報】\n'
-        + f'display_name: {ctx.get("display_name")}\n'
-        + f'life_phase: {ctx.get("life_phase_label")} / {ctx.get("life_phase_theme")}\n'
-        + f'transit_focus: {ctx.get("transit_focus")}\n'
-        + f'transit_summary: {ctx.get("transit_summary")}\n'
+        + "\n\n【設計図(JSON)】\n"
+        + _limit_text(json.dumps(outline, ensure_ascii=False), 3500)
+        + "\n\n【補助情報】\n"
+        + f"digest: {ctx.get('astro_digest')}\n"
+        + f"display_name: {ctx.get('display_name')}\n"
+        + f"name_a: {ctx.get('name_a')}\n"
+        + f"name_b: {ctx.get('name_b')}\n"
+        + f"life_phase: {ctx.get('life_phase_label')} / {ctx.get('life_phase_theme')}\n"
+        + f"transit_focus: {ctx.get('transit_focus')}\n"
+        + f"transit_summary: {ctx.get('transit_summary')}\n"
     )
 
 
-def _generate_longform_in_parts(*, client: Any, model_name: str, model_source: str, ctx: dict[str, Any], single_web_prompt: str) -> str:
-    outline_prompt = _outline_prompt(ctx=ctx, single_web_prompt=single_web_prompt)
-    last_error = None
-    outline: dict[str, Any] = {}
+def _completion_prompt(*, existing_text: str, ctx: dict[str, Any], compat_mode: bool) -> str:
+    name_rules = _compat_name_rules(
+        str(ctx.get("name_a") or "A"),
+        str(ctx.get("name_b") or "B"),
+    ) if compat_mode else ""
+    return (
+        "以下の本文は末尾が途中で切れています。"
+        "重複せず、続きだけを自然につないで第8章の最後まで完結させてください。\n"
+        "400〜900字程度で十分です。箇条書きは禁止です。\n\n"
+        + name_rules
+        + "\n【すでに出ている本文】\n"
+        + _limit_text(existing_text, 3000)
+    )
 
-    for attempt in range(3):
+
+def _complete_tail_if_needed(
+    *,
+    client: Any,
+    model_name: str,
+    model_source: str,
+    text: str,
+    ctx: dict[str, Any],
+    compat_mode: bool,
+) -> str:
+    body = (text or "").strip()
+    if not body:
+        return body
+    if not _looks_truncated(body):
+        return body
+
+    try:
+        prompt = _completion_prompt(existing_text=body, ctx=ctx, compat_mode=compat_mode)
+        tail, resp = _call_model_once(
+            client=client,
+            model_name=model_name,
+            prompt=prompt,
+            max_tokens=1400,
+            temperature=0.15,
+        )
+        _log_usage(resp, model_name=model_name, source=model_source, attempt=1, stage="tail")
+        tail = (tail or "").strip()
+        if tail:
+            merged = (body + "\n" + tail).strip()
+            if not _looks_truncated(merged):
+                return merged
+    except Exception:
+        pass
+    return body
+
+
+def _generate_longform_in_parts(
+    *,
+    client: Any,
+    model_name: str,
+    model_source: str,
+    ctx: dict[str, Any],
+    single_web_prompt: str,
+) -> str:
+    outline_prompt = _outline_prompt(ctx=ctx, single_web_prompt=single_web_prompt)
+    outline: dict[str, Any] = {}
+    compat_mode = bool(ctx.get("compat_mode"))
+
+    for attempt in range(2):
         try:
             outline_text, outline_resp = _call_model_once(
                 client=client,
                 model_name=model_name,
                 prompt=outline_prompt,
-                max_tokens=2400,
+                max_tokens=2200,
                 temperature=0.1,
             )
-            _log_usage(outline_resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage='outline')
+            _log_usage(outline_resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage="outline")
             outline = _extract_json_object(outline_text)
-            sections = outline.get('sections') if isinstance(outline, dict) else None
+            sections = outline.get("sections") if isinstance(outline, dict) else None
             if isinstance(sections, list) and len(sections) >= 8:
                 break
-            if attempt == 2:
-                raise RuntimeError('outline json invalid')
-            outline_prompt += '\n\n【再指示】JSONが崩れているか、sectionsが8章に足りません。説明文ではなく、有効なJSONだけを返してください。'
-            time.sleep(0.5)
-        except Exception as e:
-            last_error = e
-            time.sleep(0.8)
+            outline = {}
+            outline_prompt += "\n\n【再指示】有効なJSONだけを返してください。sections は必ず8件です。"
+            time.sleep(0.4)
+        except Exception:
+            outline = {}
+            time.sleep(0.6)
+
     if not outline:
-        raise RuntimeError(f'outline generation failed: {last_error}')
+        outline = _default_outline(compat_mode=compat_mode)
 
     parts: list[str] = []
+
     for part in (1, 2):
         part_prompt = _part_prompt(outline=outline, ctx=ctx, part=part)
-        last_part_error = None
-        success = False
+        part_text = ""
         for attempt in range(3):
             try:
-                part_text, part_resp = _call_model_once(
+                candidate, part_resp = _call_model_once(
                     client=client,
                     model_name=model_name,
                     prompt=part_prompt,
-                    max_tokens=5200,
+                    max_tokens=4200,
                     temperature=0.15,
                 )
-                _log_usage(part_resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage=f'part{part}')
-                if len((part_text or '').strip()) < 1400 and attempt < 2:
-                    part_prompt += '\n\n【再指示】短すぎます。最低1800文字を目安に、具体例と状況描写を増やして最初から書き直してください。'
-                    time.sleep(0.5)
-                    continue
-                if not (part_text or '').strip():
-                    raise RuntimeError('empty part text')
-                parts.append(part_text.strip())
-                success = True
-                break
-            except Exception as e:
-                last_part_error = e
-                time.sleep(0.8)
-        if not success:
-            raise RuntimeError(f'part{part} generation failed: {last_part_error}')
+                _log_usage(part_resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage=f"part{part}")
 
-    merged = "\n\n".join(p for p in parts if p.strip()).strip()
-    if len(merged) < 2800:
-        raise RuntimeError('merged text too short after multipart generation')
-    return merged
+                candidate = (candidate or "").strip()
+                if part == 2:
+                    candidate = _complete_tail_if_needed(
+                        client=client,
+                        model_name=model_name,
+                        model_source=model_source,
+                        text=candidate,
+                        ctx=ctx,
+                        compat_mode=compat_mode,
+                    )
 
+                too_short = len(candidate) < (1100 if part == 1 else 900)
+                bad_tail = _looks_truncated(candidate)
 
-# =========================
-# Main
-# =========================
+                if too_short or bad_tail:
+                    if attempt < 2:
+                        part_prompt += (
+                            "\n\n【再指示】\n"
+                            "前回の出力は短すぎるか、途中で終わっています。"
+                            "このパートだけを最初から書き直し、最後まで完結させてください。"
+                            "具体例と関係の出方、行動ヒントを増やしてください。"
+                        )
+                        time.sleep(0.4)
+                        continue
+
+                part_text = candidate
+                if part_text:
+                    break
+            except Exception:
+                time.sleep(0.6)
+
+        if not part_text:
+            raise RuntimeError(f"part{part} generation failed")
+
+        parts.append(part_text)
+
+    if len(parts) != 2:
+        raise RuntimeError("multipart generation incomplete")
+
+    full = "\n\n".join(p for p in parts if p.strip()).strip()
+    full = _complete_tail_if_needed(
+        client=client,
+        model_name=model_name,
+        model_source=model_source,
+        text=full,
+        ctx=ctx,
+        compat_mode=compat_mode,
+    )
+
+    if len(full) < 1800 or _looks_truncated(full):
+        raise RuntimeError("combined text too short or truncated")
+
+    if compat_mode and not _has_enough_sections(full, True):
+        raise RuntimeError("compat sections incomplete")
+
+    return fix_punctuation(full)
+
 
 def generate_report(
     astro_data: dict[str, Any],
@@ -791,14 +1094,6 @@ def generate_report(
     report_type: str | None = None,
     meta: dict[str, Any] | None = None,
 ) -> str:
-    """
-    style: "line" を渡すと LINE短文化を優先
-    report_type:
-      - single_web / single_line
-      - single_web_reader / single_line_reader
-      - compat_web / compat_line
-    meta: routes.py 側で付与する _meta を上書き・追加したい時に渡す
-    """
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not api_key:
         return "GEMINI_API_KEY が未設定です"
@@ -816,20 +1111,15 @@ def generate_report(
     requested_model = _normalize_requested_model(meta2.get("ai_model")) if isinstance(meta2, dict) else None
     model_name, model_source = _resolve_model_name(requested_model)
 
-    # style 引数が来たら最優先で反映
     if style:
         meta2["output_style"] = style
 
     rt = _normalize_report_type(report_type)
 
-    # output_style / detail_level
     output_style = (style or meta2.get("output_style", "web") or "web").strip()
     detail_level = (meta2.get("detail_level", "standard") or "standard").strip()
-
-    # 体系（western / vedic / integrated）
     astrology_system = (meta2.get("astrology_system", "western") or "western").strip().lower()
 
-    # meta fields
     birth_date = meta2.get("birth_date", "未取得")
     today = meta2.get("today", "未取得")
     age_years = meta2.get("age_years", "未計算")
@@ -843,16 +1133,16 @@ def generate_report(
     life_phase_label, life_phase_theme = _life_phase(age_years)
     transit_focus = _transit_focus(age_years, available_systems)
 
-    structure_summary = _build_structure_summary(astro_data)
+    compat_mode = rt in {"compat_web", "compat_line"}
+    name_a, name_b = _compat_names(astro_data, meta2)
 
-    # -------------------------
-    # Build prompts (from files)
-    # -------------------------
-    # transit_data が astro_data に埋め込まれていれば要約を作る
-    transit_summary = _build_transit_summary(astro_data)
+    astro_digest = _build_prompt_astro_digest(astro_data, compat_mode=compat_mode)
+    structure_summary = _limit_text(_build_structure_summary(astro_data), 1800 if compat_mode else 2600)
+    transit_summary = _limit_text(_build_transit_summary(astro_data), 700)
 
     ctx: dict[str, Any] = {
-        "astro_data": astro_data,
+        "astro_data": astro_digest,
+        "astro_digest": astro_digest,
         "structure_summary": structure_summary,
         "astrology_system": astrology_system,
         "theme": theme,
@@ -871,6 +1161,10 @@ def generate_report(
         "transit_focus": transit_focus,
         "transit_summary": transit_summary,
         "free_reading_key_data": _build_free_reading_key_data(astro_data),
+        "astro_hint_line": build_astro_hint_line(astro_data),
+        "compat_mode": compat_mode,
+        "name_a": name_a,
+        "name_b": name_b,
     }
 
     common_rules_tpl = _read_prompt_file("common_rules.txt")
@@ -890,14 +1184,16 @@ def generate_report(
     compat_web_prompt = _render_prompt(compat_web_tpl, ctx)
     compat_line_prompt = _render_prompt(compat_line_tpl, ctx)
 
+    if compat_mode:
+        name_rules = _compat_name_rules(name_a, name_b)
+        compat_web_prompt = name_rules + "\n" + compat_web_prompt
+        compat_line_prompt = name_rules + "\n" + compat_line_prompt
+
     free_reading_prompt = ""
     if theme == "free_reading":
         free_reading_tpl = _read_prompt_file("free_reading_web.txt")
         free_reading_prompt = _render_prompt(free_reading_tpl, ctx)
 
-    # -------------------------
-    # integrated / integrated3 guards
-    # -------------------------
     guard = ""
     if astrology_system == "integrated":
         guard = _read_prompt_file("guard_integrated.txt").strip()
@@ -912,16 +1208,11 @@ def generate_report(
         compat_web_prompt += "\n\n" + guard
         compat_line_prompt += "\n\n" + guard
 
-    # -------------------------
-    # vedic guard (avoid western vocab)
-    # -------------------------
     vedic_guard = ""
     if astrology_system == "vedic":
         vedic_guard = _read_prompt_file("guard_vedic.txt").strip()
 
-    # report_type と output_style から最終プロンプト決定
     if rt == "raw_prompt":
-        # user_messageをそのままプロンプトとして使う
         prompt = (meta2.get("message") or user_message or "").strip()
     elif rt == "compat_line" or (rt == "compat_web" and output_style == "line"):
         prompt = compat_line_prompt
@@ -945,9 +1236,9 @@ def generate_report(
         prompt = vedic_guard + "\n\n" + prompt
 
     if is_web and model_name == "gemini-2.5-flash":
-        prompt = prompt.rstrip() + "\n\n" + _flash_web_boost_prompt()
+        prompt = prompt.rstrip() + "\n\n" + _flash_web_boost_prompt(compat_mode)
 
-    if is_web and model_name == "gemini-2.5-flash-lite" and theme != "free_reading":
+    if is_web and model_name in {"gemini-2.5-flash-lite", "gemini-2.5-flash"} and theme != "free_reading":
         try:
             return _generate_longform_in_parts(
                 client=client,
@@ -979,10 +1270,21 @@ def generate_report(
                 max_tokens=max_tokens,
                 temperature=0.15 if _is_flash_model(model_name) else 0.1,
             )
-            _log_usage(resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage='single')
+            _log_usage(resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage="single")
             if not text1:
                 raise RuntimeError("empty text")
-            if _needs_longform_flash_retry(text1, is_web=is_web, model_name=model_name) and attempt < 2:
+
+            if compat_mode:
+                text1 = _complete_tail_if_needed(
+                    client=client,
+                    model_name=model_name,
+                    model_source=model_source,
+                    text=text1,
+                    ctx=ctx,
+                    compat_mode=True,
+                )
+
+            if _needs_longform_flash_retry(text1, is_web=is_web, model_name=model_name, compat_mode=compat_mode) and attempt < 2:
                 print("[ai_report] flash output too short", {
                     "model": model_name,
                     "chars": len(text1),
@@ -996,11 +1298,12 @@ def generate_report(
                 )
                 time.sleep(0.5)
                 continue
-            return text1
+
+            return fix_punctuation(text1)
         except Exception as e:
             last_error = e
             time.sleep(0.8)
 
     if is_line:
-        return _line_fallback_text(meta2)
+        return fix_punctuation(_line_fallback_text(meta2))
     return f"AI生成エラー: {last_error} / {_debug_model_info(requested_model)}"

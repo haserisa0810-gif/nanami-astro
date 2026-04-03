@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相性鑑定レポート | nanami astro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Noto+Serif+JP:wght@300;400;500&family=Cinzel:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0e0c10;
+  --card: #231d2e;
+  --border: rgba(180,150,100,0.18);
+  --gold: #c9a96e;
+  --gold-soft: #e8d5b0;
+  --text: #e8e0d4;
+  --muted: #b1a59a;
+  --rose: #c4788a;
+  --rose-soft: #e8c0cb;
+  --person-a: #c9a96e;       /* ゴールド：Aさん */
+  --person-a-soft: #e8d5b0;
+  --person-a-bg: rgba(201,169,110,0.06);
+  --person-b: #9b8ec4;       /* ラベンダー：Bさん */
+  --person-b-soft: #cdc5e8;
+  --person-b-bg: rgba(155,142,196,0.08);
+  --person-b-border: rgba(155,142,196,0.22);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 300;
+  line-height: 1.9;
+  overflow-x: hidden;
+}
+.stars {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 40% 8%, rgba(201,169,110,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 55% 25%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 80% 12%, rgba(201,169,110,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 15% 70%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 75%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 20% 90%, rgba(155,142,196,0.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 55%, rgba(155,142,196,0.3) 0%, transparent 100%);
+}
+
+/* ヘッダー */
+header {
+  position: relative; z-index: 1;
+  padding: 48px 48px 40px;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: flex-end;
+}
+.logo { font-family: 'Cinzel', serif; font-size: 16px; letter-spacing: 0.25em; color: var(--gold); }
+.report-meta { text-align: right; font-size: 11px; letter-spacing: 0.15em; color: var(--muted); line-height: 1.8; }
+
+/* タイトル */
+.report-hero {
+  position: relative; z-index: 1;
+  text-align: center; padding: 80px 48px 64px;
+  border-bottom: 1px solid var(--border);
+}
+.report-tag { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.5em; color: var(--gold); display: block; margin-bottom: 24px; }
+.report-name {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 300; line-height: 1.25; letter-spacing: 0.04em; margin-bottom: 8px;
+}
+.report-name em { font-style: italic; color: var(--gold-soft); }
+
+/* 2人の名前を並べる */
+.names-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin: 28px 0 0;
+  flex-wrap: wrap;
+}
+.name-badge {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.name-badge-label {
+  font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.4em;
+}
+.name-badge-label.a { color: var(--person-a); }
+.name-badge-label.b { color: var(--person-b); }
+.name-badge-value {
+  font-size: 13px; letter-spacing: 0.12em; color: var(--text);
+}
+.name-badge-sub {
+  font-size: 11px; color: var(--muted); letter-spacing: 0.08em;
+}
+.names-symbol {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 28px; font-weight: 300;
+  color: var(--border);
+  padding: 0 4px;
+}
+.report-subtitle { font-size: 12px; letter-spacing: 0.2em; color: var(--muted); margin-top: 28px; }
+
+/* セクション共通 */
+.section {
+  position: relative; z-index: 1;
+  max-width: 800px; margin: 0 auto;
+  padding: 72px 48px; border-bottom: 1px solid var(--border);
+}
+.section:last-of-type { border-bottom: none; }
+.section-label { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.5em; color: var(--gold); display: block; margin-bottom: 16px; }
+.section-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(22px, 3vw, 30px); font-weight: 300; line-height: 1.3; margin-bottom: 28px; }
+.divider { width: 40px; height: 1px; background: var(--gold); margin-bottom: 32px; }
+
+/* 2人分テーブルを横並び */
+.tables-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 680px) {
+  .tables-grid { grid-template-columns: 1fr; }
+}
+
+.person-block {}
+.person-heading {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
+.person-tag {
+  font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.35em;
+  padding: 4px 10px; border: 1px solid;
+}
+.person-tag.a {
+  color: var(--person-a);
+  border-color: rgba(201,169,110,0.35);
+  background: var(--person-a-bg);
+}
+.person-tag.b {
+  color: var(--person-b);
+  border-color: var(--person-b-border);
+  background: var(--person-b-bg);
+}
+.person-name-inline {
+  font-size: 13px; letter-spacing: 0.1em; color: var(--text);
+}
+.person-birth {
+  font-size: 11px; color: var(--muted); letter-spacing: 0.08em; margin-bottom: 14px;
+}
+
+/* 惑星テーブル */
+.planet-table { width: 100%; border-collapse: collapse; }
+.planet-table tr { border-bottom: 1px solid rgba(180,150,100,0.07); }
+.planet-table tr:last-child { border-bottom: none; }
+.planet-table td { padding: 11px 6px; vertical-align: top; font-size: 12px; }
+.pt-name { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.15em; width: 70px; white-space: nowrap; }
+.pt-name.a { color: var(--person-a); }
+.pt-name.b { color: var(--person-b); }
+.pt-sign { color: var(--gold-soft); width: 88px; white-space: nowrap; font-size: 12px; }
+.pt-house { color: var(--muted); font-size: 10px; width: 52px; white-space: nowrap; }
+.pt-role { color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+/* 仕切り線（2人の間） */
+.table-divider {
+  display: none; /* PC横並び時は不要 */
+}
+@media (max-width: 680px) {
+  .table-divider {
+    display: block;
+    width: 100%; height: 1px;
+    background: var(--border);
+    margin: 8px 0 0;
+  }
+}
+
+/* 鑑定本文 */
+.reading-text {
+  font-size: 14px;
+  line-height: 2.2;
+  color: var(--text);
+  white-space: pre-line;
+}
+
+/* フッター */
+footer {
+  position: relative; z-index: 1;
+  text-align: center; padding: 48px;
+  border-top: 1px solid var(--border);
+}
+.footer-logo { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.25em; color: var(--gold); margin-bottom: 12px; }
+.footer-note { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; line-height: 1.8; }
+
+@media (max-width: 640px) {
+  header { padding: 32px 20px 28px; flex-direction: column; align-items: flex-start; gap: 12px; }
+  .report-hero { padding: 56px 20px 48px; }
+  .section { padding: 48px 20px; }
+  footer { padding: 40px 20px; }
+}
+</style>
+</head>
+<body>
+<div class="stars"></div>
+
+<!-- ヘッダー -->
+<header>
+  <div class="logo">nanami astro</div>
+  <div class="report-meta">
+    <span>COMPATIBILITY READING</span><br>
+    <span>鑑定日：20XX年XX月XX日</span>
+  </div>
+</header>
+
+<!-- タイトル -->
+<div class="report-hero">
+  <span class="report-tag">SYNASTRY READING REPORT</span>
+  <h1 class="report-name">ふたりの<em>星の対話</em></h1>
+  <p class="report-subtitle">西洋占星術 シナストリー相性鑑定</p>
+
+  <div class="names-row">
+    <div class="name-badge">
+      <span class="name-badge-label a">PERSON A</span>
+      <span class="name-badge-value">〇〇 さま</span>
+      <span class="name-badge-sub">19XX年XX月XX日 ／ 〇〇座</span>
+    </div>
+    <div class="names-symbol">✦</div>
+    <div class="name-badge">
+      <span class="name-badge-label b">PERSON B</span>
+      <span class="name-badge-value">〇〇 さま</span>
+      <span class="name-badge-sub">19XX年XX月XX日 ／ 〇〇座</span>
+    </div>
+  </div>
+</div>
+
+<!-- 惑星配置テーブル（2人横並び） -->
+<div class="section">
+  <span class="section-label">PLANET POSITIONS</span>
+  <h2 class="section-title">両者の天体配置</h2>
+  <div class="divider"></div>
+
+  <div class="tables-grid">
+
+    <!-- Aさん -->
+    <div class="person-block">
+      <div class="person-heading">
+        <span class="person-tag a">PERSON A</span>
+        <span class="person-name-inline">〇〇 さま</span>
+      </div>
+      <p class="person-birth">19XX年XX月XX日 XX:XX ／ 〇〇県〇〇市</p>
+      <table class="planet-table">
+        <tbody>
+          <tr>
+            <td class="pt-name a">SUN</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">人生のテーマ</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">MOON</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">感情パターン</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">MERCURY</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">思考・言語</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">VENUS</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">愛情・価値観</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">MARS</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">行動・欲求</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">JUPITER</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">拡大・成長</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">ASC</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">1ハウス</td>
+            <td class="pt-role">第一印象</td>
+          </tr>
+          <tr>
+            <td class="pt-name a">MC</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">10ハウス</td>
+            <td class="pt-role">社会・キャリア</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Bさん -->
+    <div class="person-block">
+      <div class="person-heading">
+        <span class="person-tag b">PERSON B</span>
+        <span class="person-name-inline">〇〇 さま</span>
+      </div>
+      <p class="person-birth">19XX年XX月XX日 XX:XX ／ 〇〇県〇〇市</p>
+      <table class="planet-table">
+        <tbody>
+          <tr>
+            <td class="pt-name b">SUN</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">人生のテーマ</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">MOON</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">感情パターン</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">MERCURY</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">思考・言語</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">VENUS</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">愛情・価値観</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">MARS</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">行動・欲求</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">JUPITER</td>
+            <td class="pt-sign">〇〇座</td>
+            <td class="pt-house">〇ハウス</td>
+            <td class="pt-role">拡大・成長</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">ASC</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">1ハウス</td>
+            <td class="pt-role">第一印象</td>
+          </tr>
+          <tr>
+            <td class="pt-name b">MC</td>
+            <td class="pt-sign">〇〇座 〇°</td>
+            <td class="pt-house">10ハウス</td>
+            <td class="pt-role">社会・キャリア</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /tables-grid -->
+</div>
+
+<!-- 鑑定本文 -->
+<div class="section">
+  <span class="section-label">READING</span>
+  <h2 class="section-title">相性鑑定</h2>
+  <div class="divider"></div>
+  <p class="reading-text">ここに鑑定文をそのまま貼り付けてください。
+
+改行はそのまま反映されます。段落ごとに空行を入れると読みやすくなります。
+
+ふたりの関係性、引き合うポイント、摩擦が生じやすいテーマ、長期的な可能性など、鑑定のすべてをこのエリアに収められます。</p>
+</div>
+
+<footer>
+  <div class="footer-logo">nanami astro</div>
+  <p class="footer-note">
+    本レポートは占星術に基づく参考情報です。将来の出来事を保証するものではありません。<br>
+    ご自身の判断と責任のもとでご活用ください。
+  </p>
+</footer>
+
+</body>
+</html>

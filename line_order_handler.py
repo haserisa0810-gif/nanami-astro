@@ -13,7 +13,19 @@ from models import Menu, Order
 from services.order_service import create_order, get_or_create_customer
 from services.location import infer_prefecture_name, resolve_birth_location
 
-_START_WORDS = {'予約', '予約したい', '申し込み', '申込み', '鑑定したい', '鑑定申し込み'}
+_START_WORDS = {
+    '予約',
+    '予約したい',
+    '予約希望',
+    '申し込み',
+    '申込み',
+    '申し込みたい',
+    '鑑定したい',
+    '鑑定希望',
+    '鑑定申し込み',
+    '有料鑑定',
+    '有料鑑定したい',
+}
 
 _COURSE_OPTIONS = {
     '1': {'key': 'light', 'name': 'ライト鑑定', 'price': 3000, 'description': '西洋占星術'},
@@ -30,7 +42,18 @@ _COURSE_INPUT_MAP = {
 
 def should_start_order(text: str | None) -> bool:
     value = (text or '').strip().lower()
-    return value in _START_WORDS or '予約' in value or '申し込み' in value or '申込み' in value
+    if not value:
+        return False
+
+    triggers = (
+        '予約',
+        '申し込み',
+        '申込み',
+        '鑑定したい',
+        '鑑定希望',
+        '有料鑑定',
+    )
+    return value in _START_WORDS or any(t in value for t in triggers)
 
 
 def get_order_by_code(order_code: str | None) -> Order | None:
@@ -119,20 +142,27 @@ def append_correction_note(order_code: str | None, message_text: str) -> bool:
 def _start_prompt() -> str:
     return (
         'ご予約ありがとうございます。\n'
-        '以下を1通でまとめて送ってください（改行あり・なしどちらでもOKです）\n\n'
+        '以下を1通でまとめて送ってください（改行あり・なしどちらでも大丈夫です）\n\n'
         '【コース】1 / 2 / 3\n'
-        '1. ライト鑑定（3,000円）西洋占星術\n'
-        '2. スタンダード鑑定（5,000円）相性鑑定 または 総合鑑定（西洋占星術+インド占星術）\n'
-        '3. じっくり鑑定（10,000円）西洋占星術+インド占星術+四柱推命\n\n'
+        '1. ライト鑑定（3,000円）\n'
+        '   西洋占星術\n'
+        '2. スタンダード鑑定（5,000円）\n'
+        '   相性鑑定 または 総合鑑定（西洋占星術＋インド占星術）\n'
+        '3. じっくり鑑定（10,000円）\n'
+        '   西洋占星術＋インド占星術＋四柱推命\n\n'
         '【お名前】\n'
-        '【生年月日】1976-08-10 または 19760810\n'
+        '【生年月日】1980-05-05 または 19800505\n'
         '【出生時間】不明可\n'
         '【出生地】不明可\n'
         '【性別】女性 / 男性 / その他 / 回答しない\n'
-        '【ご相談内容】任意\n'
-        '※5,000円の相性鑑定をご希望の場合は、ご相談内容に以下もあわせてご記入ください。\n'
-        '　お相手の生年月日 / 出生時間（不明可） / 出生地（不明可） / 関係性\n'
-        '【無料鑑定ID または 受付番号】お持ちなら任意'
+        '【ご相談内容】任意\n\n'
+        '▼スタンダード鑑定で「相性鑑定」をご希望の方のみ\n'
+        '以下もあわせてご記入ください。\n'
+        '【お相手の生年月日】\n'
+        '【お相手の出生時間】不明可\n'
+        '【お相手の出生地】不明可\n'
+        '【関係性】\n\n'
+        '【無料鑑定ID または 受付番号】お持ちの場合のみ任意'
     )
 
 
@@ -488,6 +518,10 @@ def handle_order_message(
         return _resume_prompt(state), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
 
     if state in {'idle', 'completed'}:
+        parsed_draft, missing, errors = _parse_bundle_input(text)
+        if not missing and not errors:
+            draft.update(parsed_draft)
+            return _confirm_message(draft), {'state': 'confirm', 'draft_order': draft}, False, None
         return _not_started_message(), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
 
     if state == 'input_bundle':

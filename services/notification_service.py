@@ -357,3 +357,25 @@ async def notify_line_delivery(order: Order, *, mode: str = "delivery") -> None:
         messages.append({"type": "image", "originalContentUrl": chart_url, "previewImageUrl": chart_url})
 
     await _push_line_messages([customer_line_id], messages[:5])
+
+
+async def notify_delivery_email(order: Order, *, mode: str = "delivery") -> None:
+    recipient = (getattr(order, "user_contact", None) or "").strip()
+    customer_email = (getattr(getattr(order, "customer", None), "email", None) or "").strip()
+
+    email = ""
+    if recipient and "@" in recipient and not recipient.startswith("U"):
+        email = recipient
+    elif customer_email:
+        email = customer_email
+
+    if not email:
+        print("Delivery email skipped: recipient email missing", order.order_code)
+        return
+
+    subject = f"鑑定結果のお知らせ【{order.order_code}】"
+    body = build_delivery_completed_user_message(order, mode=mode)
+    try:
+        _send_email_message([email], subject, body, thread_id=order.order_code)
+    except Exception as exc:
+        print("Delivery email exception:", repr(exc))

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import smtplib
+from email.mime.text import MIMEText
 from typing import Any
 
 import stripe
@@ -18,6 +20,33 @@ from services.order_service import auto_assign_reader, update_order_status
 from services.stripe_service import create_checkout_session, retrieve_checkout_session
 
 router = APIRouter()
+
+
+def send_admin_mail(subject: str, body: str) -> None:
+    smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+    smtp_port = int(os.getenv('SMTP_PORT', '587'))
+    smtp_user = (os.getenv('SMTP_USER') or '').strip()
+    smtp_pass = (os.getenv('SMTP_PASS') or '').strip()
+    to_email = (os.getenv('ADMIN_EMAIL') or '').strip()
+
+    if not smtp_user or not smtp_pass or not to_email:
+        print('MAIL SKIP: SMTP_USER / SMTP_PASS / ADMIN_EMAIL not fully configured')
+        return
+
+    msg = MIMEText(body, 'plain', 'utf-8')
+    msg['Subject'] = subject
+    msg['From'] = smtp_user
+    msg['To'] = to_email
+
+    try:
+        server = smtplib.SMTP(smtp_host, smtp_port)
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+        server.quit()
+        print(f'MAIL SENT: {subject} -> {to_email}')
+    except Exception as e:
+        print('MAIL ERROR:', repr(e))
 
 
 def _webhook_secret() -> str:
@@ -149,6 +178,30 @@ def _mark_order_paid(
     tx.paid_at = order.paid_at
 
     return (not already_paid) and order.source == 'line'
+
+
+def _send_payment_completed_admin_mail(order: Order) -> None:
+    try:
+        menu_name = getattr(getattr(order, 'menu', None), 'name', '') or '未設定'
+        customer_name = getattr(getattr(order, 'customer', None), 'name', '') or getattr(order, 'customer_name', '') or '未設定'
+        email = getattr(getattr(order, 'customer', None), 'email', '') or getattr(order, 'email', '') or '未設定'
+        line_user_id = getattr(order, 'line_user_id', '') or 'なし'
+
+        subject = f"[nanami astro] 決済完了 {order.order_code}"
+        body = (
+            '決済が完了しました。\n\n'
+            f'注文ID: {order.order_code}\n'
+            f'メニュー: {menu_name}\n'
+            f'顧客名: {customer_name}\n'
+            f'メール: {email}\n'
+            f'LINE user id: {line_user_id}\n'
+            f'金額: {order.price}円\n'
+            f'現在ステータス: {order.status}\n\n'
+            '管理画面で確認してください。\n'
+        )
+        send_admin_mail(subject, body)
+    except Exception as exc:
+        print('MAIL BUILD ERROR:', repr(exc))
 
 
 def _sync_checkout_session_to_order(
@@ -405,6 +458,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 payment_intent=data_object.get('payment_intent'),
                 note='stripe checkout completed',
             )
+            _send_payment_completed_admin_mail(order)
         elif event_type == 'checkout.session.expired':
             tx.status = 'expired'
             update_order_status(db, order, to_status='expired', actor_type='system', note='stripe checkout expired')

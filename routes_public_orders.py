@@ -50,7 +50,7 @@ def menu_page(request: Request, db: Session = Depends(get_db), free_reading_code
     initial_free_order = None
     if free_reading_code:
         initial_free_order = _find_source_free_order(db, free_reading_code)
-    return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": None, "prefecture_options": PREFECTURE_OPTIONS, "initial_free_order": initial_free_order, "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code})
+    return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": None, "prefecture_options": PREFECTURE_OPTIONS, "initial_free_order": initial_free_order, "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code, "initial_menu_id": None, "form_values": {}})
 
 
 @router.get("/order/start", response_class=HTMLResponse)
@@ -76,24 +76,101 @@ def create_order_page(
     menu = db.get(Menu, menu_id)
     if not menu or not menu.is_active:
         raise HTTPException(status_code=404, detail="menu not found")
+
+    normalized_contact = (user_contact or '').strip()
+    if not normalized_contact:
+        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
+        return templates.TemplateResponse(
+            request=request,
+            name="order_start.html",
+            context={
+                "request": request,
+                "menus": menus,
+                "error": "ホームページからのお申込みは連絡先メールアドレスが必須です。",
+                "prefecture_options": PREFECTURE_OPTIONS,
+                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
+                "initial_free_order": None,
+                "initial_menu_id": menu_id,
+                "form_values": {
+                    "user_name": user_name,
+                    "user_contact": normalized_contact,
+                    "birth_date": birth_date,
+                    "birth_time": birth_time,
+                    "birth_prefecture": birth_prefecture,
+                    "birth_place": birth_place,
+                    "gender": gender,
+                    "consultation_text": consultation_text,
+                },
+            },
+            status_code=400,
+        )
+    if '@' not in normalized_contact:
+        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
+        return templates.TemplateResponse(
+            request=request,
+            name="order_start.html",
+            context={
+                "request": request,
+                "menus": menus,
+                "error": "正しいメールアドレスを入力してください。",
+                "prefecture_options": PREFECTURE_OPTIONS,
+                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
+                "initial_free_order": None,
+                "initial_menu_id": menu_id,
+                "form_values": {
+                    "user_name": user_name,
+                    "user_contact": normalized_contact,
+                    "birth_date": birth_date,
+                    "birth_time": birth_time,
+                    "birth_prefecture": birth_prefecture,
+                    "birth_place": birth_place,
+                    "gender": gender,
+                    "consultation_text": consultation_text,
+                },
+            },
+            status_code=400,
+        )
     try:
         birth_date_obj = date.fromisoformat(birth_date)
     except ValueError:
         menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
-        return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": "生年月日の形式が正しくありません。", "prefecture_options": PREFECTURE_OPTIONS, "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code, "initial_free_order": None}, status_code=400)
+        return templates.TemplateResponse(
+            request=request,
+            name="order_start.html",
+            context={
+                "request": request,
+                "menus": menus,
+                "error": "生年月日の形式が正しくありません。",
+                "prefecture_options": PREFECTURE_OPTIONS,
+                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
+                "initial_free_order": None,
+                "initial_menu_id": menu_id,
+                "form_values": {
+                    "user_name": user_name,
+                    "user_contact": normalized_contact,
+                    "birth_date": birth_date,
+                    "birth_time": birth_time,
+                    "birth_prefecture": birth_prefecture,
+                    "birth_place": birth_place,
+                    "gender": gender,
+                    "consultation_text": consultation_text,
+                },
+            },
+            status_code=400,
+        )
 
     customer = None
 
     location = resolve_birth_location((birth_prefecture or '').strip() or None, (birth_place or '').strip() or None)
-    if user_contact:
-        customer = get_or_create_customer(db, display_name=user_name.strip(), email=user_contact.strip() if "@" in user_contact else None)
+    if normalized_contact:
+        customer = get_or_create_customer(db, display_name=user_name.strip(), email=normalized_contact if "@" in normalized_contact else None)
     free_reading_code = (free_reading_code or '').strip().upper() or None
     source_free_order = _find_source_free_order(db, free_reading_code)
     order = create_order(
         db,
         menu=menu,
         user_name=user_name.strip(),
-        user_contact=(user_contact or '').strip() or None,
+        user_contact=normalized_contact or None,
         birth_date=birth_date_obj,
         birth_time=(birth_time or '').strip() or None,
         birth_prefecture=location.get('birth_prefecture'),
@@ -109,7 +186,7 @@ def create_order_page(
         status='pending_payment',
         inputs_json=json.dumps({
             'user_name': user_name,
-            'user_contact': user_contact,
+            'user_contact': normalized_contact,
             'birth_date': birth_date,
             'birth_time': birth_time,
             'birth_prefecture': birth_prefecture,
@@ -165,7 +242,7 @@ def free_reading_create(
         db,
         menu=menu,
         user_name=user_name.strip(),
-        user_contact=(user_contact or '').strip() or None,
+        user_contact=normalized_contact or None,
         birth_date=birth_date_obj,
         birth_time=(birth_time or '').strip() or None,
         birth_prefecture=location.get('birth_prefecture'),
@@ -181,7 +258,7 @@ def free_reading_create(
         status='received',
         inputs_json=json.dumps({
             'user_name': user_name,
-            'user_contact': user_contact,
+            'user_contact': normalized_contact,
             'birth_date': birth_date,
             'birth_time': birth_time,
             'birth_prefecture': birth_prefecture,

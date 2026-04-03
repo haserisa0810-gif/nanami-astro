@@ -29,6 +29,56 @@ from shared import (
 )
 
 
+def _should_force_pro_model(
+    *,
+    base_meta: dict[str, Any],
+    astrology_system: str,
+    include_reader: bool,
+    transit_data: dict[str, Any] | None = None,
+) -> bool:
+    """
+    モデル自動切替は最小限にする。
+    明示指定がある場合は必ずそれを優先し、勝手に Pro へ寄せない。
+    """
+    requested_model = str(base_meta.get("ai_model") or "").strip().lower()
+    if requested_model in {
+        "gemini-2.5-pro", "pro",
+        "gemini-2.5-flash", "flash",
+        "gemini-2.5-flash-lite", "flash-lite", "lite",
+    }:
+        return requested_model in {"gemini-2.5-pro", "pro"}
+
+    detail_level = str(base_meta.get("detail_level") or "").strip().lower()
+
+    # 未指定時だけ本当に重い条件で Pro を使う
+    return (
+        detail_level == "max"
+        and astrology_system in {"integrated3", "integrated_3"}
+        and include_reader
+        and isinstance(transit_data, dict)
+        and bool(transit_data)
+        and not transit_data.get("error")
+    )
+
+
+def _with_effective_ai_model(
+    base_meta: dict[str, Any],
+    *,
+    astrology_system: str,
+    include_reader: bool,
+    transit_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    effective = dict(base_meta)
+    if _should_force_pro_model(
+        base_meta=base_meta,
+        astrology_system=astrology_system,
+        include_reader=include_reader,
+        transit_data=transit_data,
+    ):
+        effective["ai_model"] = "gemini-2.5-pro"
+    return effective
+
+
 # ── 占術計算 ─────────────────────────────────────────────────────────────────
 
 def _calc_vedic(payload: dict[str, Any]) -> dict[str, Any]:
@@ -224,10 +274,17 @@ def run_compatibility(
     astro_a = _attach_meta(calc_western_from_payload(payload_a), base_meta)
     astro_b = _attach_meta(calc_western_from_payload(payload_b), {**base_meta, "birth_date": birth_date_b})
 
+    effective_meta = _with_effective_ai_model(
+        {**base_meta, "analysis_type": "compatibility", "astrology_system": "western"},
+        astrology_system="western",
+        include_reader=include_reader,
+        transit_data=None,
+    )
+
     astro_result: dict[str, Any] = {"personA": astro_a, "personB": astro_b}
     astro_result = _attach_meta(
         astro_result,
-        {**base_meta, "analysis_type": "compatibility", "astrology_system": "western"},
+        effective_meta,
     )
 
     report_web    = generate_report(astro_result, style="web", report_type="compat_web")
@@ -256,8 +313,15 @@ def run_single(
     report_raw    = ""（廃止：API節約のためraw版を削除）
     report_reader = 構造版メモ（single_web_reader）
     """
+    effective_meta = _with_effective_ai_model(
+        base_meta,
+        astrology_system=astrology_system,
+        include_reader=include_reader,
+        transit_data=transit_data,
+    )
+
     astro_result = run_astro_calc(astrology_system, payload_a, day_change_at_23)
-    astro_result = _attach_meta(astro_result, base_meta)
+    astro_result = _attach_meta(astro_result, effective_meta)
 
     # transit データをAIプロンプトに渡せるよう埋め込む
     if isinstance(transit_data, dict):

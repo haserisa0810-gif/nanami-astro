@@ -22,10 +22,6 @@ def enrich_daily_theme_result(result: dict[str, Any]) -> dict[str, Any]:
     if social_post:
         result["social_post"] = append_soft_action_line(social_post)
 
-    summary = (result.get("summary") or "").strip()
-    if summary:
-        result["summary"] = append_soft_action_line(summary)
-
     actions = result.get("recommended_actions")
     if isinstance(actions, list):
         if SOFT_ACTION_LINE not in actions:

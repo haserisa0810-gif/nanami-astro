@@ -186,6 +186,22 @@ def _format_user_name(name: str | None) -> str:
     return name if (name and name.endswith("さん")) else (f"{name}さん" if name else "あなた")
 
 
+def _looks_like_booking_payload(text: str | None) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    required = ["【コース】", "【お名前】", "【生年月日】"]
+    has_required = all(k in t for k in required)
+    has_detail = (
+        "\n" in t
+        or "【出生時間】" in t
+        or "【出生地】" in t
+        or "【性別】" in t
+        or "【ご相談内容】" in t
+    )
+    return has_required and has_detail
+
+
 @router.get("/line/webhook")
 async def line_webhook_healthcheck() -> dict[str, Any]:
     return {"ok": True, "message": "LINE webhook is reachable"}
@@ -273,23 +289,41 @@ async def line_webhook(request: Request) -> dict[str, Any]:
             await _line_reply(reply_token, '現在LINE受付を停止しています。再開までお待ちください。', user_id)
             continue
 
-        force_order_flow = bool(should_start_order(raw_text) or (current_state not in {None, '', 'idle'}))
-        is_new_order_start = bool(should_start_order(raw_text) and current_state in {None, '', 'idle', 'completed'})
+        looks_like_booking_payload = _looks_like_booking_payload(raw_text)
+        force_order_flow = bool(
+            should_start_order(raw_text)
+            or looks_like_booking_payload
+            or (current_state not in {None, '', 'idle'})
+        )
+        is_new_order_start = bool(
+            should_start_order(raw_text)
+            and current_state in {None, '', 'idle', 'completed'}
+        )
 
-        if (bot_mode == "order" or force_order_flow):
+        # 予約開始語が来たとき、または予約フロー継続中のみ予約処理へ
+        if force_order_flow:
             if is_new_order_start and not line_order_accepting:
-                await _line_reply(reply_token, '現在、新規のLINE予約受付を停止しています。再開後にもう一度「予約」と送ってください。', user_id)
+                await _line_reply(
+                    reply_token,
+                    '現在、新規のLINE予約受付を停止しています。再開後にもう一度「予約」と送ってください。',
+                    user_id,
+                )
                 continue
+
             if is_new_order_start and not available_line_readers:
-                await _line_reply(reply_token, '現在、受付可能な占い師がいません。時間をおいて再度「予約」と送ってください。', user_id)
+                await _line_reply(
+                    reply_token,
+                    '現在、受付可能な占い師がいません。時間をおいて再度「予約」と送ってください。',
+                    user_id,
+                )
                 continue
+
             line_display_name = await _get_line_display_name(user_id)
             existing_order_code = (session or {}).get("order_code")
 
             if current_state == "completed" and raw_text not in {"続き", "やり直し", "キャンセル"} and not should_start_order(raw_text):
                 order = get_order_by_code(existing_order_code)
                 if order:
-                    # in_progress以降は修正不可
                     if order.status in {"in_progress", "delivered", "completed", "cancelled"}:
                         await _line_reply(
                             reply_token,
@@ -300,7 +334,6 @@ async def line_webhook(request: Request) -> dict[str, Any]:
 
                     correction_state = (session or {}).get("correction_state")
 
-                    # 修正トリガーワード → 項目選択へ
                     if raw_text in {"修正", "修正したい", "変更", "変更したい", "訂正", "間違えた", "間違い"} or correction_state is None:
                         upsert_session(user_id, {
                             "state": "completed",
@@ -310,9 +343,8 @@ async def line_webhook(request: Request) -> dict[str, Any]:
                         await _line_reply(reply_token, correction_select_prompt(), user_id)
                         continue
 
-                    # 項目選択 → 値入力待ち
                     if correction_state == "field_select":
-                        if raw_text in {"1", "2", "3", "4", "5", "6"}:
+                        if raw_text in {"1", "2", "3", "4", "5", "6", "7"}:
                             from line_order_handler import _edit_prompt
                             draft = {
                                 "user_name": order.user_name,
@@ -330,10 +362,9 @@ async def line_webhook(request: Request) -> dict[str, Any]:
                             })
                             await _line_reply(reply_token, _edit_prompt(raw_text, draft), user_id)
                         else:
-                            await _line_reply(reply_token, f"1〜6の番号で選んでください。\n\n{correction_select_prompt()}", user_id)
+                            await _line_reply(reply_token, f"1〜7の番号で選んでください。\n\n{correction_select_prompt()}", user_id)
                         continue
 
-                    # 値入力 → DB上書き
                     if correction_state == "field_input":
                         field_code = (session or {}).get("correction_field", "")
                         if raw_text == "確認に戻る":
@@ -344,6 +375,7 @@ async def line_webhook(request: Request) -> dict[str, Any]:
                             })
                             await _line_reply(reply_token, correction_select_prompt(), user_id)
                             continue
+
                         success, label = apply_correction_to_order(existing_order_code, field_code, raw_text)
                         if success:
                             upsert_session(user_id, {
@@ -361,19 +393,24 @@ async def line_webhook(request: Request) -> dict[str, Any]:
                         continue
 
                 else:
-                    await _line_reply(reply_token, 'ご予約をご希望の方は「予約」または「予約したい」と送ってください。', user_id)
-                continue
+                    clear_session(user_id)
+                    await _line_reply(
+                        reply_token,
+                        'ご予約内容が見つかりませんでした。新しくご予約される場合は「予約」と送ってください。',
+                        user_id,
+                    )
+                    continue
 
-            if current_state in {"idle"} and not should_start_order(raw_text) and raw_text not in {"続き", "やり直し", "キャンセル"}:
-                await _line_reply(reply_token, 'ご予約をご希望の方は「予約」または「予約したい」と送ってください。', user_id)
-                continue
-
-            reply_text, next_session, should_clear, created_order_code = handle_order_message(user_id, raw_text, session, line_display_name)
+            reply_text, next_session, should_clear, created_order_code = handle_order_message(
+                user_id, raw_text, session, line_display_name
+            )
             if should_clear:
                 clear_session(user_id)
             else:
                 upsert_session(user_id, next_session)
+
             await _line_reply(reply_token, reply_text, user_id)
+
             if created_order_code:
                 order = get_order_by_code(created_order_code)
                 if order:
@@ -382,6 +419,16 @@ async def line_webhook(request: Request) -> dict[str, Any]:
                     except Exception as exc:
                         print("notify_new_line_reservation error:", repr(exc))
             continue
+
+        # 予約フロー以外は通常問い合わせとして受ける
+        await _line_reply(
+            reply_token,
+            "お問い合わせありがとうございます。\n"
+            "ご相談内容をそのままお送りください。\n"
+            "ご予約をご希望の場合は「予約」と送っていただければご案内します。",
+            user_id,
+        )
+        continue
 
         if should_reset(raw_text):
             clear_session(user_id)

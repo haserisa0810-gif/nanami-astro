@@ -4,13 +4,13 @@
 <div class="card">
   <form method="post" action="/order/start">
     <div class="grid">
-      <div><label>メニュー</label><select name="menu_id" required>{% for menu in menus %}{% if menu.price > 0 %}<option value="{{ menu.id }}">{{ menu.name }} / ¥{{ "{:,}".format(menu.price) }}</option>{% endif %}{% endfor %}</select></div>
-      <div><label>お名前</label><input name="user_name" required value="{{ initial_free_order.user_name if initial_free_order else '' }}"></div>
-      <div><label>ご連絡先（メール推奨）</label><input name="user_contact" placeholder="example@example.com" value="{{ initial_free_order.user_contact if initial_free_order else '' }}"></div>
-      <div><label>生年月日</label><input type="date" name="birth_date" required value="{{ initial_free_order.birth_date.isoformat() if initial_free_order and initial_free_order.birth_date else '' }}"></div>
-      <div><label>出生時間</label><input type="time" name="birth_time" value="{{ initial_free_order.birth_time if initial_free_order else '' }}"></div>
-      <div><label>都道府県（任意）</label><select name="birth_prefecture"><option value="">選択なし</option>{% for pref in prefecture_options %}<option value="{{ pref }}" {% if initial_free_order and initial_free_order.birth_prefecture == pref %}selected{% endif %}>{{ pref }}</option>{% endfor %}</select></div>
-      <div><label>出生地（市区町村など・任意）</label><input name="birth_place" placeholder="足立区 / 横浜市 など" value="{{ initial_free_order.birth_place if initial_free_order else '' }}"></div>
+      <div><label>メニュー</label><select name="menu_id" required>{% for menu in menus %}{% if menu.price > 0 %}<option value="{{ menu.id }}" {% if (form_values.menu_id if form_values else initial_menu_id) == menu.id %}selected{% endif %}>{{ menu.name }} / ¥{{ "{:,}".format(menu.price) }}</option>{% endif %}{% endfor %}</select></div>
+      <div><label>お名前</label><input name="user_name" required value="{{ (form_values.user_name if form_values else '') or (initial_free_order.user_name if initial_free_order else '') }}"></div>
+      <div><label>ご連絡先（メールアドレス必須）</label><input type="email" name="user_contact" required autocomplete="email" placeholder="example@example.com" value="{{ (form_values.user_contact if form_values else '') or (initial_free_order.user_contact if initial_free_order else '') }}"></div>
+      <div><label>生年月日</label><input type="date" name="birth_date" required value="{{ (form_values.birth_date if form_values else '') or (initial_free_order.birth_date.isoformat() if initial_free_order and initial_free_order.birth_date else '') }}"></div>
+      <div><label>出生時間</label><input type="time" name="birth_time" value="{{ (form_values.birth_time if form_values else '') or (initial_free_order.birth_time if initial_free_order else '') }}"></div>
+      <div><label>都道府県（任意）</label><select name="birth_prefecture"><option value="">選択なし</option>{% for pref in prefecture_options %}<option value="{{ pref }}" {% if ((form_values.birth_prefecture if form_values else none) == pref) or (not form_values and initial_free_order and initial_free_order.birth_prefecture == pref) %}selected{% endif %}>{{ pref }}</option>{% endfor %}</select></div>
+      <div><label>出生地（市区町村など・任意）</label><input name="birth_place" placeholder="足立区 / 横浜市 など" value="{{ (form_values.birth_place if form_values else '') or (initial_free_order.birth_place if initial_free_order else '') }}"></div>
       <div><label>性別（任意）</label><select name="gender"><option value="">未選択</option><option value="1" {% if initial_free_order and initial_free_order.gender == '1' %}selected{% endif %}>女性</option><option value="2" {% if initial_free_order and initial_free_order.gender == '2' %}selected{% endif %}>男性</option><option value="3" {% if initial_free_order and initial_free_order.gender == '3' %}selected{% endif %}>その他</option><option value="4" {% if initial_free_order and initial_free_order.gender == '4' %}selected{% endif %}>回答しない</option></select></div>
       <div><label>無料鑑定ID（お持ちの方のみ）</label><input name="free_reading_code" placeholder="F-260328-8K3M" value="{{ initial_free_reading_code or '' }}"></div>
     </div>
