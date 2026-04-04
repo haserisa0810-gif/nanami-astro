@@ -89,9 +89,9 @@ header {
 .charts-top {
   display: grid;
   grid-template-columns: 1fr;
-  max-width: 480px;
-  margin: 0 auto 32px;
-}
+  max-width:1200px;
+  margin:0 auto 36px;
+  }
 
 /* 下段：四柱 横幅フル */
 .charts-bottom { }
@@ -122,19 +122,34 @@ header {
   align-items: center; justify-content: center;
   gap: 10px;
   overflow: hidden;
+
+  width:100%;
+  max-width:700px;
+  margin:0 auto;
 }
 /* 西洋（円）：正方形 */
-.chart-img-wrap.round  { min-height: 460px; }
+.chart-img-wrap.round{
+  aspect-ratio:1;
+  min-height:420px;
+}
 /* インド（正方形グリッド）：正方形 */
-.chart-img-wrap.square { min-height: 460px; }
+.chart-img-wrap.square{
+  aspect-ratio:1;
+  min-height:420px;
+}
 /* 四柱（命式表）：横長 */
 .chart-img-wrap.wide   { aspect-ratio: 16/7; min-height: 120px; }
 
 .chart-img-wrap img {
-  width: 100%; height: 100%;
+  width:100%;
+  height:auto;
+  max-width:none;
+  
+   
   object-fit: contain;
   display: block;
   filter: brightness(0.95) contrast(1.05);
+
 }
 .chart-placeholder-icon  { font-size: 28px; color: var(--border); }
 .chart-placeholder-label { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
@@ -214,16 +229,16 @@ footer {
 <header>
   <div class="logo">nanami astro</div>
   <div class="report-meta">
-    <span>WESTERN × 四柱推命</span><br>
+    <span>VEDIC × 四柱推命</span><br>
     <span>鑑定日：20XX年XX月XX日</span>
   </div>
 </header>
 
 <!-- タイトル -->
 <div class="report-hero">
-  <span class="report-tag">WESTERN × 四柱推命 REPORT</span>
-  <h1 class="report-name">〇〇 さまの<br><em>西洋×四柱統合鑑定</em></h1>
-  <p class="report-subtitle">西洋占星術 ✦ 四柱推命</p>
+  <span class="report-tag">VEDIC × 四柱推命 REPORT</span>
+  <h1 class="report-name">〇〇 さまの<br><em>インド×四柱統合鑑定</em></h1>
+  <p class="report-subtitle">インド占星術 ✦ 四柱推命</p>
   <div class="report-date-info">
     <div class="report-date-item">
       <span class="report-date-label">BIRTH</span>
@@ -249,19 +264,19 @@ footer {
   <!-- 上段：西洋＋インド -->
   <div class="charts-top">
 
-    <!-- 西洋占星術 -->
+    <!-- インド占星術 -->
     <div class="chart-block">
       <div class="chart-label-row">
-        <span class="chart-system-badge western">WESTERN</span>
-        <span class="chart-name">ホロスコープ</span>
+        <span class="chart-system-badge vedic">VEDIC</span>
+        <span class="chart-name">ラーシチャート</span>
       </div>
-      <div class="chart-img-wrap round">
-        <!-- 画像差し替え: <img src="western.png" alt="ホロスコープ"> -->
-        <div class="chart-placeholder-icon">◯</div>
-        <div class="chart-placeholder-label">HOROSCOPE</div>
-        <div class="chart-placeholder-note">西洋チャート画像をここに</div>
+      <div class="chart-img-wrap square">
+        <!-- 画像差し替え: <img src="vedic.png" alt="ラーシチャート"> -->
+        <div class="chart-placeholder-icon">⊞</div>
+        <div class="chart-placeholder-label">RASHI CHART</div>
+        <div class="chart-placeholder-note">インドチャート画像をここに</div>
       </div>
-      <p class="chart-caption">ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座</p>
+      <p class="chart-caption">ラグナ 〇〇座 ／ 月 〇〇座</p>
     </div>
 
   </div>
@@ -315,58 +330,52 @@ footer {
   <h2 class="section-title">チャートデータ</h2>
   <div class="divider"></div>
 
-  <!-- 西洋占星術 -->
+
+  <!-- インド占星術 -->
   <div class="system-heading">
-    <span class="system-heading-label western">WESTERN ASTROLOGY</span>
+    <span class="system-heading-label vedic">VEDIC ASTROLOGY</span>
     <div class="system-heading-line"></div>
   </div>
   <table class="planet-table">
     <tbody>
       <tr>
-        <td class="pt-name">SUN</td>
+        <td class="pt-name">SURYA</td>
         <td class="pt-sign">〇〇座 〇°</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">人生のテーマ・自己表現<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">魂・父性・権威<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">MOON</td>
+        <td class="pt-name">CHANDRA</td>
         <td class="pt-sign">〇〇座 〇°</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">感情・安心感のパターン<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">心・母性・感情<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">MERCURY</td>
+        <td class="pt-name">BUDHA</td>
         <td class="pt-sign">〇〇座</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">思考・コミュニケーション<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">知性・言葉・商才<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">VENUS</td>
+        <td class="pt-name">SHUKRA</td>
         <td class="pt-sign">〇〇座</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">愛情表現・価値観<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">美・愛・芸術<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">MARS</td>
+        <td class="pt-name">MANGALA</td>
         <td class="pt-sign">〇〇座</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">行動力・エネルギー<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">行動・勇気・闘争<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">ASC</td>
+        <td class="pt-name">LAGNA</td>
         <td class="pt-sign">〇〇座 〇°</td>
         <td class="pt-house">1ハウス</td>
-        <td class="pt-role">第一印象・外への出方<span class="pt-house-desc">1H：外見・第一印象・自己の出方の領域</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">MC</td>
-        <td class="pt-sign">〇〇座 〇°</td>
-        <td class="pt-house">10ハウス</td>
-        <td class="pt-role">社会的な方向性・キャリア<span class="pt-house-desc">10H：社会的地位・職業・使命の領域</span></td>
+        <td class="pt-role">ラグナ・身体・外見<span class="pt-house-desc">1H：身体・自己・外見の領域</span></td>
       </tr>
     </tbody>
   </table>
-
 
   <!-- 四柱推命 -->
   <div class="system-heading">

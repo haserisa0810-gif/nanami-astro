@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 
-import stripe
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -93,57 +92,6 @@ def _audit(db: Session, *, actor_type: str, actor_id: int | None, action: str, t
 
 def _is_truthy(value: str | None) -> bool:
     return str(value or '').lower() in {'1', 'true', 'on', 'yes', 'active'}
-
-
-def _public_base_url() -> str:
-    return (os.getenv('PUBLIC_BASE_URL') or os.getenv('BASE_URL') or 'http://localhost:8000').rstrip('/')
-
-
-def _configure_stripe() -> None:
-    secret_key = (os.getenv('STRIPE_SECRET_KEY') or '').strip()
-    if not secret_key:
-        raise RuntimeError('STRIPE_SECRET_KEY is not set')
-    stripe.api_key = secret_key
-
-
-def _refresh_reader_connect_status(db: Session, reader: Astrologer) -> None:
-    if not reader.stripe_account_id:
-        reader.stripe_onboarding_completed = False
-        reader.stripe_charges_enabled = False
-        reader.stripe_payouts_enabled = False
-        return
-    _configure_stripe()
-    acct = stripe.Account.retrieve(reader.stripe_account_id)
-    reader.stripe_onboarding_completed = bool(getattr(acct, 'details_submitted', False))
-    reader.stripe_charges_enabled = bool(getattr(acct, 'charges_enabled', False))
-    reader.stripe_payouts_enabled = bool(getattr(acct, 'payouts_enabled', False))
-    requirements = getattr(acct, 'requirements', None)
-    currently_due = list(getattr(requirements, 'currently_due', []) or []) if requirements else []
-    if currently_due:
-        reader.stripe_onboarding_completed = False
-
-
-def _create_reader_connect_link(reader: Astrologer) -> str:
-    _configure_stripe()
-    if reader.stripe_account_id:
-        acct = stripe.Account.retrieve(reader.stripe_account_id)
-    else:
-        acct = stripe.Account.create(
-            type='express',
-            country='JP',
-            business_type='individual',
-            email=reader.login_email,
-            metadata={'astrologer_id': str(reader.id), 'display_name': reader.display_name},
-        )
-        reader.stripe_account_id = acct.id
-    base = _public_base_url()
-    link = stripe.AccountLink.create(
-        account=reader.stripe_account_id,
-        type='account_onboarding',
-        refresh_url=f'{base}/admin/astrologers?stripe_refresh={reader.id}',
-        return_url=f'{base}/admin/astrologers?stripe_return={reader.id}',
-    )
-    return link.url
 
 
 def _has_open_orders_for_reader(db: Session, reader_id: int) -> bool:
@@ -383,34 +331,6 @@ def admin_astrologers_delete(reader_id: int, admin: AdminUser = Depends(get_curr
     return _redirect('/admin/astrologers?success=deleted')
 
 
-@router.post('/admin/astrologers/{reader_id}/stripe/connect')
-def admin_astrologer_stripe_connect(reader_id: int, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
-    reader = db.get(Astrologer, reader_id)
-    if not reader:
-        raise HTTPException(status_code=404, detail='reader not found')
-    try:
-        onboarding_url = _create_reader_connect_link(reader)
-        _audit(db, actor_type='admin', actor_id=admin.id, action='create_reader_stripe_connect_link', target_type='astrologer', target_id=reader.id, after={'stripe_account_id': reader.stripe_account_id})
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        return _redirect(f'/admin/astrologers?error=stripe_connect_failed:{str(exc)}')
-    return RedirectResponse(url=onboarding_url, status_code=303)
-
-
-@router.post('/admin/astrologers/{reader_id}/stripe/refresh')
-def admin_astrologer_stripe_refresh(reader_id: int, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
-    reader = db.get(Astrologer, reader_id)
-    if not reader:
-        raise HTTPException(status_code=404, detail='reader not found')
-    try:
-        _refresh_reader_connect_status(db, reader)
-        _audit(db, actor_type='admin', actor_id=admin.id, action='refresh_reader_stripe_status', target_type='astrologer', target_id=reader.id, after={'stripe_account_id': reader.stripe_account_id, 'charges_enabled': reader.stripe_charges_enabled, 'payouts_enabled': reader.stripe_payouts_enabled, 'onboarding_completed': reader.stripe_onboarding_completed})
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        return _redirect(f'/admin/astrologers?error=stripe_refresh_failed:{str(exc)}')
-    return _redirect('/admin/astrologers?success=stripe_refreshed')
 
 
 @router.post('/admin/users/{user_id}/delete')

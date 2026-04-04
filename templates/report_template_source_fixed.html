@@ -174,7 +174,9 @@ header {
 
 /* 天体図 */
 .chart-img-wrap {
-  width: min(100%, 620px);
+  width:100%;
+  max-width:700px;
+  margin:0 auto;
   min-height: 540px;
   margin: 0 auto;
   padding: 16px;
@@ -190,10 +192,15 @@ header {
 .chart-img-wrap.round img,
 .chart-img-wrap.square svg,
 .chart-img-wrap.square img {
+  width:100%;
+  height:auto;
+  max-width:none;
+  
   display: block;
-  width: min(100%, 520px);
-  height: auto;
-  max-width: 520px;
+  
+  
+  
+
 }
 
 .chart-placeholder-note {
@@ -324,7 +331,11 @@ footer {
   .chart-img-wrap {
     min-height: 360px;
     padding: 10px;
-  }
+  
+  width:100%;
+  max-width:700px;
+  margin:0 auto;
+}
 
   .planet-table td {
     padding: 10px 4px;

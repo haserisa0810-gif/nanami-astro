@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>今日の1枚 | nanami astro</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root {
+      --bg: #0f0b14;
+      --surface: #1b1522;
+      --card: #241b2e;
+      --text: #f2eadf;
+      --muted: #b9ab9d;
+      --gold: #d8b87c;
+      --border: rgba(216,184,124,0.22);
+      --danger: #e9a2a2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Serif JP", serif;
+      background: radial-gradient(circle at top, rgba(123, 98, 156, 0.18), transparent 35%), var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 28px 18px 64px; }
+    .card {
+      background: rgba(27, 21, 34, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 22px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.32);
+      backdrop-filter: blur(8px);
+    }
+    .eyebrow {
+      color: var(--gold);
+      letter-spacing: .18em;
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    h1 { font-size: 30px; margin: 0 0 12px; font-weight: 500; }
+    p { line-height: 1.9; color: var(--muted); }
+    .status { margin-top: 14px; font-size: 14px; color: var(--gold); min-height: 22px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+    button, .btn {
+      appearance: none; border: none; cursor: pointer; text-decoration: none;
+      border-radius: 999px; padding: 14px 20px; font-size: 15px; font-weight: 600;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .primary { background: linear-gradient(135deg, #ead4a1, #d8b87c); color: #1b1522; }
+    .secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .danger { color: var(--danger); }
+    .result { display:none; margin-top: 22px; }
+    .result.visible { display:block; }
+    .card-image { width: 100%; border-radius: 20px; display: block; margin-bottom: 18px; }
+    .result h2 { margin: 0 0 8px; font-size: 28px; color: var(--gold); }
+    .result .lead { color: var(--text); font-size: 18px; }
+    .meta {
+      margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border);
+      display: grid; gap: 12px;
+    }
+    .meta-block strong { color: var(--gold); display:block; margin-bottom: 4px; }
+    .tips { margin-top: 18px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,0.04); }
+    .hidden { display:none !important; }
+    @media (max-width: 600px) {
+      .wrap { padding: 16px 12px 40px; }
+      h1 { font-size: 26px; }
+      .result h2 { font-size: 24px; }
+      .actions { flex-direction: column; }
+      button, .btn { width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="eyebrow">LINE FRIENDS ONLY</div>
+      <h1>今日の1枚</h1>
+      <p>LINE友だち登録済みの方だけが引ける、1日1回のカードです。<br>今日は何度開いても同じ1枚が表示されます。</p>
+      <p id="hint" class="status">ページを準備しています…</p>
+      <div class="actions">
+        <button id="drawBtn" class="primary hidden">今日のカードを引く</button>
+        <a id="friendBtn" class="btn secondary hidden" href="{{ add_friend_url }}" target="_blank" rel="noopener">LINE友だち追加へ</a>
+        <a class="btn secondary" href="{{ home_url }}">ホームページへ戻る</a>
+      </div>
+      <p id="errorText" class="danger"></p>
+
+      <div id="result" class="result">
+        <img id="cardImage" class="card-image" src="" alt="今日のカード">
+        <div class="eyebrow" id="drawDate"></div>
+        <h2 id="cardTitle"></h2>
+        <p id="cardMessage" class="lead"></p>
+        <div class="meta">
+          <div class="meta-block">
+            <strong>深掘りメッセージ</strong>
+            <p id="cardDetail"></p>
+          </div>
+          <div class="tips">
+            <strong>今日の行動ヒント</strong>
+            <p id="cardAction"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const liffId = {{ liff_id|tojson }};
+    const drawBtn = document.getElementById('drawBtn');
+    const friendBtn = document.getElementById('friendBtn');
+    const hint = document.getElementById('hint');
+    const errorText = document.getElementById('errorText');
+    const result = document.getElementById('result');
+
+    function setError(message) {
+      errorText.textContent = message || '';
+    }
+
+    function renderCard(payload, drawDate) {
+      if (!payload) return;
+      document.getElementById('cardImage').src = payload.image;
+      document.getElementById('cardTitle').textContent = payload.title || '';
+      document.getElementById('cardMessage').textContent = payload.message || '';
+      document.getElementById('cardDetail').textContent = payload.detail || '';
+      document.getElementById('cardAction').textContent = payload.action || '';
+      document.getElementById('drawDate').textContent = drawDate ? `DRAW DATE ${drawDate}` : 'TODAY';
+      result.classList.add('visible');
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '通信に失敗しました。');
+      return data;
+    }
+
+    async function boot() {
+      if (!liffId) {
+        hint.textContent = 'このページは現在準備中です。';
+        friendBtn.classList.remove('hidden');
+        setError('LINE連携の設定が完了するまで、しばらくお待ちください。');
+        return;
+      }
+      await liff.init({ liffId });
+      if (!liff.isLoggedIn()) {
+        liff.login();
+        return;
+      }
+      const accessToken = liff.getAccessToken();
+      if (!accessToken) {
+        hint.textContent = 'LINE認証情報を取得できませんでした。';
+        setError('もう一度開き直してください。');
+        return;
+      }
+      hint.textContent = 'LINE認証を確認しています…';
+      const status = await postJson('/daily-card/api/status', { access_token: accessToken });
+      if (status.friend_required) {
+        hint.textContent = 'このコンテンツはLINE友だち限定です。';
+        friendBtn.classList.remove('hidden');
+        setError('友だち追加後に、もう一度このページを開いてください。');
+        return;
+      }
+      drawBtn.classList.remove('hidden');
+      if (status.already_drawn && status.card) {
+        hint.textContent = '今日はすでに引いています。今日の1枚を表示しています。';
+        renderCard(status.card, status.draw_date);
+        drawBtn.textContent = '今日のカードを表示し直す';
+      } else {
+        hint.textContent = '準備できました。今日の1枚を引いてください。';
+      }
+      drawBtn.onclick = async () => {
+        setError('');
+        hint.textContent = 'カードを開いています…';
+        const data = await postJson('/daily-card/api/draw', { access_token: accessToken });
+        renderCard(data.card, data.draw_date);
+        hint.textContent = '今日の1枚を表示中です。';
+        drawBtn.textContent = '今日のカードを表示し直す';
+      };
+    }
+
+    boot().catch((err) => {
+      console.error(err);
+      hint.textContent = '表示の準備でエラーが発生しました。';
+      setError('時間をおいて再度お試しください。');
+    });
+  </script>
+</body>
+</html>

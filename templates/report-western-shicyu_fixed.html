@@ -89,9 +89,9 @@ header {
 .charts-top {
   display: grid;
   grid-template-columns: 1fr;
-  max-width: 480px;
-  margin: 0 auto 32px;
-}
+  max-width:1200px;
+  margin:0 auto 36px;
+  }
 
 /* 下段：四柱 横幅フル */
 .charts-bottom { }
@@ -122,19 +122,34 @@ header {
   align-items: center; justify-content: center;
   gap: 10px;
   overflow: hidden;
+
+  width:100%;
+  max-width:700px;
+  margin:0 auto;
 }
 /* 西洋（円）：正方形 */
-.chart-img-wrap.round  { min-height: 460px; }
+.chart-img-wrap.round{
+  aspect-ratio:1;
+  min-height:420px;
+}
 /* インド（正方形グリッド）：正方形 */
-.chart-img-wrap.square { min-height: 460px; }
+.chart-img-wrap.square{
+  aspect-ratio:1;
+  min-height:420px;
+}
 /* 四柱（命式表）：横長 */
 .chart-img-wrap.wide   { aspect-ratio: 16/7; min-height: 120px; }
 
 .chart-img-wrap img {
-  width: 100%; height: 100%;
+  width:100%;
+  height:auto;
+  max-width:none;
+  
+   
   object-fit: contain;
   display: block;
   filter: brightness(0.95) contrast(1.05);
+
 }
 .chart-placeholder-icon  { font-size: 28px; color: var(--border); }
 .chart-placeholder-label { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }

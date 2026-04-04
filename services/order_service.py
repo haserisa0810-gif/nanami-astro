@@ -56,6 +56,7 @@ def create_order(
     payload_json: str | None = None,
     unknowns_json: str | None = None,
 ) -> Order:
+    paid_at = datetime.utcnow() if status == 'paid' else None
     order = Order(
         order_code=generate_order_code(),
         customer_id=customer.id if customer else None,
@@ -77,6 +78,7 @@ def create_order(
         menu_id=menu.id,
         price=menu.price,
         status=status,
+        paid_at=paid_at,
     )
     db.add(order)
     db.flush()

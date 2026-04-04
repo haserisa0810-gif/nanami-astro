@@ -106,6 +106,17 @@ class LineWebhookEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class DailyCardDraw(Base):
+    __tablename__ = "daily_card_draws"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    line_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(100))
+    draw_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    card_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    drawn_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Order(TimestampMixin, Base):
     __tablename__ = "orders"
 

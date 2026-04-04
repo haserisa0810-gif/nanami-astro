@@ -80,7 +80,7 @@ header {
 /* ===== 図セクション ===== */
 .charts-section {
   position: relative; z-index: 1;
-  max-width: 980px; margin: 0 auto;
+  max-width: 1200px; margin: 0 auto;
   padding: 72px 48px;
   border-bottom: 1px solid var(--border);
 }
@@ -133,24 +133,28 @@ header {
   border: 1px solid rgba(180,150,100,0.10);
   pointer-events: none;
 }
-.chart-img-wrap.round  { height: 260px; }
-.chart-img-wrap.square { height: 300px; }
+.chart-img-wrap.round  { min-height: 420px; }
+.chart-img-wrap.square { min-height: 420px; }
 .chart-img-wrap.wide   { min-height: 220px; padding: 18px 20px; }
 
-.chart-img-wrap img {
+.chart-img-wrap img,
+.chart-img-wrap svg {
   position: relative;
   z-index: 1;
   max-width: 100%;
   max-height: 100%;
-  width: auto;
+  width: 100%;
   height: auto;
   object-fit: contain;
   display: block;
   filter: brightness(0.96) contrast(1.04);
 }
-.chart-img-wrap.round img  { max-height: 88%; }
-.chart-img-wrap.square img { max-height: 100%; }
-.chart-img-wrap.wide img   { max-height: 100%; width: 100%; object-fit: contain; }
+.chart-img-wrap.round img,
+.chart-img-wrap.round svg  { max-height: 88%; }
+.chart-img-wrap.square img,
+.chart-img-wrap.square svg { max-height: 100%; }
+.chart-img-wrap.wide img,
+.chart-img-wrap.wide svg   { max-height: 100%; width: 100%; object-fit: contain; }
 
 .chart-placeholder-icon  { position: relative; z-index: 1; font-size: 28px; color: var(--border); }
 .chart-placeholder-label { position: relative; z-index: 1; font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
@@ -215,6 +219,7 @@ header {
   table-layout: fixed;
 }
 .shichu-chart-wrap + .chart-caption { margin-top: 12px; }
+.shichu-summary .reading-text { font-size: 12px; line-height: 1.9; }
 
 /* フッター */
 footer {
@@ -284,7 +289,7 @@ footer {
         <span class="chart-name">ホロスコープ</span>
       </div>
       {{WESTERN_CHART_BLOCK}}
-      <p class="chart-caption">ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座</p>
+      <p class="chart-caption">{{WESTERN_CAPTION}}</p>
     </div>
 
     <div class="chart-block">
@@ -293,7 +298,7 @@ footer {
         <span class="chart-name">ラーシチャート</span>
       </div>
       {{VEDIC_CHART_BLOCK}}
-      <p class="chart-caption">ラグナ 〇〇座 ／ 月 〇〇座</p>
+      <p class="chart-caption">{{VEDIC_CAPTION}}</p>
     </div>
   </div>
 
@@ -327,53 +332,14 @@ footer {
     <span class="system-heading-label western">WESTERN ASTROLOGY</span>
     <div class="system-heading-line"></div>
   </div>
-  <table class="planet-table"><tbody>{{VEDIC_ROWS}}</tbody></table>
+  <table class="planet-table"><tbody>{{WESTERN_ROWS}}</tbody></table>
 
   <!-- インド占星術 -->
   <div class="system-heading">
     <span class="system-heading-label vedic">VEDIC ASTROLOGY</span>
     <div class="system-heading-line"></div>
   </div>
-  <table class="planet-table">
-    <tbody>
-      <tr>
-        <td class="pt-name">SURYA</td>
-        <td class="pt-sign">〇〇座 〇°</td>
-        <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">魂・父性・権威<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">CHANDRA</td>
-        <td class="pt-sign">〇〇座 〇°</td>
-        <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">心・母性・感情<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">BUDHA</td>
-        <td class="pt-sign">〇〇座</td>
-        <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">知性・言葉・商才<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">SHUKRA</td>
-        <td class="pt-sign">〇〇座</td>
-        <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">美・愛・芸術<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">MANGALA</td>
-        <td class="pt-sign">〇〇座</td>
-        <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">行動・勇気・闘争<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">LAGNA</td>
-        <td class="pt-sign">〇〇座 〇°</td>
-        <td class="pt-house">1ハウス</td>
-        <td class="pt-role">ラグナ・身体・外見<span class="pt-house-desc">1H：身体・自己・外見の領域</span></td>
-      </tr>
-    </tbody>
-  </table>
+  <table class="planet-table"><tbody>{{VEDIC_ROWS}}</tbody></table>
 
   <!-- 四柱推命 -->
   <div class="system-heading">

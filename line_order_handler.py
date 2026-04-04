@@ -237,6 +237,47 @@ def _course_label(course_code: str | None) -> str:
     return f"{item['name']}（¥{item['price']:,}）"
 
 
+
+def _shop_url() -> str:
+    return (
+        os.getenv('STORES_SHOP_URL')
+        or os.getenv('BASE_SHOP_URL')
+        or 'https://nanamiastro.base.shop'
+    ).strip().rstrip('/')
+
+
+def _payment_item_url(course_code: str | None) -> str:
+    normalized = str(course_code or '').strip()
+    env_map = {
+        '1': (os.getenv('STORES_LIGHT_URL') or os.getenv('BASE_LIGHT_URL') or '').strip(),
+        '2': (os.getenv('STORES_STANDARD_URL') or os.getenv('BASE_STANDARD_URL') or '').strip(),
+        '3': (os.getenv('STORES_PREMIUM_URL') or os.getenv('BASE_PREMIUM_URL') or '').strip(),
+    }
+    return env_map.get(normalized) or _shop_url()
+
+
+def _intake_url(course_code: str | None = None, *, line_user_id: str | None = None, line_display_name: str | None = None) -> str:
+    from urllib.parse import urlencode
+
+    base = (os.getenv('PUBLIC_ORDER_BASE_URL') or os.getenv('PUBLIC_BASE_URL') or os.getenv('BASE_URL') or '').rstrip('/')
+    slug_map = {
+        '1': 'light',
+        '2': 'standard',
+        '3': 'premium',
+    }
+    slug = slug_map.get(str(course_code or '').strip())
+    path = f'/menu/{slug}' if slug else '/menu'
+    params = {}
+    if (line_user_id or '').strip():
+        params['line_user_id'] = (line_user_id or '').strip()
+    if (line_display_name or '').strip():
+        params['line_name'] = (line_display_name or '').strip()
+    query = ('?' + urlencode(params)) if params else ''
+    if not base:
+        return f'{path}{query}'
+    return f'{base}{path}{query}'
+
+
 def _extract_labeled_value(text: str, labels: tuple[str, ...]) -> str | None:
     raw = (text or '').replace('：', ':')
     for label in labels:
@@ -496,6 +537,21 @@ def _resolve_menu_for_course(db, course_code: str | None) -> Menu | None:
     return new_menu
 
 
+def _course_select_prompt() -> str:
+    return (
+        'ご予約ありがとうございます。\n'
+        'ご希望のコース番号を送ってください。\n\n'
+        '1. ライト鑑定（3,000円）\n'
+        '   西洋占星術\n'
+        '2. スタンダード鑑定（5,000円）\n'
+        '   相性鑑定 または 総合鑑定（西洋占星術＋インド占星術）\n'
+        '3. じっくり鑑定（10,000円）\n'
+        '   西洋占星術＋インド占星術＋四柱推命\n\n'
+        '例：1 または 2 または 3\n'
+        'やめる場合は「キャンセル」と送ってください。'
+    )
+
+
 def handle_order_message(
     user_id: str | None,
     text: str,
@@ -504,111 +560,47 @@ def handle_order_message(
 ) -> tuple[str, dict, bool, str | None]:
     text = (text or '').strip()
     state = session.get('state') or 'idle'
-    draft = dict(session.get('draft_order') or {})
 
     if text == 'キャンセル':
-        return '今回の受付はキャンセルしました。\nまた必要になったら「予約」と送ってください。', {'state': 'idle', 'draft_order': {}}, True, None
-    if should_start_order(text):
-        return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
-    if text == 'やり直し':
-        return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
+        return '今回の受付はキャンセルしました。\nまた必要になったら「予約」と送ってください。', {'state': 'idle', 'draft_order': {}, 'order_code': None}, True, None
+
+    if should_start_order(text) or text == 'やり直し':
+        return _course_select_prompt(), {'state': 'course_select', 'draft_order': {}, 'order_code': None}, False, None
+
     if text == '続き':
-        if state in {'idle', 'completed'}:
-            return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
-        return _resume_prompt(state), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
+        if state == 'course_select':
+            return _course_select_prompt(), {'state': 'course_select', 'draft_order': {}, 'order_code': None}, False, None
+        return _course_select_prompt(), {'state': 'course_select', 'draft_order': {}, 'order_code': None}, False, None
 
     if state in {'idle', 'completed'}:
-        parsed_draft, missing, errors = _parse_bundle_input(text)
-        if not missing and not errors:
-            draft.update(parsed_draft)
-            return _confirm_message(draft), {'state': 'confirm', 'draft_order': draft}, False, None
-        return _not_started_message(), {'state': state, 'draft_order': draft, 'order_code': session.get('order_code')}, False, None
+        return _not_started_message(), {'state': state, 'draft_order': {}, 'order_code': session.get('order_code')}, False, None
 
-    if state == 'input_bundle':
-        parsed_draft, missing, errors = _parse_bundle_input(text)
-        if missing or errors:
-            parts: list[str] = []
-            if missing:
-                parts.append('未入力: ' + ' / '.join(missing))
-            if errors:
-                parts.extend(errors)
-            parts.append('\n次の形式でまとめて送ってください。改行なしでも大丈夫です。')
-            parts.append('【コース】1 / 2 / 3')
-            parts.append('【お名前】')
-            parts.append('【生年月日】1976-08-10 または 19760810')
-            parts.append('【出生時間】不明可')
-            parts.append('【出生地】不明可')
-            parts.append('【性別】女性 / 男性 / その他 / 回答しない')
-            parts.append('【ご相談内容】任意')
-            parts.append('【無料鑑定ID または 受付番号】任意')
-            return '\n'.join(parts), {'state': 'input_bundle', 'draft_order': draft}, False, None
-        draft.update(parsed_draft)
-        return _confirm_message(draft), {'state': 'confirm', 'draft_order': draft}, False, None
-
-    if state == 'edit_field':
-        field_code = str(session.get('edit_field') or '')
-        if text == '確認に戻る':
-            return _confirm_message(draft), {'state': 'confirm', 'draft_order': draft}, False, None
-        if field_code not in _EDITABLE_FIELDS:
-            return _confirm_message(draft), {'state': 'confirm', 'draft_order': draft}, False, None
-        updated_draft, error = _apply_single_field_edit(field_code, text, draft)
-        if error:
-            return error, {'state': 'edit_field', 'draft_order': draft, 'edit_field': field_code}, False, None
-        return _confirm_message(updated_draft), {'state': 'confirm', 'draft_order': updated_draft}, False, None
-
-    if state == 'confirm':
-        if text == '8':
-            return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
-        if text in _EDITABLE_FIELDS:
-            return _edit_prompt(text, draft), {'state': 'edit_field', 'draft_order': draft, 'edit_field': text}, False, None
-        if text != '確定':
-            return '「確定」と送るか、修正番号を送ってください。', {'state': state, 'draft_order': draft}, False, None
+    if state == 'course_select':
+        course_code = _normalize_course(text)
+        if not course_code:
+            return 'コース番号は 1 / 2 / 3 のいずれかで送ってください。\n\n' + _course_select_prompt(), {'state': 'course_select', 'draft_order': {}, 'order_code': None}, False, None
 
         with SessionLocal() as db:
-            menu = _resolve_menu_for_course(db, draft.get('course_code'))
+            menu = _resolve_menu_for_course(db, course_code)
             if not menu:
-                return 'コース情報の取得に失敗しました。最初からやり直してください。', {'state': 'input_bundle', 'draft_order': {}}, False, None
-            customer = get_or_create_customer(db, display_name=draft.get('user_name') or line_display_name, line_user_id=user_id)
-            location = resolve_birth_location(infer_prefecture_name(draft.get('birth_place')), draft.get('birth_place'))
-            free_reading_code = (draft.get('free_reading_code') or '').strip().upper()
-            source_free_order = _find_source_free_order(db, free_reading_code)
-            order = create_order(
-                db,
-                menu=menu,
-                user_name=draft.get('user_name') or (line_display_name or 'LINEユーザー'),
-                birth_date=date.fromisoformat(str(draft['birth_date'])),
-                user_contact=user_id,
-                birth_time=draft.get('birth_time'),
-                birth_prefecture=location.get('birth_prefecture'),
-                birth_place=location.get('birth_place'),
-                birth_lat=location.get('birth_lat'),
-                birth_lon=location.get('birth_lon'),
-                location_source=location.get('location_source'),
-                location_note=location.get('location_note'),
-                gender=draft.get('gender'),
-                consultation_text=draft.get('consultation_text'),
-                customer=customer,
-                source='line',
-                external_platform='line',
-                external_order_ref=user_id,
-                status='pending_payment',
-                inputs_json=json.dumps(draft, ensure_ascii=False),
-            )
-            if source_free_order:
-                order.source_free_order_id = source_free_order.id
-            db.commit()
-            base_url = (os.getenv('BASE_URL') or '').rstrip('/')
-            payment_link = f"{base_url}/payment/{order.order_code}" if base_url else f"/payment/{order.order_code}"
-            reply = (
-                f'ご予約ありがとうございます。\n予約番号は【{order.order_code}】です。\n\n'
-                f'コース: {_course_label(draft.get("course_code"))}\n\n'
-                'ご入力内容は受付済みです。\n'
-                'こちらからお申し込みをお願いいたします。\n\n'
-                f'{payment_link}\n\n'
-                '決済後は自動で反映されます。予約番号を送り直す必要はありません。\n'
-                '内容を間違えた場合のみ、そのままこのLINEに返信してください。'
-            )
-            next_session = {'state': 'completed', 'draft_order': {}, 'order_code': order.order_code}
-            return reply, next_session, False, order.order_code
+                return 'コース情報の取得に失敗しました。最初からやり直してください。', {'state': 'course_select', 'draft_order': {}, 'order_code': None}, False, None
 
-    return _start_prompt(), {'state': 'input_bundle', 'draft_order': {}}, False, None
+        payment_link = _payment_item_url(course_code)
+        intake_link = _intake_url(
+            course_code,
+            line_user_id=user_id,
+            line_display_name=line_display_name,
+        )
+        reply = (
+            'ありがとうございます。以下の順でお進みください。\n\n'
+            f'コース: {_course_label(course_code)}\n\n'
+            '1. 決済リンクからご購入\n'
+            f'{payment_link}\n\n'
+            '2. 占いフォームへ入力\n'
+            f'{intake_link}\n\n'
+            'フォーム入力後に受付完了となります。\n'
+            '内容を間違えた場合のみ、そのままこのLINEに返信してください。'
+        )
+        return reply, {'state': 'completed', 'draft_order': {}, 'order_code': None}, False, None
+
+    return _course_select_prompt(), {'state': 'course_select', 'draft_order': {}, 'order_code': None}, False, None

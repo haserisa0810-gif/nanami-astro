@@ -88,9 +88,9 @@ header {
 /* 上段：西洋＋インド 横並び */
 .charts-top {
   display: grid;
-  grid-template-columns: 1fr;
-  max-width: 480px;
-  margin: 0 auto 32px;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 32px;
 }
 
 /* 下段：四柱 横幅フル */
@@ -122,19 +122,34 @@ header {
   align-items: center; justify-content: center;
   gap: 10px;
   overflow: hidden;
+
+  width:100%;
+  max-width:700px;
+  margin:0 auto;
 }
 /* 西洋（円）：正方形 */
-.chart-img-wrap.round  { min-height: 460px; }
+.chart-img-wrap.round{
+  aspect-ratio:1;
+  min-height:420px;
+}
 /* インド（正方形グリッド）：正方形 */
-.chart-img-wrap.square { min-height: 460px; }
+.chart-img-wrap.square{
+  aspect-ratio:1;
+  min-height:420px;
+}
 /* 四柱（命式表）：横長 */
 .chart-img-wrap.wide   { aspect-ratio: 16/7; min-height: 120px; }
 
 .chart-img-wrap img {
-  width: 100%; height: 100%;
+  width:100%;
+  height:auto;
+  max-width:none;
+  
+   
   object-fit: contain;
   display: block;
   filter: brightness(0.95) contrast(1.05);
+
 }
 .chart-placeholder-icon  { font-size: 28px; color: var(--border); }
 .chart-placeholder-label { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
@@ -214,16 +229,16 @@ footer {
 <header>
   <div class="logo">nanami astro</div>
   <div class="report-meta">
-    <span>WESTERN × 四柱推命</span><br>
+    <span>WESTERN × VEDIC</span><br>
     <span>鑑定日：20XX年XX月XX日</span>
   </div>
 </header>
 
 <!-- タイトル -->
 <div class="report-hero">
-  <span class="report-tag">WESTERN × 四柱推命 REPORT</span>
-  <h1 class="report-name">〇〇 さまの<br><em>西洋×四柱統合鑑定</em></h1>
-  <p class="report-subtitle">西洋占星術 ✦ 四柱推命</p>
+  <span class="report-tag">WESTERN × VEDIC REPORT</span>
+  <h1 class="report-name">〇〇 さまの<br><em>西洋×インド統合鑑定</em></h1>
+  <p class="report-subtitle">西洋占星術 ✦ インド占星術</p>
   <div class="report-date-info">
     <div class="report-date-item">
       <span class="report-date-label">BIRTH</span>
@@ -264,38 +279,23 @@ footer {
       <p class="chart-caption">ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座</p>
     </div>
 
-  </div>
-
-  <!-- 下段：四柱推命 -->
-  <div class="charts-bottom">
+    <!-- インド占星術 -->
     <div class="chart-block">
       <div class="chart-label-row">
-        <span class="chart-system-badge shicyu">四柱推命</span>
-        <span class="chart-name">命式表</span>
+        <span class="chart-system-badge vedic">VEDIC</span>
+        <span class="chart-name">ラーシチャート</span>
       </div>
-      <div class="chart-img-wrap wide">
-        <!-- 画像の場合: <img src="shicyu.png" alt="命式表"> -->
-        <!-- テキスト表の場合はこの div を削除して下の table を使う -->
-        <div class="chart-placeholder-icon">≡</div>
-        <div class="chart-placeholder-label">MING SHI</div>
-        <div class="chart-placeholder-note">命式表画像またはテキスト表をここに</div>
+      <div class="chart-img-wrap square">
+        <!-- 画像差し替え: <img src="vedic.png" alt="ラーシチャート"> -->
+        <div class="chart-placeholder-icon">⊞</div>
+        <div class="chart-placeholder-label">RASHI CHART</div>
+        <div class="chart-placeholder-note">インドチャート画像をここに</div>
       </div>
-
-      <!-- テキストで命式を入れる場合はこちらを使用（上の chart-img-wrap.wide は削除） -->
-      <!--
-      <table class="shicyu-table">
-        <thead>
-          <tr><th></th><th>年柱</th><th>月柱</th><th>日柱</th><th>時柱</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>天干</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-          <tr><th>地支</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-          <tr><th>蔵干</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-          <tr><th>十二運</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-        </tbody>
-      </table>
-      -->
+      <p class="chart-caption">ラグナ 〇〇座 ／ 月 〇〇座</p>
     </div>
+
+  </div>
+
   </div>
 </div>
 
@@ -367,30 +367,59 @@ footer {
     </tbody>
   </table>
 
-
-  <!-- 四柱推命 -->
+  <!-- インド占星術 -->
   <div class="system-heading">
-    <span class="system-heading-label shicyu">四柱推命</span>
+    <span class="system-heading-label vedic">VEDIC ASTROLOGY</span>
     <div class="system-heading-line"></div>
   </div>
-  <table class="shicyu-table">
-    <thead>
-      <tr><th></th><th>年柱</th><th>月柱</th><th>日柱</th><th>時柱</th></tr>
-    </thead>
+  <table class="planet-table">
     <tbody>
-      <tr><th>天干</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-      <tr><th>地支</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-      <tr><th>蔵干</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-      <tr><th>十二運</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
+      <tr>
+        <td class="pt-name">SURYA</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">魂・父性・権威<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">CHANDRA</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">心・母性・感情<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">BUDHA</td>
+        <td class="pt-sign">〇〇座</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">知性・言葉・商才<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">SHUKRA</td>
+        <td class="pt-sign">〇〇座</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">美・愛・芸術<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">MANGALA</td>
+        <td class="pt-sign">〇〇座</td>
+        <td class="pt-house">〇ハウス</td>
+        <td class="pt-role">行動・勇気・闘争<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+      </tr>
+      <tr>
+        <td class="pt-name">LAGNA</td>
+        <td class="pt-sign">〇〇座 〇°</td>
+        <td class="pt-house">1ハウス</td>
+        <td class="pt-role">ラグナ・身体・外見<span class="pt-house-desc">1H：身体・自己・外見の領域</span></td>
+      </tr>
     </tbody>
   </table>
+
 
 </div>
 
 <footer>
   <div class="footer-logo">nanami astro</div>
   <p class="footer-note">
-    本レポートは占星術・四柱推命に基づく参考情報です。将来の出来事を保証するものではありません。<br>
+    本レポートは占星術に基づく参考情報です。将来の出来事を保証するものではありません。<br>
     ご自身の判断と責任のもとでご活用ください。
   </p>
 </footer>

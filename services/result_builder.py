@@ -627,153 +627,164 @@ def render_result_html(payload: dict[str, Any]) -> str:
 
 
 def render_report_html(order: Order, payload: dict[str, Any]) -> str:
-    template_path = Path(__file__).resolve().parent.parent / 'templates' / _template_name(payload)
-    tpl = template_path.read_text(encoding='utf-8')
-    sections = payload.get('sections') or []
-    planets = payload.get('planet_list') or []
-    vedic_planets = payload.get('vedic_planet_list') or []
-    shichu = payload.get('shichu') or {}
-    birth_label = order.birth_date.strftime('%Y年%m月%d日') if getattr(order, 'birth_date', None) else '-'
-    compat_b_planets = payload.get('compat_planet_list_b') or []
-    person_a = payload.get('person_a') or {}
-    person_b = payload.get('person_b') or {}
-    compat_aspects = payload.get('compatibility_aspects') or []
-    if order.birth_time:
-        birth_label += f" {order.birth_time}"
-    place_label = ' '.join([v for v in [order.birth_prefecture, order.birth_place] if v]) or '-'
+    try:
+        template_name = _template_name(payload)
+        template_path = Path(__file__).resolve().parent.parent / 'templates' / template_name
+        tpl = template_path.read_text(encoding='utf-8')
 
-    if _template_name(payload) == 'report_compatibility.html':
-        person_a_name = html.escape(_safe_text(person_a.get('name') or order.user_name) + ' さま')
-        person_b_name = html.escape(_safe_text(person_b.get('name') or 'お相手') + ' さま')
-        person_a_birth = html.escape(_safe_text(person_a.get('birth_label') or birth_label))
-        person_b_birth = html.escape(_safe_text(person_b.get('birth_label') or '-'))
-        person_a_place = html.escape(_safe_text(person_a.get('place_label') or place_label))
-        person_b_place = html.escape(_safe_text(person_b.get('place_label') or '-'))
-        person_a_sub = html.escape(f"{_safe_text(person_a.get('birth_label') or birth_label)} ／ {_safe_text(person_a.get('sun_sign') or '-')}座")
-        person_b_sub = html.escape(f"{_safe_text(person_b.get('birth_label') or '-')} ／ {_safe_text(person_b.get('sun_sign') or '-')}座")
-        body = _nl2br(sections[0].get('body') if sections else '')
-        chart_html = ''
+        sections = payload.get('sections') or []
+        planets = payload.get('planet_list') or []
+        vedic_planets = payload.get('vedic_planet_list') or []
+        shichu = payload.get('shichu') or {}
+
+        birth_label = order.birth_date.strftime('%Y年%m月%d日') if getattr(order, 'birth_date', None) else '-'
+        if getattr(order, 'birth_time', None):
+            birth_label += f" {order.birth_time}"
+
+        place_label = ' '.join([
+            v for v in [
+                getattr(order, 'birth_prefecture', ''),
+                getattr(order, 'birth_place', '')
+            ] if v
+        ]) or '-'
+
+        report_date = '-'
+        if getattr(order, 'updated_at', None):
+            try:
+                report_date = order.updated_at.strftime('%Y.%m.%d')
+            except Exception:
+                report_date = _safe_text(order.updated_at) or '-'
+
+        asc_sign = '-'
+        sun_sign = '-'
+        moon_sign = '-'
+        for p in planets:
+            n = _safe_text(p.get('name')).upper()
+            sign = _safe_text(p.get('sign')).split()[0] or '-'
+            if n == 'ASC':
+                asc_sign = sign
+            elif n == 'SUN':
+                sun_sign = sign
+            elif n == 'MOON':
+                moon_sign = sign
+
+        vedic_raw = _raw_vedic(payload.get('raw_json') or {})
+        lagna = _safe_text(_dict(vedic_raw.get('ascendant')).get('rashi_name')) or '-'
+        vedic_moon = '-'
+        for p in vedic_raw.get('planets') or []:
+            if isinstance(p, dict) and _safe_text(p.get('name')).lower() == 'moon':
+                vedic_moon = _safe_text(p.get('rashi_name')) or '-'
+                break
+
+        western_chart = ''
         if payload.get('chart_svg'):
-            chart_html = f'<div style="display:flex;justify-content:center;align-items:center;margin:18px 0 6px;min-height:420px;">{payload["chart_svg"]}</div>'
+            western_chart = f'<div class="chart-img-wrap round">{payload["chart_svg"]}</div>'
         elif payload.get('horoscope_image_url'):
-            chart_html = f'<div style="display:flex;justify-content:center;margin:18px 0 6px;"><img src="{html.escape(payload["horoscope_image_url"])}" alt="synastry chart" style="max-width:100%;width:420px;height:auto"></div>'
-        aspect_html = ''
-        if compat_aspects:
-            chips = []
-            for a in compat_aspects:
-                chips.append(f'<span style="display:inline-block;padding:6px 10px;margin:4px 6px 0 0;border:1px solid rgba(180,150,100,0.18);border-radius:999px;font-size:11px;color:var(--muted);">{html.escape(_safe_text(a.get("planet1")))} × {html.escape(_safe_text(a.get("planet2")))}<span style="margin-left:6px;color:var(--gold);">{html.escape(_safe_text(a.get("aspect")))}</span></span>')
-            aspect_html = '<div style="margin-top:10px">' + ''.join(chips) + '</div>'
-        chart_section = '<div class="section"><span class="section-label">SYNASTRY CHART</span><h2 class="section-title">お二人の天体配置図</h2><div class="divider"></div>' + chart_html + '<p style="margin-top:8px;font-size:12px;color:var(--muted);text-align:center;">内円：あなた ／ 外円：お相手</p>' + aspect_html + '</div>'
-        tpl = tpl.replace('鑑定日：20XX年XX月XX日', f"鑑定日：{html.escape(_safe_text(getattr(order, 'updated_at', '') or ''))}") if getattr(order, 'updated_at', None) else tpl
-        tpl = tpl.replace('〇〇 さま', person_a_name, 1)
-        tpl = tpl.replace('19XX年XX月XX日 ／ 〇〇座', person_a_sub, 1)
-        tpl = tpl.replace('〇〇 さま', person_b_name, 1)
-        tpl = tpl.replace('19XX年XX月XX日 ／ 〇〇座', person_b_sub, 1)
-        tpl = tpl.replace('〇〇 さま', person_a_name, 1)
-        tpl = tpl.replace('19XX年XX月XX日 XX:XX', person_a_birth, 1)
-        tpl = tpl.replace('〇〇県〇〇市', person_a_place, 1)
-        tpl = tpl.replace('〇〇 さま', person_b_name, 1)
-        tpl = tpl.replace('19XX年XX月XX日 XX:XX', person_b_birth, 1)
-        tpl = tpl.replace('〇〇県〇〇市', person_b_place, 1)
-        tpl = tpl.replace('<div class="section">\n  <span class="section-label">PLANET POSITIONS</span>', chart_section + '\n\n<div class="section">\n  <span class="section-label">PLANET POSITIONS</span>', 1)
-        tpl = _replace_table_after_heading(tpl, 'PERSON A', _render_planet_rows(payload.get('planet_list') or []), 'planet-table')
-        tpl = _replace_table_after_heading(tpl, 'PERSON B', _render_planet_rows(compat_b_planets), 'planet-table')
-        tpl = _replace_first_reading_text(tpl, body)
-        tpl = re.sub(r'<p class="reading-text">.*?</p>', f'<p class="reading-text">{body}</p>', tpl, count=1, flags=re.S)
+            western_chart = (
+                f'<div class="chart-img-wrap round">'
+                f'<img src="{html.escape(payload["horoscope_image_url"])}" alt="ホロスコープ">'
+                f'</div>'
+            )
+        else:
+            western_chart = (
+                '<div class="chart-img-wrap round">'
+                '<div class="chart-placeholder-icon">◯</div>'
+                '<div class="chart-placeholder-label">HOROSCOPE</div>'
+                '<div class="chart-placeholder-note">西洋チャート画像をここに</div>'
+                '</div>'
+            )
+
+        vedic_chart = ''
+        if payload.get('vedic_chart_svg'):
+            vedic_chart = f'<div class="chart-img-wrap square">{payload["vedic_chart_svg"]}</div>'
+        else:
+            vedic_chart = (
+                '<div class="chart-img-wrap square">'
+                '<div class="chart-placeholder-icon">⊞</div>'
+                '<div class="chart-placeholder-label">RASHI CHART</div>'
+                '<div class="chart-placeholder-note">インドチャート画像をここに</div>'
+                '</div>'
+            )
+
+        reading_text = _nl2br(sections[0].get('body') if sections else '')
+
+        # --- 西洋+インドテンプレ専用 ---
+        if template_name == 'report-western-vedic.html':
+            tpl = tpl.replace('{{REPORT_DATE}}', html.escape(report_date))
+            tpl = tpl.replace('〇〇 さま', html.escape(_safe_text(order.user_name)) + ' さま', 1)
+            tpl = tpl.replace('{{REPORT_SUBTITLE}}', '西洋占星術 ✦ インド占星術')
+            tpl = tpl.replace('{{BIRTH_INFO}}', html.escape(birth_label))
+            tpl = tpl.replace('{{BIRTH_PLACE}}', html.escape(place_label))
+            tpl = tpl.replace('{{ASC_LABEL}}', html.escape(asc_sign))
+            tpl = tpl.replace('{{WESTERN_CHART_BLOCK}}', western_chart)
+            tpl = tpl.replace('{{VEDIC_CHART_BLOCK}}', vedic_chart)
+            tpl = tpl.replace('{{WESTERN_CAPTION}}', f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}')
+            tpl = tpl.replace('{{VEDIC_CAPTION}}', f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}')
+            tpl = tpl.replace('{{INTEGRATED_READING}}', reading_text)
+            tpl = tpl.replace('{{WESTERN_ROWS}}', _render_planet_rows(planets))
+            tpl = tpl.replace('{{VEDIC_ROWS}}', _render_planet_rows(vedic_planets))
+            return tpl
+
+        # --- それ以外のテンプレ ---
+        tpl = tpl.replace('鑑定日：20XX年XX月XX日', f'鑑定日：{html.escape(report_date)}')
+        tpl = tpl.replace('19XX年XX月XX日 XX:XX', html.escape(birth_label), 1)
+        tpl = tpl.replace('〇〇県〇〇市', html.escape(place_label), 1)
+        tpl = tpl.replace('〇〇 さま', html.escape(_safe_text(order.user_name)) + ' さま', 1)
+
+        shichu_table_html = render_shichu_table_html(shichu) if shichu.get('exists') else ''
+        shichu_summary_html = render_shichu_summary_html(shichu) if shichu.get('exists') else ''
+        shichu_chart_block = (
+            '<div class="shichu-chart-wrap">' + shichu_table_html + '</div>' +
+            (f'<div class="chart-caption shichu-summary">{shichu_summary_html}</div>' if shichu_summary_html else '')
+        ) if shichu.get('exists') else '<div class="chart-img-wrap wide"><div class="chart-placeholder-label">SHICHU DATA</div><div class="chart-placeholder-note">四柱推命データをここに</div></div>'
+
+        placeholders = {
+            '{{REPORT_DATE}}': html.escape(report_date),
+            '{{USER_NAME}}': html.escape(_safe_text(order.user_name)),
+            '{{BIRTH_LABEL}}': html.escape(birth_label),
+            '{{PLACE_LABEL}}': html.escape(place_label),
+            '{{ASC_SIGN}}': html.escape(asc_sign),
+            '{{WESTERN_CHART_BLOCK}}': western_chart,
+            '{{VEDIC_CHART_BLOCK}}': vedic_chart,
+            '{{WESTERN_CAPTION}}': f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}',
+            '{{VEDIC_CAPTION}}': f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}',
+            '{{SHICHU_CHART_BLOCK}}': shichu_chart_block,
+            '{{SHICHU_DATA_TABLE}}': shichu_table_html + (shichu_summary_html if shichu_summary_html else ''),
+            '{{WESTERN_ROWS}}': _render_planet_rows(planets),
+            '{{VEDIC_ROWS}}': _render_planet_rows(vedic_planets),
+            '{{READING_TEXT}}': reading_text,
+            '{{INTEGRATED_READING}}': reading_text,
+        }
+        for key, val in placeholders.items():
+            if key in tpl:
+                tpl = tpl.replace(key, val)
+
         return tpl
 
-    tpl = tpl.replace('鑑定日：20XX年XX月XX日', f"鑑定日：{html.escape(_safe_text(getattr(order, 'updated_at', '') or ''))}") if getattr(order, 'updated_at', None) else tpl
-    tpl = tpl.replace('19XX年XX月XX日 XX:XX', html.escape(birth_label), 1)
-    tpl = tpl.replace('〇〇県〇〇市', html.escape(place_label), 1)
-    tpl = tpl.replace('〇〇 さま', html.escape(order.user_name) + ' さま', 1)
+    except Exception as e:
+        body = _nl2br((payload.get('sections') or [{}])[0].get('body', ''))
+        planets = payload.get('planet_list') or []
+        birth_label = order.birth_date.strftime('%Y年%m月%d日') if getattr(order, 'birth_date', None) else '-'
+        if getattr(order, 'birth_time', None):
+            birth_label += f" {order.birth_time}"
+        place_label = ' '.join([v for v in [getattr(order, 'birth_prefecture', ''), getattr(order, 'birth_place', '')] if v]) or '-'
+        chart = payload.get('chart_svg') or ''
+        rows = _render_planet_rows(planets)
 
-    asc_sign = '-'
-    sun_sign = '-'
-    moon_sign = '-'
-    for p in planets:
-        n = _safe_text(p.get('name')).upper()
-        sign = _safe_text(p.get('sign')).split()[0] or '-'
-        if n == 'ASC':
-            asc_sign = sign
-        elif n == 'SUN':
-            sun_sign = sign
-        elif n == 'MOON':
-            moon_sign = sign
-
-    vedic_raw = _raw_vedic(payload.get('raw_json') or {})
-    lagna = _safe_text(_dict(vedic_raw.get('ascendant')).get('rashi_name')) or '-'
-    vedic_moon = '-'
-    for p in vedic_raw.get('planets') or []:
-        if isinstance(p, dict) and _safe_text(p.get('name')).lower() == 'moon':
-            vedic_moon = _safe_text(p.get('rashi_name')) or '-'
-            break
-
-    tpl = tpl.replace('ASCENDANT</span>\n      〇〇座', f'ASCENDANT</span>\n      {html.escape(asc_sign)}', 1)
-    tpl = tpl.replace('ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座', f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}')
-    tpl = tpl.replace('ラグナ 〇〇座 ／ 月 〇〇座', f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}')
-
-    western_chart = ''
-    if payload.get('chart_svg'):
-        western_chart = f'<div class="chart-img-wrap round">{payload["chart_svg"]}</div>'
-    elif payload.get('horoscope_image_url'):
-        western_chart = f'<div class="chart-img-wrap round"><img src="{html.escape(payload["horoscope_image_url"])}" alt="ホロスコープ"></div>'
-
-    vedic_chart = ''
-    if payload.get('vedic_chart_svg'):
-        vedic_chart = f'<div class="chart-img-wrap square">{payload["vedic_chart_svg"]}</div>'
-
-    shichu_chart = ''
-    if shichu.get('exists'):
-        shichu_chart = render_shichu_table_html(shichu)
-
-    # explicit placeholder replacement first
-    placeholders = {
-        '{{WESTERN_CHART_BLOCK}}': western_chart,
-        '{{VEDIC_CHART_BLOCK}}': vedic_chart,
-        '{{SHICHU_CHART_BLOCK}}': shichu_chart,
-        '{{WESTERN_ROWS}}': _render_planet_rows(planets),
-        '{{VEDIC_ROWS}}': _render_planet_rows(vedic_planets),
-        '{{SHICHU_DATA_TABLE}}': render_shichu_table_html(shichu) if shichu.get('exists') else '',
-        '{{INTEGRATED_READING}}': _nl2br(sections[0].get('body') if sections else ''),
-    }
-    for key, val in placeholders.items():
-        if key in tpl:
-            tpl = tpl.replace(key, val or '')
-
-    # legacy chart placeholder replacement
-    if western_chart:
-        tpl = _replace_chart_block(tpl, '西洋チャート画像をここに', western_chart)
-    if vedic_chart:
-        tpl = _replace_chart_block(tpl, 'インドチャート画像をここに', vedic_chart)
-    if shichu_chart:
-        tpl = _replace_chart_block(tpl, '命式表画像またはテキスト表をここに', shichu_chart)
-
-    # robust section-specific table replacement for legacy templates
-    if planets:
-        tpl = _replace_table_after_heading(tpl, 'WESTERN ASTROLOGY', _render_planet_rows(planets), 'planet-table')
-    if vedic_planets:
-        tpl = _replace_table_after_heading(tpl, 'VEDIC ASTROLOGY', _render_planet_rows(vedic_planets), 'planet-table')
-    if shichu.get('exists'):
-        shichu_body = re.search(r'<tbody>(.*?)</tbody>', render_shichu_table_html(shichu), flags=re.S)
-        if shichu_body:
-            tpl = _replace_table_after_heading(tpl, '四柱推命', shichu_body.group(1), 'shicyu-table')
-
-    body = _nl2br(sections[0].get('body') if sections else '')
-    tpl = _replace_first_reading_text(tpl, body)
-    tpl = re.sub(r'<p class="reading-text">.*?</p>', f'<p class="reading-text">{body}</p>', tpl, count=1, flags=re.S)
-
-    if shichu.get('exists'):
-        matches = list(re.finditer(r'<table class="shicyu-table">.*?</table>', tpl, flags=re.S))
-        if len(matches) >= 2:
-            rendered = render_shichu_table_html(shichu)
-            m = matches[1]
-            tpl = tpl[:m.start()] + rendered + tpl[m.end():]
-        summary_html = render_shichu_summary_html(shichu)
-        if summary_html and '</div>\n</section>' in tpl:
-            tpl = tpl.replace('</div>\n</section>', '</div>' + summary_html + '\n</section>', 1)
-
-    return tpl
-
+        return f"""
+        <html>
+        <head><meta charset="utf-8"><title>鑑定書</title></head>
+        <body style="font-family:'Noto Serif JP',serif;background:#0e0c10;color:#e8e0d4;padding:24px;">
+          <h1>{html.escape(_safe_text(order.user_name))} さまの鑑定書</h1>
+          <p>生年月日：{html.escape(birth_label)}</p>
+          <p>出生地：{html.escape(place_label)}</p>
+          <div style="max-width:560px;margin:24px auto;">{chart}</div>
+          <table style="width:100%;border-collapse:collapse;"><tbody>{rows}</tbody></table>
+          <div style="margin-top:24px;white-space:pre-line;">{body}</div>
+          <p style="margin-top:24px;font-size:12px;opacity:0.7;">fallback rendered: {html.escape(str(e))}</p>
+        </body>
+        </html>
+        """
 
 def build_yaml_from_analysis(order: Order, inputs_json: dict[str, Any] | None = None, payload_json: dict[str, Any] | None = None, raw_json: dict[str, Any] | None = None, structure_summary_json: dict[str, Any] | None = None, ai_text: str = "", reader_text: str = "", line_text: str = "", handoff_yaml_full: str = "") -> str:
     inputs_json = inputs_json or {}

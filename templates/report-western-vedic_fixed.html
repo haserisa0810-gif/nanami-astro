@@ -71,7 +71,7 @@ header{
 }
 .section,.charts-section{
   position:relative; z-index:1;
-  max-width:1200px; margin:0 auto; padding:72px 48px;
+  max-width:980px; margin:0 auto; padding:72px 48px;
   border-bottom:1px solid var(--border);
 }
 .section-label{
@@ -89,6 +89,8 @@ header{
   grid-template-columns:1fr 1fr;
   gap:40px;
   align-items:start;
+  max-width:1200px;
+  margin:0 auto 36px;
 }
 .chart-block{display:flex;flex-direction:column;gap:14px;min-width:0;}
 .chart-label-row{display:flex;align-items:center;gap:10px;margin-bottom:2px;}
@@ -102,6 +104,8 @@ header{
 .chart-img-wrap{
   position:relative;
   width:100%;
+  max-width:700px;
+  margin:0 auto;
   background:linear-gradient(180deg, rgba(43,35,58,0.96) 0%, rgba(35,29,46,0.98) 100%);
   border:1px solid var(--border);
   overflow:hidden;
@@ -117,29 +121,31 @@ header{
 }
 .chart-img-wrap.round{
   height:auto;
-  min-height:460px;
+  min-height:420px;
 }
 
 .chart-img-wrap.square{
   height:auto;
-  min-height:460px;
+  min-height:420px;
 }
-.chart-img-wrap img,
-.chart-img-wrap svg{
-  position:relative;
-  z-index:1;
-  max-width:100%;
-  max-height:100%;
+.chart-img-wrap img{
   width:100%;
   height:auto;
+  max-width:none;
+  
+  position:relative;
+  z-index:1;
+  
+  
+  
+  
   object-fit:contain;
   display:block;
   filter:brightness(0.96) contrast(1.04);
+
 }
-.chart-img-wrap.round img,
-.chart-img-wrap.round svg{max-height:88%;}
-.chart-img-wrap.square img,
-.chart-img-wrap.square svg{max-height:100%;}
+.chart-img-wrap.round img{max-height:88%;}
+.chart-img-wrap.square img{max-height:100%;}
 .chart-placeholder-icon{position:relative;z-index:1;font-size:28px;color:var(--border);}
 .chart-placeholder-label{position:relative;z-index:1;font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.3em;color:var(--muted);}
 .chart-placeholder-note{position:relative;z-index:1;font-size:10px;color:rgba(177,165,154,0.5);letter-spacing:0.05em;}
@@ -180,8 +186,14 @@ footer{
   .report-hero{padding:56px 20px 48px;}
   .report-date-info{flex-direction:column;gap:16px;}
   .section,.charts-section{padding:48px 20px;}
-  .chart-img-wrap.round{height:240px;}
-  .chart-img-wrap.square{height:280px;}
+  .chart-img-wrap.round{
+  height:auto;
+  min-height:420px;
+}
+  .chart-img-wrap.square{
+  height:auto;
+  min-height:420px;
+}
   footer{padding:40px 20px;}
 }
 </style>

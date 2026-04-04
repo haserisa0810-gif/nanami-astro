@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from auth import get_current_reader
@@ -24,9 +25,9 @@ from line_webhook import router as line_router
 from routes_public_orders import router as public_orders_router
 from routes_reader import router as reader_router
 from routes_admin import router as admin_router
-from routes_stripe import router as stripe_router
 from routes_staff import router as staff_router
 from routes_daily_theme import router as daily_theme_router
+from routes_daily_card import router as daily_card_router
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 
@@ -115,6 +116,7 @@ AnalysisType = Literal["single", "compatibility"]
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(line_router)
 
 @app.on_event("startup")
@@ -124,9 +126,9 @@ def _startup_platform() -> None:
 app.include_router(public_orders_router)
 app.include_router(reader_router)
 app.include_router(admin_router)
-app.include_router(stripe_router)
 app.include_router(staff_router)
 app.include_router(daily_theme_router)
+app.include_router(daily_card_router)
 
 
 # ── ヘルスチェック ────────────────────────────────────────────────────────────
@@ -213,11 +215,7 @@ def guide_page(request: Request):
 @app.get("/about", response_class=HTMLResponse)
 def about_page(request: Request):
     return templates.TemplateResponse(request=request, name="about.html", context={"request": request})
-    
-@app.get("/thanks-stripe", response_class=HTMLResponse)
-def thanks_page(request: Request):
-    return templates.TemplateResponse(request=request, name="thanks-stripe.html", context={"request": request})    
-# ── 占い師サマリー ────────────────────────────────────────────────────────────
+    # ── 占い師サマリー ────────────────────────────────────────────────────────────
 
 @app.post("/astrologer-result", response_class=HTMLResponse)
 async def astrologer_result(request: Request):

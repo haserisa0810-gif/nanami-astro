@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
-import os
+from datetime import date, datetime
 import json
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
@@ -11,7 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from db import get_db
-from models import Menu, Order
+from models import Menu, Order, PaymentTransaction
 from services.free_reading_service import FREE_RESULT_FOOTER, ensure_unique_free_reading_code, process_free_reading
 from services.order_service import create_order, get_or_create_customer
 from services.location import PREFECTURE_OPTIONS, resolve_birth_location
@@ -44,18 +43,112 @@ def _find_source_free_order(db: Session, code: str | None):
     )
 
 
+COURSE_SLUG_PRICE_MAP = {
+    "light": 3000,
+    "standard": 5000,
+    "premium": 10000,
+}
+
+
+def _resolve_initial_menu_id(db: Session, menu_id: int | None = None, course: str | None = None) -> int | None:
+    if menu_id:
+        menu = db.get(Menu, menu_id)
+        if menu and menu.is_active and menu.price > 0:
+            return menu.id
+    normalized_course = (course or "").strip().lower()
+    target_price = COURSE_SLUG_PRICE_MAP.get(normalized_course)
+    if not target_price:
+        return None
+    menu = db.scalar(
+        select(Menu)
+        .where(Menu.is_active == True, Menu.price == target_price)
+        .order_by(Menu.id.asc())
+    )
+    return menu.id if menu else None
+
+
 @router.get("/menu", response_class=HTMLResponse)
-def menu_page(request: Request, db: Session = Depends(get_db), free_reading_code: str | None = None):
+def menu_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    free_reading_code: str | None = None,
+    menu_id: int | None = None,
+    course: str | None = None,
+    payment_order_ref: str | None = None,
+    line_user_id: str | None = None,
+    line_name: str | None = None,
+):
     menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
     initial_free_order = None
     if free_reading_code:
         initial_free_order = _find_source_free_order(db, free_reading_code)
-    return templates.TemplateResponse(request=request, name="order_start.html", context={"request": request, "menus": menus, "error": None, "prefecture_options": PREFECTURE_OPTIONS, "initial_free_order": initial_free_order, "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code, "initial_menu_id": None, "form_values": {}})
+    resolved_menu_id = _resolve_initial_menu_id(db, menu_id=menu_id, course=course)
+    return templates.TemplateResponse(
+        request=request,
+        name="order_start.html",
+        context={
+            "request": request,
+            "menus": menus,
+            "error": None,
+            "prefecture_options": PREFECTURE_OPTIONS,
+            "initial_free_order": initial_free_order,
+            "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
+            "initial_menu_id": resolved_menu_id,
+            "initial_course": (course or '').strip().lower(),
+            "initial_payment_order_ref": (payment_order_ref or '').strip(),
+            "initial_line_user_id": (line_user_id or '').strip(),
+            "initial_line_name": (line_name or '').strip(),
+            "form_values": {},
+        },
+    )
 
 
 @router.get("/order/start", response_class=HTMLResponse)
-def order_start(request: Request, db: Session = Depends(get_db), free_reading_code: str | None = None):
-    return menu_page(request, db, free_reading_code=free_reading_code)
+def order_start(
+    request: Request,
+    db: Session = Depends(get_db),
+    free_reading_code: str | None = None,
+    menu_id: int | None = None,
+    course: str | None = None,
+    payment_order_ref: str | None = None,
+    line_user_id: str | None = None,
+    line_name: str | None = None,
+):
+    return menu_page(
+        request,
+        db,
+        free_reading_code=free_reading_code,
+        menu_id=menu_id,
+        course=course,
+        payment_order_ref=payment_order_ref,
+        line_user_id=line_user_id,
+        line_name=line_name,
+    )
+
+
+@router.get("/menu/{course}", response_class=HTMLResponse)
+def menu_page_by_course(
+    course: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    free_reading_code: str | None = None,
+    payment_order_ref: str | None = None,
+    line_user_id: str | None = None,
+    line_name: str | None = None,
+):
+    normalized_course = (course or '').strip().lower()
+    if normalized_course not in COURSE_SLUG_PRICE_MAP:
+        raise HTTPException(status_code=404, detail="course not found")
+    return menu_page(
+        request,
+        db,
+        free_reading_code=free_reading_code,
+        course=normalized_course,
+        payment_order_ref=payment_order_ref,
+        line_user_id=line_user_id,
+        line_name=line_name,
+    )
+
 
 
 @router.post("/order/start", response_class=HTMLResponse)
@@ -71,6 +164,10 @@ def create_order_page(
     gender: str | None = Form(None),
     consultation_text: str | None = Form(None),
     free_reading_code: str | None = Form(None),
+    payment_order_ref: str | None = Form(None),
+    line_user_id: str | None = Form(None),
+    line_name: str | None = Form(None),
+    course: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     menu = db.get(Menu, menu_id)
@@ -78,92 +175,77 @@ def create_order_page(
         raise HTTPException(status_code=404, detail="menu not found")
 
     normalized_contact = (user_contact or '').strip()
+    normalized_payment_order_ref = (payment_order_ref or '').strip().upper()
+
+    def render_form_error(message: str, status_code: int = 400):
+        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
+        submitted_course = (course or '').strip().lower()
+        resolved_menu_id = _resolve_initial_menu_id(db, menu_id=menu_id, course=submitted_course) or menu_id
+        return templates.TemplateResponse(
+            request=request,
+            name="order_start.html",
+            context={
+                "request": request,
+                "menus": menus,
+                "error": message,
+                "prefecture_options": PREFECTURE_OPTIONS,
+                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
+                "initial_free_order": None,
+                "initial_menu_id": resolved_menu_id,
+                "initial_course": submitted_course,
+                "initial_payment_order_ref": normalized_payment_order_ref,
+                "initial_line_user_id": (line_user_id or '').strip(),
+                "initial_line_name": (line_name or '').strip(),
+                "form_values": {
+                    "menu_id": menu_id,
+                    "user_name": user_name,
+                    "user_contact": normalized_contact,
+                    "birth_date": birth_date,
+                    "birth_time": birth_time,
+                    "birth_prefecture": birth_prefecture,
+                    "birth_place": birth_place,
+                    "gender": gender,
+                    "consultation_text": consultation_text,
+                    "payment_order_ref": normalized_payment_order_ref,
+                    "free_reading_code": free_reading_code,
+                    "line_user_id": (line_user_id or '').strip(),
+                    "line_name": (line_name or '').strip(),
+                    "course": submitted_course,
+                },
+            },
+            status_code=status_code,
+        )
+
+    if not normalized_payment_order_ref:
+        return render_form_error("注文番号が未入力です。ご購入完了メールまたは購入履歴の注文番号を入力してください。")
+
+    duplicate = db.scalar(
+        select(Order).where(
+            Order.external_platform == 'stores',
+            Order.external_order_ref == normalized_payment_order_ref,
+        )
+    )
+    if duplicate:
+        return render_form_error(f"この注文番号はすでに受付済みです。受付番号は {duplicate.order_code} です。", status_code=409)
+
     if not normalized_contact:
-        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
-        return templates.TemplateResponse(
-            request=request,
-            name="order_start.html",
-            context={
-                "request": request,
-                "menus": menus,
-                "error": "ホームページからのお申込みは連絡先メールアドレスが必須です。",
-                "prefecture_options": PREFECTURE_OPTIONS,
-                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
-                "initial_free_order": None,
-                "initial_menu_id": menu_id,
-                "form_values": {
-                    "user_name": user_name,
-                    "user_contact": normalized_contact,
-                    "birth_date": birth_date,
-                    "birth_time": birth_time,
-                    "birth_prefecture": birth_prefecture,
-                    "birth_place": birth_place,
-                    "gender": gender,
-                    "consultation_text": consultation_text,
-                },
-            },
-            status_code=400,
-        )
+        return render_form_error("ホームページからのお申込みは連絡先メールアドレスが必須です。")
     if '@' not in normalized_contact:
-        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
-        return templates.TemplateResponse(
-            request=request,
-            name="order_start.html",
-            context={
-                "request": request,
-                "menus": menus,
-                "error": "正しいメールアドレスを入力してください。",
-                "prefecture_options": PREFECTURE_OPTIONS,
-                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
-                "initial_free_order": None,
-                "initial_menu_id": menu_id,
-                "form_values": {
-                    "user_name": user_name,
-                    "user_contact": normalized_contact,
-                    "birth_date": birth_date,
-                    "birth_time": birth_time,
-                    "birth_prefecture": birth_prefecture,
-                    "birth_place": birth_place,
-                    "gender": gender,
-                    "consultation_text": consultation_text,
-                },
-            },
-            status_code=400,
-        )
+        return render_form_error("正しいメールアドレスを入力してください。")
     try:
         birth_date_obj = date.fromisoformat(birth_date)
     except ValueError:
-        menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
-        return templates.TemplateResponse(
-            request=request,
-            name="order_start.html",
-            context={
-                "request": request,
-                "menus": menus,
-                "error": "生年月日の形式が正しくありません。",
-                "prefecture_options": PREFECTURE_OPTIONS,
-                "initial_free_reading_code": _normalize_free_link_code(free_reading_code) or free_reading_code,
-                "initial_free_order": None,
-                "initial_menu_id": menu_id,
-                "form_values": {
-                    "user_name": user_name,
-                    "user_contact": normalized_contact,
-                    "birth_date": birth_date,
-                    "birth_time": birth_time,
-                    "birth_prefecture": birth_prefecture,
-                    "birth_place": birth_place,
-                    "gender": gender,
-                    "consultation_text": consultation_text,
-                },
-            },
-            status_code=400,
-        )
-
-    customer = None
+        return render_form_error("生年月日の形式が正しくありません。")
 
     location = resolve_birth_location((birth_prefecture or '').strip() or None, (birth_place or '').strip() or None)
-    if normalized_contact:
-        customer = get_or_create_customer(db, display_name=user_name.strip(), email=normalized_contact if "@" in normalized_contact else None)
+    normalized_line_user_id = (line_user_id or '').strip() or None
+    normalized_line_name = (line_name or '').strip() or None
+    customer = get_or_create_customer(
+        db,
+        display_name=(normalized_line_name or user_name.strip()),
+        line_user_id=normalized_line_user_id,
+        email=normalized_contact,
+    )
     free_reading_code = (free_reading_code or '').strip().upper() or None
     source_free_order = _find_source_free_order(db, free_reading_code)
     order = create_order(
@@ -183,7 +265,9 @@ def create_order_page(
         consultation_text=(consultation_text or '').strip() or None,
         customer=customer,
         source='self',
-        status='pending_payment',
+        external_platform='stores',
+        external_order_ref=normalized_payment_order_ref,
+        status='paid',
         inputs_json=json.dumps({
             'user_name': user_name,
             'user_contact': normalized_contact,
@@ -197,10 +281,26 @@ def create_order_page(
             'gender': gender,
             'consultation_text': consultation_text,
             'menu_id': menu_id,
+            'payment_order_ref': normalized_payment_order_ref,
+            'line_user_id': normalized_line_user_id,
+            'line_name': normalized_line_name,
         }, ensure_ascii=False),
     )
     if source_free_order:
         order.source_free_order_id = source_free_order.id
+    db.add(
+        PaymentTransaction(
+            order_id=order.id,
+            provider='base',
+            provider_payment_id=normalized_payment_order_ref,
+            provider_session_id=normalized_payment_order_ref,
+            amount=order.price,
+            currency='jpy',
+            status='paid',
+            paid_at=datetime.utcnow(),
+            raw_event_json=json.dumps({'provider': 'stores', 'payment_order_ref': normalized_payment_order_ref}, ensure_ascii=False),
+        )
+    )
     db.commit()
     return RedirectResponse(url=f"/order/confirm?order_code={order.order_code}", status_code=303)
 
@@ -224,6 +324,8 @@ def free_reading_create(
     consultation_text: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
+    normalized_contact = (user_contact or '').strip()
+
     try:
         birth_date_obj = date.fromisoformat(birth_date)
     except ValueError:
@@ -320,24 +422,6 @@ def order_confirm(order_code: str, request: Request, db: Session = Depends(get_d
     if not order:
         raise HTTPException(status_code=404, detail='order not found')
     return templates.TemplateResponse(request=request, name="order_confirm.html", context={"request": request, "order": order})
-
-
-@router.get("/payment/{order_code}", response_class=HTMLResponse)
-def payment_page(order_code: str, request: Request, db: Session = Depends(get_db), cancelled: int | None = None):
-    order = db.scalar(select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code))
-    if not order:
-        raise HTTPException(status_code=404, detail='order not found')
-    test_payment_enabled = ((os.getenv("STRIPE_ALLOW_TEST_SKIP_PAYMENT") or "").strip().lower() in {"1", "true", "yes", "on"}) or ((os.getenv("APP_ENV") or "").strip().lower() in {"dev", "development", "local", "staging", "test"})
-    return templates.TemplateResponse(request=request, name="payment.html", context={"request": request, "order": order, "cancelled": bool(cancelled), "test_payment_enabled": test_payment_enabled})
-
-
-@router.get("/thanks/{order_code}", response_class=HTMLResponse)
-def thanks_page(order_code: str, request: Request, db: Session = Depends(get_db)):
-    order = db.scalar(select(Order).options(selectinload(Order.menu)).where(Order.order_code == order_code))
-    if not order:
-        raise HTTPException(status_code=404, detail='order not found')
-    return templates.TemplateResponse(request=request, name="thanks-stripe.html", context={"request": request, "order": order})
-
 
 @router.get("/result/{order_code}", response_class=HTMLResponse)
 def order_result(order_code: str, request: Request, db: Session = Depends(get_db)):

@@ -196,6 +196,7 @@ def _ensure_order_result_view_columns() -> None:
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_daily_card_indexes(engine)
     _ensure_order_free_columns()
     _ensure_order_location_columns()
     _ensure_order_staff_memo_column()
@@ -291,3 +292,13 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+def ensure_daily_card_indexes(bind_engine) -> None:
+    from sqlalchemy import text as sql_text
+    with bind_engine.begin() as conn:
+        try:
+            conn.execute(sql_text("CREATE UNIQUE INDEX IF NOT EXISTS daily_card_draws_unique ON daily_card_draws (line_user_id, draw_date)"))
+        except Exception:
+            pass

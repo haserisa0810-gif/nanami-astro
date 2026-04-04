@@ -80,7 +80,7 @@ header {
 /* ===== 図セクション ===== */
 .charts-section {
   position: relative; z-index: 1;
-  max-width: 820px; margin: 0 auto;
+  max-width: 980px; margin: 0 auto;
   padding: 72px 48px;
   border-bottom: 1px solid var(--border);
 }
@@ -88,18 +88,20 @@ header {
 /* 上段：西洋＋インド 横並び */
 .charts-top {
   display: grid;
-  grid-template-columns: 1fr;
-  max-width: 480px;
-  margin: 0 auto 32px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+  max-width:1200px;
+  margin:0 auto 36px;
 }
 
 /* 下段：四柱 横幅フル */
 .charts-bottom { }
 
-.chart-block { display: flex; flex-direction: column; gap: 12px; }
+.chart-block { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 .chart-label-row {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 2px;
 }
 .chart-system-badge {
   font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.35em;
@@ -116,29 +118,57 @@ header {
 /* プレースホルダー／実画像共通ラッパー */
 .chart-img-wrap {
   position: relative;
-  background: var(--card);
+  width:100%;
+  max-width:700px;
+  margin:0 auto;
+  background: linear-gradient(180deg, rgba(43,35,58,0.96) 0%, rgba(35,29,46,0.98) 100%);
   border: 1px solid var(--border);
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
+  padding: 14px;
 }
-/* 西洋（円）：正方形 */
-.chart-img-wrap.round  { min-height: 460px; }
-/* インド（正方形グリッド）：正方形 */
-.chart-img-wrap.square { min-height: 460px; }
-/* 四柱（命式表）：横長 */
-.chart-img-wrap.wide   { aspect-ratio: 16/7; min-height: 120px; }
+.chart-img-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(180,150,100,0.10);
+  pointer-events: none;
+}
+.chart-img-wrap.round{
+  height:auto;
+  min-height:420px;
+}
+.chart-img-wrap.square{
+  height:auto;
+  min-height:420px;
+}
+.chart-img-wrap.wide   { min-height: 220px; padding: 18px 20px; }
 
 .chart-img-wrap img {
-  width: 100%; height: 100%;
+  width:100%;
+  height:auto;
+  max-width:none;
+  
+  position: relative;
+  z-index: 1;
+  
+  
+  
+  
   object-fit: contain;
   display: block;
-  filter: brightness(0.95) contrast(1.05);
+  filter: brightness(0.96) contrast(1.04);
+
 }
-.chart-placeholder-icon  { font-size: 28px; color: var(--border); }
-.chart-placeholder-label { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
-.chart-placeholder-note  { font-size: 10px; color: rgba(177,165,154,0.5); letter-spacing: 0.05em; }
+.chart-img-wrap.round img  { max-height: 88%; }
+.chart-img-wrap.square img { max-height: 100%; }
+.chart-img-wrap.wide img   { max-height: 100%; width: 100%; object-fit: contain; }
+
+.chart-placeholder-icon  { position: relative; z-index: 1; font-size: 28px; color: var(--border); }
+.chart-placeholder-label { position: relative; z-index: 1; font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.3em; color: var(--muted); }
+.chart-placeholder-note  { position: relative; z-index: 1; font-size: 10px; color: rgba(177,165,154,0.5); letter-spacing: 0.05em; }
 
 .chart-caption { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-align: center; }
 
@@ -187,6 +217,19 @@ header {
 .shicyu-table td { color: var(--text); }
 .shicyu-table td.muted { color: var(--muted); font-size: 11px; }
 
+
+.shichu-chart-wrap {
+  width: 100%;
+  background: linear-gradient(180deg, rgba(35,29,46,0.98) 0%, rgba(24,20,32,0.98) 100%);
+  border: 1px solid var(--border);
+  padding: 18px 20px;
+}
+.shichu-chart-wrap .shicyu-table {
+  margin: 0;
+  table-layout: fixed;
+}
+.shichu-chart-wrap + .chart-caption { margin-top: 12px; }
+
 /* フッター */
 footer {
   position: relative; z-index: 1;
@@ -201,8 +244,16 @@ footer {
   .report-hero { padding: 56px 20px 48px; }
   .report-date-info { flex-direction: column; gap: 16px; }
   .charts-section, .section { padding: 48px 20px; }
-  .charts-top { grid-template-columns: 1fr; gap: 24px; }
-  .chart-img-wrap.wide { aspect-ratio: 4/3; }
+  .charts-top { grid-template-columns: 1fr; gap: 28px; }
+  .chart-img-wrap.round{
+  height:auto;
+  min-height:420px;
+}
+  .chart-img-wrap.square{
+  height:auto;
+  min-height:420px;
+}
+  .chart-img-wrap.wide { min-height: 200px; }
   footer { padding: 40px 20px; }
 }
 </style>
@@ -214,16 +265,16 @@ footer {
 <header>
   <div class="logo">nanami astro</div>
   <div class="report-meta">
-    <span>WESTERN × 四柱推命</span><br>
+    <span>INTEGRATED READING</span><br>
     <span>鑑定日：20XX年XX月XX日</span>
   </div>
 </header>
 
 <!-- タイトル -->
 <div class="report-hero">
-  <span class="report-tag">WESTERN × 四柱推命 REPORT</span>
-  <h1 class="report-name">〇〇 さまの<br><em>西洋×四柱統合鑑定</em></h1>
-  <p class="report-subtitle">西洋占星術 ✦ 四柱推命</p>
+  <span class="report-tag">INTEGRATED READING REPORT</span>
+  <h1 class="report-name">〇〇 さまの<br><em>三占術統合鑑定</em></h1>
+  <p class="report-subtitle">西洋占星術 ✦ インド占星術 ✦ 四柱推命</p>
   <div class="report-date-info">
     <div class="report-date-item">
       <span class="report-date-label">BIRTH</span>
@@ -246,55 +297,33 @@ footer {
   <h2 class="section-title">チャート</h2>
   <div class="divider"></div>
 
-  <!-- 上段：西洋＋インド -->
   <div class="charts-top">
-
-    <!-- 西洋占星術 -->
     <div class="chart-block">
       <div class="chart-label-row">
         <span class="chart-system-badge western">WESTERN</span>
         <span class="chart-name">ホロスコープ</span>
       </div>
-      <div class="chart-img-wrap round">
-        <!-- 画像差し替え: <img src="western.png" alt="ホロスコープ"> -->
-        <div class="chart-placeholder-icon">◯</div>
-        <div class="chart-placeholder-label">HOROSCOPE</div>
-        <div class="chart-placeholder-note">西洋チャート画像をここに</div>
-      </div>
+      {{WESTERN_CHART_BLOCK}}
       <p class="chart-caption">ASC 〇〇座 ／ 太陽 〇〇座 ／ 月 〇〇座</p>
     </div>
 
+    <div class="chart-block">
+      <div class="chart-label-row">
+        <span class="chart-system-badge vedic">VEDIC</span>
+        <span class="chart-name">ラーシチャート</span>
+      </div>
+      {{VEDIC_CHART_BLOCK}}
+      <p class="chart-caption">ラグナ 〇〇座 ／ 月 〇〇座</p>
+    </div>
   </div>
 
-  <!-- 下段：四柱推命 -->
   <div class="charts-bottom">
     <div class="chart-block">
       <div class="chart-label-row">
         <span class="chart-system-badge shicyu">四柱推命</span>
         <span class="chart-name">命式表</span>
       </div>
-      <div class="chart-img-wrap wide">
-        <!-- 画像の場合: <img src="shicyu.png" alt="命式表"> -->
-        <!-- テキスト表の場合はこの div を削除して下の table を使う -->
-        <div class="chart-placeholder-icon">≡</div>
-        <div class="chart-placeholder-label">MING SHI</div>
-        <div class="chart-placeholder-note">命式表画像またはテキスト表をここに</div>
-      </div>
-
-      <!-- テキストで命式を入れる場合はこちらを使用（上の chart-img-wrap.wide は削除） -->
-      <!--
-      <table class="shicyu-table">
-        <thead>
-          <tr><th></th><th>年柱</th><th>月柱</th><th>日柱</th><th>時柱</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>天干</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-          <tr><th>地支</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-          <tr><th>蔵干</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-          <tr><th>十二運</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-        </tbody>
-      </table>
-      -->
+      {{SHICHU_CHART_BLOCK}}
     </div>
   </div>
 </div>
@@ -304,9 +333,7 @@ footer {
   <span class="section-label">READING</span>
   <h2 class="section-title">統合鑑定</h2>
   <div class="divider"></div>
-  <p class="reading-text">ここに統合鑑定文をそのまま貼り付けてください。
-
-改行はそのまま反映されます。段落ごとに空行を入れると読みやすくなります。</p>
+  <div class="reading-text">{{INTEGRATED_READING}}</div>
 </div>
 
 <!-- 天体・命式データ -->
@@ -320,70 +347,60 @@ footer {
     <span class="system-heading-label western">WESTERN ASTROLOGY</span>
     <div class="system-heading-line"></div>
   </div>
+  <table class="planet-table"><tbody>{{VEDIC_ROWS}}</tbody></table>
+
+  <!-- インド占星術 -->
+  <div class="system-heading">
+    <span class="system-heading-label vedic">VEDIC ASTROLOGY</span>
+    <div class="system-heading-line"></div>
+  </div>
   <table class="planet-table">
     <tbody>
       <tr>
-        <td class="pt-name">SUN</td>
+        <td class="pt-name">SURYA</td>
         <td class="pt-sign">〇〇座 〇°</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">人生のテーマ・自己表現<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">魂・父性・権威<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">MOON</td>
+        <td class="pt-name">CHANDRA</td>
         <td class="pt-sign">〇〇座 〇°</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">感情・安心感のパターン<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">心・母性・感情<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">MERCURY</td>
+        <td class="pt-name">BUDHA</td>
         <td class="pt-sign">〇〇座</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">思考・コミュニケーション<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">知性・言葉・商才<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">VENUS</td>
+        <td class="pt-name">SHUKRA</td>
         <td class="pt-sign">〇〇座</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">愛情表現・価値観<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">美・愛・芸術<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">MARS</td>
+        <td class="pt-name">MANGALA</td>
         <td class="pt-sign">〇〇座</td>
         <td class="pt-house">〇ハウス</td>
-        <td class="pt-role">行動力・エネルギー<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
+        <td class="pt-role">行動・勇気・闘争<span class="pt-house-desc">〇H：ここにハウスの意味</span></td>
       </tr>
       <tr>
-        <td class="pt-name">ASC</td>
+        <td class="pt-name">LAGNA</td>
         <td class="pt-sign">〇〇座 〇°</td>
         <td class="pt-house">1ハウス</td>
-        <td class="pt-role">第一印象・外への出方<span class="pt-house-desc">1H：外見・第一印象・自己の出方の領域</span></td>
-      </tr>
-      <tr>
-        <td class="pt-name">MC</td>
-        <td class="pt-sign">〇〇座 〇°</td>
-        <td class="pt-house">10ハウス</td>
-        <td class="pt-role">社会的な方向性・キャリア<span class="pt-house-desc">10H：社会的地位・職業・使命の領域</span></td>
+        <td class="pt-role">ラグナ・身体・外見<span class="pt-house-desc">1H：身体・自己・外見の領域</span></td>
       </tr>
     </tbody>
   </table>
-
 
   <!-- 四柱推命 -->
   <div class="system-heading">
     <span class="system-heading-label shicyu">四柱推命</span>
     <div class="system-heading-line"></div>
   </div>
-  <table class="shicyu-table">
-    <thead>
-      <tr><th></th><th>年柱</th><th>月柱</th><th>日柱</th><th>時柱</th></tr>
-    </thead>
-    <tbody>
-      <tr><th>天干</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-      <tr><th>地支</th><td>〇</td><td>〇</td><td>〇</td><td>〇</td></tr>
-      <tr><th>蔵干</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-      <tr><th>十二運</th><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td><td class="muted">〇</td></tr>
-    </tbody>
-  </table>
+  {{SHICHU_DATA_TABLE}}
 
 </div>
 
