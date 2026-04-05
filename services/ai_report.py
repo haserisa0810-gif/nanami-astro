@@ -557,6 +557,106 @@ def _transit_focus(age_years: Any, available_systems: dict[str, bool]) -> str:
         base += "。特に今は、増やすより削る判断が効きやすい"
     return base
 
+def _theme_label(theme: Any) -> str:
+    mapping = {
+        "overall": "全体",
+        "love": "恋愛",
+        "work": "仕事",
+        "relationship": "人間関係",
+        "timing": "時期",
+        "free_reading": "無料鑑定",
+    }
+    raw = str(theme or "overall").strip().lower()
+    return mapping.get(raw, raw or "全体")
+
+
+def _theme_prompt_bundle(theme: Any, user_message: Any, *, compat_mode: bool = False) -> dict[str, str]:
+    raw_theme = str(theme or "overall").strip().lower()
+    message = str(user_message or "").strip()
+
+    default_focus = (
+        "相談テーマが指定されていても、命式の読みを無理に狭めず、全体像の中で今いちばん重要な論点を優先して深掘りする。"
+    )
+
+    if compat_mode:
+        theme_focus_map = {
+            "love": "恋愛相性として、惹かれ方・安心感・距離の詰め方・すれ違い方を中心に読む。",
+            "work": "仕事相性として、役割分担・意思決定・衝突しやすい論点・組みやすさを中心に読む。",
+            "relationship": "人間関係として、付き合いやすさ・境界線・感情の受け止め方・長く関われるかを中心に読む。",
+            "timing": "二人の関係が進みやすい時期、動かし方、焦らない方がよい局面を中心に読む。",
+            "overall": "関係全体として、相性の構造、安心感、衝突、継続性をバランスよく読む。",
+        }
+        theme_axes_map = {
+            "love": "惹かれやすい接点 / 愛情表現のズレ / 親密さの深まり方 / 関係を壊しやすい反応",
+            "work": "役割の噛み合わせ / 会話テンポ / 評価観の違い / 一緒に動く時の詰まり",
+            "relationship": "安心できる距離感 / 気疲れポイント / 言わなくても伝わる部分 / 境界線の引き方",
+            "timing": "動くと進みやすい時期 / 立ち止まるべき時期 / 焦りが空回りしやすい局面 / 熟成が必要な部分",
+            "overall": "関係の核 / 安心感 / すれ違い / 実際の付き合い方",
+        }
+        fallback_map = {
+            "love": "二人は恋愛において、惹かれ合うのに噛み合わない点や、気持ちの温度差が気になりやすい前提で読む。",
+            "work": "二人は仕事や共同作業において、得意分野の違いと進め方のズレが出やすい前提で読む。",
+            "relationship": "二人は人間関係において、距離感や関わり方の違いが出やすい前提で読む。",
+            "timing": "二人は今後どう動くと関係が進みやすいか、どこで急がない方がよいかを知りたい前提で読む。",
+            "overall": "二人の関係全体について、相性の良い点と詰まりやすい点を知りたい前提で読む。",
+        }
+    else:
+        theme_focus_map = {
+            "love": "恋愛相談として、惹かれ方、相手に求めやすいもの、距離感、関係でつまずく癖を中心に読む。",
+            "work": "仕事相談として、適性、評価されやすい場面、停滞要因、働き方の癖を中心に読む。",
+            "relationship": "人間関係相談として、対人距離、気疲れポイント、誤解されやすい言動、境界線の引き方を中心に読む。",
+            "timing": "時期相談として、今は攻める時期か整える時期か、動き出しやすいタイミング、焦りやすい局面を中心に読む。",
+            "overall": "人生全体として、今のテーマ、繰り返しやすいパターン、方向修正ポイントを広く読む。",
+        }
+        theme_axes_map = {
+            "love": "恋愛での本音 / 惹かれやすい相手像 / 距離が崩れる瞬間 / 愛情表現の癖",
+            "work": "仕事での強み / 評価されにくい詰まり / 合う環境 / 疲弊しやすい進め方",
+            "relationship": "対人の第一印象 / 深く関わると出る癖 / 気を遣いすぎる場面 / 線引きの課題",
+            "timing": "今の現在地 / 数ヶ月先の流れ / 先に整えるべきこと / 無理を避けるべき局面",
+            "overall": "核となる性質 / 表と内側のズレ / 現実での出方 / 今後の整え方",
+        }
+        fallback_map = {
+            "love": "相談者は恋愛において、相手の気持ちが読みにくい、距離の詰め方が分からない、または関係が進む時に自分から崩しやすい前提で読む。",
+            "work": "相談者は仕事において、今の働き方が合っているか、評価されにくい理由、進むべき方向に迷いがある前提で読む。",
+            "relationship": "相談者は人間関係において、気を遣いすぎる・誤解される・距離の取り方が難しい前提で読む。",
+            "timing": "相談者は今動くべきか待つべきか、何を先に整えると流れが良くなるかを知りたい前提で読む。",
+            "overall": "相談者は人生全体について、このままで良いのか、何を軸に見直すべきかを知りたい前提で読む。",
+        }
+
+    focus = theme_focus_map.get(raw_theme, default_focus)
+    axes = theme_axes_map.get(raw_theme, theme_axes_map.get("overall", ""))
+    if message:
+        consultation = (
+            "【相談の最優先事項】\n"
+            "以下の相談内容を最優先で読み解く。テーマ指定より相談文の具体性を優先する。\n"
+            f"{message}"
+        )
+    else:
+        consultation = (
+            "【相談の前提】\n"
+            + fallback_map.get(raw_theme, fallback_map.get("overall", ""))
+        )
+
+    instruction = (
+        f"【テーマ別の読み筋】\n"
+        f"- 選択テーマ: {_theme_label(raw_theme)}\n"
+        f"- 重点: {focus}\n"
+        f"- 優先観点: {axes}\n"
+        "- 表面的な一般論で済ませず、なぜそうなるか、どんな場面で出るか、どう扱うと良いかまで踏み込む。\n"
+        "- 相談内容が具体的なら、その状況に結びつく感情・行動・関係の癖を優先して書く。\n"
+    )
+
+    short = f"theme={_theme_label(raw_theme)} / focus={focus} / axes={axes}"
+    return {
+        "label": _theme_label(raw_theme),
+        "focus": focus,
+        "axes": axes,
+        "consultation": consultation,
+        "instruction": instruction,
+        "short": short,
+    }
+
+
 
 def _line_fallback_text(meta2: dict[str, Any]) -> str:
     age = meta2.get("age_years")
@@ -656,6 +756,37 @@ def _needs_longform_flash_retry(text: str, *, is_web: bool, model_name: str, com
     if not any(body.endswith(ch) for ch in ("。", "！", "？", "」", "』", "】", ">")):
         return True
     return False
+
+
+def _should_use_multipart_web_generation(
+    *,
+    ctx: dict[str, Any],
+    model_name: str,
+    is_web: bool,
+    theme: str,
+) -> bool:
+    if not is_web:
+        return False
+    if theme == "free_reading":
+        return False
+    if model_name not in {"gemini-2.5-flash-lite", "gemini-2.5-flash"}:
+        return False
+
+    consultation = str(ctx.get("theme_consultation") or "").strip()
+    user_message = str(ctx.get("message") or "").strip()
+    detail_level = str(ctx.get("detail_level") or "standard").strip().lower()
+
+    # 相談文があるケースは、分割生成だと API 呼び出し回数が増えて
+    # Cloud Run の同期リクエストでタイムアウトしやすい。
+    # この場合は単発生成を優先する。
+    if user_message or consultation:
+        return False
+
+    # 詳細指定だけ multipart に寄せる。標準・短めは単発で十分。
+    if detail_level != "detailed":
+        return False
+
+    return True
 
 
 def _flash_web_boost_prompt(compat_mode: bool = False) -> str:
@@ -867,7 +998,9 @@ def _outline_prompt(*, ctx: dict[str, Any], single_web_prompt: str) -> str:
         + "【入力要約】\n"
         + f"digest: {ctx.get('astro_digest')}\n"
         + f"structure: {ctx.get('structure_summary')}\n"
-        + f"meta: system={ctx.get('astrology_system')}, compat={compat_mode}, theme={ctx.get('theme')}, display={ctx.get('display_name')}, phase={ctx.get('life_phase_label')}, flow={ctx.get('transit_focus')}\n"
+        + f"meta: system={ctx.get('astrology_system')}, compat={compat_mode}, theme={ctx.get('theme_label')}, display={ctx.get('display_name')}, phase={ctx.get('life_phase_label')}, flow={ctx.get('transit_focus')}\n"
+        + f"theme_focus: {ctx.get('theme_short')}\n"
+        + f"consultation: {ctx.get('theme_consultation')}\n"
         + f"transit: {ctx.get('transit_summary')}\n"
     )
 
@@ -922,6 +1055,8 @@ def _part_prompt(*, outline: dict[str, Any], ctx: dict[str, Any], part: int) -> 
         + f"name_a: {ctx.get('name_a')}\n"
         + f"name_b: {ctx.get('name_b')}\n"
         + f"life_phase: {ctx.get('life_phase_label')} / {ctx.get('life_phase_theme')}\n"
+        + f"theme_focus: {ctx.get('theme_short')}\n"
+        + f"consultation: {ctx.get('theme_consultation')}\n"
         + f"transit_focus: {ctx.get('transit_focus')}\n"
         + f"transit_summary: {ctx.get('transit_summary')}\n"
     )
@@ -1134,6 +1269,7 @@ def generate_report(
     transit_focus = _transit_focus(age_years, available_systems)
 
     compat_mode = rt in {"compat_web", "compat_line"}
+    theme_bundle = _theme_prompt_bundle(theme, user_message, compat_mode=compat_mode)
     name_a, name_b = _compat_names(astro_data, meta2)
 
     astro_digest = _build_prompt_astro_digest(astro_data, compat_mode=compat_mode)
@@ -1160,6 +1296,12 @@ def generate_report(
         "life_phase_theme": life_phase_theme,
         "transit_focus": transit_focus,
         "transit_summary": transit_summary,
+        "theme_label": theme_bundle["label"],
+        "theme_focus": theme_bundle["focus"],
+        "theme_axes": theme_bundle["axes"],
+        "theme_consultation": theme_bundle["consultation"],
+        "theme_instruction": theme_bundle["instruction"],
+        "theme_short": theme_bundle["short"],
         "free_reading_key_data": _build_free_reading_key_data(astro_data),
         "astro_hint_line": build_astro_hint_line(astro_data),
         "compat_mode": compat_mode,
@@ -1168,7 +1310,7 @@ def generate_report(
     }
 
     common_rules_tpl = _read_prompt_file("common_rules.txt")
-    ctx["common_rules"] = _render_prompt(common_rules_tpl, ctx)
+    ctx["common_rules"] = (_render_prompt(common_rules_tpl, ctx) + "\n\n" + ctx["theme_instruction"] + "\n" + ctx["theme_consultation"]).strip()
 
     single_web_tpl = _read_prompt_file("single_web.txt")
     single_line_tpl = _read_prompt_file("single_line.txt")
@@ -1238,7 +1380,12 @@ def generate_report(
     if is_web and model_name == "gemini-2.5-flash":
         prompt = prompt.rstrip() + "\n\n" + _flash_web_boost_prompt(compat_mode)
 
-    if is_web and model_name in {"gemini-2.5-flash-lite", "gemini-2.5-flash"} and theme != "free_reading":
+    if _should_use_multipart_web_generation(
+        ctx=ctx,
+        model_name=model_name,
+        is_web=is_web,
+        theme=theme,
+    ):
         try:
             return _generate_longform_in_parts(
                 client=client,
@@ -1255,7 +1402,7 @@ def generate_report(
     elif theme == "free_reading":
         max_tokens = 1400
     elif model_name == "gemini-2.5-flash":
-        max_tokens = 7000
+        max_tokens = 4200 if str(ctx.get("message") or "").strip() else 5600
     else:
         max_tokens = 5200
 
@@ -1294,7 +1441,7 @@ def generate_report(
                     prompt.rstrip()
                     + "\n\n【再指示】\n"
                     + "前回の出力は短すぎるか、文が途中で終わっています。必ず8章すべてを最後まで書き切り、"
-                    + "全体で1800文字以上になるように、具体例・状況描写・行動アドバイスを増やして最初から書き直してください。"
+                    + "選択テーマと相談内容から外れず、全体で1800文字以上になるように、具体例・状況描写・行動アドバイスを増やして最初から書き直してください。"
                 )
                 time.sleep(0.5)
                 continue

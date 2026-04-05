@@ -43,13 +43,13 @@ def _safe_json_loads(value: str | None) -> dict[str, object]:
         return {}
 
 
-def _run_async_safely(coro):
+def _run_async_safely(coro) -> None:
     try:
-        return asyncio.run(coro)
+        asyncio.run(coro)
     except RuntimeError:
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(coro)
+            loop.run_until_complete(coro)
         finally:
             loop.close()
 
@@ -81,29 +81,25 @@ def _source_label(order: Order) -> str:
     return source or "不明"
 
 
+def _notification_mode(send_line_text: str | None, send_line_report: str | None, *, default_delivery: bool = False) -> str | None:
+    if send_line_text and send_line_report:
+        return "delivery_with_report"
+    if send_line_report and not send_line_text:
+        return "report_only"
+    if send_line_text and not send_line_report:
+        return "delivery"
+    if default_delivery:
+        return "delivery"
+    return None
+
+
 def _queue_customer_delivery_notification(order: Order, *, mode: str | None, has_line_contact: bool) -> None:
     if not mode:
-        print(f"Customer delivery notification skipped: mode missing for order {order.order_code}")
         return
-
-    line_ok = False
-    email_ok = False
-
     if has_line_contact:
-        try:
-            line_ok = bool(_run_async_safely(notify_line_delivery(order, mode=mode)))
-        except Exception as exc:
-            print(f"LINE delivery notification failed for {order.order_code}: {exc!r}")
-
-    try:
-        email_ok = bool(_run_async_safely(notify_delivery_email(order, mode=mode)))
-    except Exception as exc:
-        print(f"Email delivery notification failed for {order.order_code}: {exc!r}")
-
-    print(
-        f"Customer delivery notification finished for {order.order_code}: "
-        f"line_contact={has_line_contact}, line_ok={line_ok}, email_ok={email_ok}, mode={mode}"
-    )
+        _run_async_safely(notify_line_delivery(order, mode=mode))
+    else:
+        _run_async_safely(notify_delivery_email(order, mode=mode))
 
 
 
@@ -440,6 +436,8 @@ def staff_save_delivery(
     delivery_text: str = Form(""),
     action: str = Form("draft"),
     assigned_reader_id: str = Form(""),
+    send_line_text: str | None = Form(None),
+    send_line_report: str | None = Form(None),
     staff: dict = Depends(get_current_staff),
     db: Session = Depends(get_db),
 ):
@@ -454,6 +452,9 @@ def staff_save_delivery(
     actor_type, actor_id = _staff_actor(staff)
 
     has_report_html = _has_report_html(order)
+    if send_line_report and not has_report_html:
+        print(f"send_line_report ignored: report_html missing for order {order.order_code}")
+        send_line_report = None
 
     latest = sorted(order.deliveries, key=lambda d: d.updated_at or d.created_at, reverse=True)
     delivery = latest[0] if latest else None
@@ -461,15 +462,9 @@ def staff_save_delivery(
     has_line_contact = bool(_customer_line_id(order))
 
     if action == "resend_notify":
-        if not has_report_html:
-            print(f"Customer delivery notification skipped: report_html missing for order {order.order_code}")
-            return _redirect(f"/staff/orders/{order_code}")
         db.commit()
-        _queue_customer_delivery_notification(order, mode="delivery_with_report", has_line_contact=has_line_contact)
-        return _redirect(f"/staff/orders/{order_code}")
-
-    if action == "deliver" and not has_report_html:
-        print(f"Delivery blocked: report_html missing for order {order.order_code}")
+        mode = _notification_mode(send_line_text, send_line_report, default_delivery=not has_line_contact)
+        _queue_customer_delivery_notification(order, mode=mode, has_line_contact=has_line_contact)
         return _redirect(f"/staff/orders/{order_code}")
 
     cleaned_delivery_text = (delivery_text or '').strip()
@@ -506,10 +501,8 @@ def staff_save_delivery(
     db.commit()
 
     if action == "deliver":
-        if has_report_html:
-            _queue_customer_delivery_notification(order, mode="delivery_with_report", has_line_contact=has_line_contact)
-        else:
-            print(f"Customer delivery notification skipped after deliver: report_html missing for order {order.order_code}")
+        mode = _notification_mode(send_line_text, send_line_report, default_delivery=not has_line_contact)
+        _queue_customer_delivery_notification(order, mode=mode, has_line_contact=has_line_contact)
 
     return _redirect(f"/staff/orders/{order_code}")
 

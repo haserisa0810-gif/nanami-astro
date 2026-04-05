@@ -165,6 +165,7 @@ def create_order_page(
     consultation_text: str | None = Form(None),
     free_reading_code: str | None = Form(None),
     payment_order_ref: str | None = Form(None),
+    base_order_ref: str | None = Form(None),
     line_user_id: str | None = Form(None),
     line_name: str | None = Form(None),
     course: str | None = Form(None),
@@ -175,7 +176,7 @@ def create_order_page(
         raise HTTPException(status_code=404, detail="menu not found")
 
     normalized_contact = (user_contact or '').strip()
-    normalized_payment_order_ref = (payment_order_ref or '').strip().upper()
+    normalized_payment_order_ref = ((payment_order_ref or base_order_ref or '')).strip().upper()
 
     def render_form_error(message: str, status_code: int = 400):
         menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc())).all()
@@ -291,7 +292,7 @@ def create_order_page(
     db.add(
         PaymentTransaction(
             order_id=order.id,
-            provider='base',
+            provider='stores',
             provider_payment_id=normalized_payment_order_ref,
             provider_session_id=normalized_payment_order_ref,
             amount=order.price,

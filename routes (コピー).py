@@ -6,14 +6,18 @@ FastAPI のルート定義のみを担当する薄い層。
 from __future__ import annotations
 
 import os
+import re
 import traceback
+from pathlib import Path
 from typing import Any, Literal
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from auth import get_current_reader
-from models import Astrologer
+from models import Astrologer, Order, OrderDelivery, OrderResultView
 import json
 
 from prefs import PREF_LABELS
@@ -21,7 +25,9 @@ from line_webhook import router as line_router
 from routes_public_orders import router as public_orders_router
 from routes_reader import router as reader_router
 from routes_admin import router as admin_router
-from routes_stripe import router as stripe_router
+from routes_staff import router as staff_router
+from routes_daily_theme import router as daily_theme_router
+from routes_daily_card import router as daily_card_router
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 
@@ -63,15 +69,54 @@ def _analyze_helpers():
 
 
 def _calc_helpers():
-    from services.transit_calc import calc_transits_single, calc_transits_synastry, calc_transits_long_term
+    from services.transit_calc import calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot
     from services.western_calc import calc_western_from_payload
-    return calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_western_from_payload
+    return calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot, calc_western_from_payload
+
+
+def _parse_jsonish_response(raw: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    cleaned = (raw or "").strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    if cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    candidates: list[str] = []
+    if cleaned:
+        candidates.append(cleaned)
+        start_obj = cleaned.find('{')
+        end_obj = cleaned.rfind('}')
+        if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
+            candidates.append(cleaned[start_obj:end_obj+1])
+        start_arr = cleaned.find('[')
+        end_arr = cleaned.rfind(']')
+        if start_arr != -1 and end_arr != -1 and end_arr > start_arr:
+            candidates.append(cleaned[start_arr:end_arr+1])
+
+    for cand in candidates:
+        try:
+            parsed = json.loads(cand)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                return {**fallback, "items": parsed}
+        except Exception:
+            pass
+
+    merged = dict(fallback)
+    merged.setdefault("raw_text", raw or "")
+    merged["summary"] = cleaned or merged.get("summary") or "生成結果を取得できませんでした。"
+    return merged
 
 AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3"]
 AnalysisType = Literal["single", "compatibility"]
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(line_router)
 
 @app.on_event("startup")
@@ -81,7 +126,9 @@ def _startup_platform() -> None:
 app.include_router(public_orders_router)
 app.include_router(reader_router)
 app.include_router(admin_router)
-app.include_router(stripe_router)
+app.include_router(staff_router)
+app.include_router(daily_theme_router)
+app.include_router(daily_card_router)
 
 
 # ── ヘルスチェック ────────────────────────────────────────────────────────────
@@ -126,6 +173,15 @@ def form_page(
     )
 
 
+@app.get("/analyze", response_class=HTMLResponse)
+def analyze_page(
+    request: Request,
+    analysis_type: str = "single",
+    astrology_system: str = "western",
+):
+    return form_page(request, analysis_type=analysis_type, astrology_system=astrology_system)
+
+
 @app.get("/western", response_class=HTMLResponse)
 def western_page(request: Request):
     return form_page(request, analysis_type="single", astrology_system="western")
@@ -155,14 +211,11 @@ def lite_page(request: Request):
 def guide_page(request: Request):
     return templates.TemplateResponse(request=request, name="guide.html", context={"request": request})
 
+
 @app.get("/about", response_class=HTMLResponse)
 def about_page(request: Request):
     return templates.TemplateResponse(request=request, name="about.html", context={"request": request})
-    
-@app.get("/thanks-stripe", response_class=HTMLResponse)
-def thanks_page(request: Request):
-    return templates.TemplateResponse(request=request, name="thanks-stripe.html", context={"request": request})    
-# ── 占い師サマリー ────────────────────────────────────────────────────────────
+    # ── 占い師サマリー ────────────────────────────────────────────────────────────
 
 @app.post("/astrologer-result", response_class=HTMLResponse)
 async def astrologer_result(request: Request):
@@ -215,6 +268,7 @@ def analyze(
     prefecture: str | None = Form(None),
     lat: float | None = Form(None),
     lon: float | None = Form(None),
+    from_order_code: str | None = Form(None),
     gender: str = Form("female"),
     # 共通
     analysis_type: AnalysisType = Form("single"),
@@ -248,7 +302,7 @@ def analyze(
     gender_b: str = Form("female"),
 ):
     build_payload_a, build_base_meta, format_reports, build_handoff_logs, run_compatibility, run_single = _analyze_helpers()
-    calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_western_from_payload = _calc_helpers()
+    calc_transits_single, calc_transits_synastry, calc_transits_long_term, calc_global_transit_snapshot, calc_western_from_payload = _calc_helpers()
     # チェックボックスをboolに変換
     include_asteroids = include_asteroids is not None
     include_chiron    = include_chiron is not None
@@ -477,6 +531,7 @@ def analyze(
                 "handoff_yaml_delta": logs["handoff_yaml_delta"],
                 "bias_guard": bias_guard_obj,
                 "transit_data": transit_data,
+                "from_order_code": (from_order_code or "").strip() or None,
             },
         )
 
@@ -485,6 +540,140 @@ def analyze(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/analyze/save-to-order")
+def save_analysis_to_order(
+    request: Request,
+    from_order_code: str = Form(""),
+    ai_text: str = Form(""),
+    reader_text: str = Form(""),
+    line_text: str = Form(""),
+    inputs_json: str = Form("{}"),
+    payload_json: str = Form("{}"),
+    raw_json: str = Form("{}"),
+    structure_summary_json: str = Form("{}"),
+    handoff_yaml_full: str = Form(""),
+):
+    from db import db_session
+    from sqlalchemy import select
+    from services.result_builder import build_yaml_from_analysis, build_result_payload, render_result_html, render_report_html
+    from services.yaml_log_service import create_yaml_log
+
+    def _loads(value: str):
+        try:
+            return json.loads(value) if isinstance(value, str) else value
+        except Exception:
+            return {}
+
+    resolved_order_code = (from_order_code or request.session.get("analyze_from_order_code") or "").strip()
+    if not resolved_order_code:
+        raise HTTPException(status_code=400, detail="order_code missing")
+
+    with db_session() as db:
+        order = db.scalar(select(Order).where(Order.order_code == resolved_order_code))
+        if not order:
+            raise HTTPException(status_code=404, detail='order not found')
+
+        inputs_obj = _loads(inputs_json)
+        payload_obj = _loads(payload_json)
+        raw_obj = _loads(raw_json)
+        structure_obj = _loads(structure_summary_json)
+
+        def _good_text(*values):
+            for value in values:
+                txt = (value or "") if isinstance(value, str) else str(value or "")
+                txt = txt.strip()
+                if txt and "DEBUG" not in txt and "空文字" not in txt:
+                    return txt
+            return ""
+
+        report_web = _good_text(
+            ai_text,
+            payload_obj.get("web_text") if isinstance(payload_obj, dict) else "",
+            payload_obj.get("report_text") if isinstance(payload_obj, dict) else "",
+            raw_obj.get("web_text") if isinstance(raw_obj, dict) else "",
+            raw_obj.get("report_text") if isinstance(raw_obj, dict) else "",
+            (raw_obj.get("reports") or {}).get("web") if isinstance(raw_obj.get("reports"), dict) else "",
+            ((raw_obj.get("western") or {}).get("web_text") if isinstance(raw_obj.get("western"), dict) else ""),
+            ((raw_obj.get("western") or {}).get("report_text") if isinstance(raw_obj.get("western"), dict) else ""),
+        )
+        report_reader = _good_text(reader_text)
+        report_line = _good_text(line_text)
+        horoscope_image_url = (
+            raw_obj.get("chart_image_url") or raw_obj.get("wheel_image_url") or
+            ((raw_obj.get("western") or {}).get("chart_image_url") if isinstance(raw_obj.get("western"), dict) else "") or
+            ((raw_obj.get("western") or {}).get("wheel_image_url") if isinstance(raw_obj.get("western"), dict) else "") or ""
+        )
+
+        summary = {
+            "saved_from": "analyze",
+            "from_order_code": order.order_code,
+            "order": {
+                "horoscope_image_url": horoscope_image_url,
+            },
+            "reports": {
+                "web": report_web,
+                "reader": report_reader,
+                "line": report_line,
+            },
+            "structure_summary": structure_obj,
+            "raw_json": raw_obj,
+            "payload_json": payload_obj,
+        }
+
+        yaml_body = build_yaml_from_analysis(
+            order=order,
+            inputs_json=inputs_obj,
+            payload_json=payload_obj,
+            raw_json=raw_obj,
+            structure_summary_json=structure_obj,
+            ai_text=ai_text or '',
+            reader_text=reader_text or '',
+            line_text=line_text or '',
+            handoff_yaml_full=handoff_yaml_full or '',
+        )
+        yaml_log = create_yaml_log(
+            db,
+            order,
+            yaml_body=yaml_body,
+            summary=summary,
+            created_by_type='system',
+            created_by_id=None,
+            log_type='generated',
+            set_active=True,
+        )
+        db.flush()
+
+        delivery = db.scalar(select(OrderDelivery).where(OrderDelivery.order_id == order.id).order_by(OrderDelivery.updated_at.desc(), OrderDelivery.id.desc()).limit(1))
+        delivery_text = report_web
+        if delivery:
+            delivery.delivery_text = delivery_text
+            delivery.is_draft = True
+        else:
+            db.add(OrderDelivery(order_id=order.id, reader_id=order.assigned_reader_id, delivery_text=delivery_text, is_draft=True))
+
+        payload = build_result_payload(order, yaml_log, delivery_text=delivery_text)
+        payload["raw_json"] = raw_obj
+        payload["horoscope_image_url"] = horoscope_image_url or payload.get("horoscope_image_url") or ""
+
+        view = db.scalar(select(OrderResultView).where(OrderResultView.order_id == order.id).order_by(OrderResultView.id.desc()).limit(1))
+        if not view:
+            view = OrderResultView(order_id=order.id)
+            db.add(view)
+        view.source_yaml_log_id = yaml_log.id
+        view.result_payload_json = json.dumps(payload, ensure_ascii=False)
+        view.result_html = render_result_html(payload)
+        try:
+            view.report_html = render_report_html(order, payload)
+        except Exception:
+            view.report_html = None
+        view.horoscope_image_url = payload.get("horoscope_image_url") or None
+
+        if order.status in {'received', 'paid', 'assigned'}:
+            order.status = 'in_progress'
+        db.commit()
+    return RedirectResponse(url=f"/staff/orders/{resolved_order_code}", status_code=303)
 
 
 # ── トランジット API ──────────────────────────────────────────────────────────
@@ -667,3 +856,5 @@ async def transit_interpret(request: Request):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=502, detail=str(e))
+
+

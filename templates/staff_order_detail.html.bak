@@ -92,35 +92,49 @@
           <button type="submit" name="action" value="draft">下書き保存</button>
         </div>
 
-        {# --- 通知系（必ず本文 + 鑑定書URLを送信） --- #}
+        {# --- LINE送信系（誤送信リスクあり） --- #}
         <div style="margin-top:16px;padding:16px;border:2px solid #f0c040;border-radius:12px;background:#fffdf0">
           <p style="margin:0 0 12px;font-size:13px;font-weight:700;color:#9a6f00">⚠️ 以下の操作はユーザーに通知が送信されます</p>
           <div style="display:grid;gap:10px;margin-bottom:12px">
-            <div style="font-size:13px;line-height:1.6;padding:10px 12px;border:1px solid #eadfb5;border-radius:10px;background:#fff">
-              <strong style="display:block">納品時は本文と鑑定書URLを必ず送信します</strong>
-              <span class="muted" style="font-size:12px">LINEがあればLINEへ、メールがあればメールへ送信します。両方あれば両方へ送信します。</span>
-            </div>
+            <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.5;padding:10px 12px;border:1px solid #eadfb5;border-radius:10px;background:#fff">
+              <input type="checkbox" name="send_line_text" value="1" {% if has_line_contact %}checked{% else %}disabled{% endif %} style="margin-top:2px">
+              <span>
+                <strong style="display:block">納品完了時にLINEで本文を送る</strong>
+                <span class="muted" style="font-size:12px">{% if has_line_contact %}鑑定本文をそのままLINE本文として送信します。{% else %}LINE未連携のため、この案件はメール送信になります。{% endif %}</span>
+              </span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.5;padding:10px 12px;border:1px solid #eadfb5;border-radius:10px;background:#fff;{% if not (result_view and result_view.report_html) %}opacity:.55;cursor:not-allowed{% endif %}">
+              <input
+                type="checkbox"
+                name="send_line_report"
+                value="1"
+                style="margin-top:2px"
+                {% if not (result_view and result_view.report_html) %}disabled{% endif %}
+              >
+              <span>
+                <strong style="display:block">納品完了時にLINEで鑑定書URLも送る</strong>
+                <span class="muted" style="font-size:12px">鑑定書を作成済みの場合のみ、{% if has_line_contact %}LINE{% else %}メール{% endif %}に閲覧URLをあわせて送信します。</span>
+              </span>
+            </label>
             {% if not (result_view and result_view.report_html) %}
-              <p class="muted" style="margin:0;font-size:12px;padding-left:2px;color:#c0392b;font-weight:700;">
-                鑑定書がまだ作成されていないため、納品完了も通知再送もできません。先に「鑑定書を作成」を押してください。
+              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">
+                鑑定書がまだ作成されていないため、URLの送信は使えません。先に「鑑定書を作成」を押してください。
               </p>
             {% endif %}
 
             {% if has_line_contact %}
-              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">この案件はLINE連携済みです。LINEへ送信します。</p>
-            {% endif %}
-            {% if customer_email %}
-              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">メール（{{ customer_email }}）にも送信します。</p>
-            {% endif %}
-            {% if not has_line_contact and not customer_email %}
-              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">LINEもメールも未登録のため、ユーザー通知は送信されません。</p>
+              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">この案件はLINE連携済みです。納品時はLINE送信を使えます。</p>
+            {% elif customer_email %}
+              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">LINE未連携のため、納品時と再送時はメール（{{ customer_email }}）で送信します。</p>
+            {% else %}
+              <p class="muted" style="margin:0;font-size:12px;padding-left:2px">LINE未連携かつメールアドレス未登録のため、ユーザー通知は送信されません。</p>
             {% endif %}
           </div>
           <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
-            <button type="button" onclick="confirmDeliver()" {% if not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>納品完了にする</button>
-            <button type="button" class="secondary" onclick="confirmResend()" {% if not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>通知を再送</button>
+            <button type="button" onclick="confirmDeliver()">納品完了にする</button>
+            <button type="button" class="secondary" onclick="confirmResend()">通知を再送</button>
           </div>
-          <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6">「通知を再送」は案件内容を変更せず、本文と鑑定書URLを利用可能な連絡先すべてへ再送します。</p>
+          <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6">「通知を再送」は案件内容を変更せず、利用可能な連絡先（LINEまたはメール）へ再送します。未達時の確認に使えます。</p>
         </div>
       </form>
 
@@ -231,9 +245,9 @@ function confirmDeliver() {
   const sendText = document.querySelector('input[name="send_line_text"]')?.checked;
   const sendReport = document.querySelector('input[name="send_line_report"]')?.checked && !document.querySelector('input[name="send_line_report"]')?.disabled;
   let msg = `【納品完了】この操作を実行しますか？\n\n顧客: ${userName}（${orderCode}）\n`;
-  if (sendText) msg += '・本文を送信します\n';
-  if (sendReport) msg += '・鑑定書URLを送信します\n';
-  if (!sendText && !sendReport) msg += '・本文通知はOFFです\n';
+  if (sendText) msg += '・LINEに本文を送信します\n';
+  if (sendReport) msg += '・LINEに鑑定書URLを送信します\n';
+  if (!sendText && !sendReport) msg += '・LINE通知はOFFです\n';
   msg += '\n本当に実行しますか？';
   if (confirm(msg)) {
     const form = document.getElementById('delivery-form');
@@ -249,7 +263,7 @@ function confirmDeliver() {
 function confirmResend() {
   const userName = {{ order.user_name | tojson }};
   const orderCode = {{ order.order_code | tojson }};
-  const msg = `【通知再送】本当に再送しますか？\n\n顧客: ${userName}（${orderCode}）\n\n案件内容は変更されません。利用可能な連絡先へ通知のみ再送します。`;
+  const msg = `【通知再送】本当に再送しますか？\n\n顧客: ${userName}（${orderCode}）\n\n案件内容は変更されません。LINEに通知のみ再送します。`;
   if (confirm(msg)) {
     const form = document.getElementById('delivery-form');
     const input = document.createElement('input');

@@ -298,7 +298,7 @@ def _synastry_chart_svg(person_a: dict[str, Any], person_b: dict[str, Any], size
     aspect_r = size * 0.15
     parts = [f"<svg viewBox='0 0 {size} {size}' width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>"]
     parts.append("<defs><filter id='glow'><feGaussianBlur stdDeviation='1.8' result='b'/><feMerge><feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>")
-    parts.append(f"<rect x='0' y='0' width='{size}' height='{size}' fill='#1e1a2b'/>")
+    sign_fill = ['#fff7f7','#fff9f2','#fffdf3','#f7fff8','#f2fff8','#f4fffd','#f4fbff','#f7f5ff','#fbf4ff','#fff4fb','#fff4f6','#f9f4ff']
     sign_jp = SIGN_JA
     # sign ring
     for i in range(12):
@@ -308,19 +308,12 @@ def _synastry_chart_svg(person_a: dict[str, Any], person_b: dict[str, Any], size
         p2 = (cx + outer * math.cos(math.radians(e)), cy + outer * math.sin(math.radians(e)))
         p3 = (cx + sign_r * math.cos(math.radians(e)), cy + sign_r * math.sin(math.radians(e)))
         p4 = (cx + sign_r * math.cos(math.radians(s)), cy + sign_r * math.sin(math.radians(s)))
-        parts.append(f"<path d='M {p4[0]:.1f} {p4[1]:.1f} L {p1[0]:.1f} {p1[1]:.1f} A {outer:.1f} {outer:.1f} 0 0 1 {p2[0]:.1f} {p2[1]:.1f} L {p3[0]:.1f} {p3[1]:.1f} A {sign_r:.1f} {sign_r:.1f} 0 0 0 {p4[0]:.1f} {p4[1]:.1f} Z' fill='rgba(30,24,40,0.18)' stroke='rgba(201,169,110,0.18)' stroke-width='1'/>")
+        parts.append(f"<path d='M {p4[0]:.1f} {p4[1]:.1f} L {p1[0]:.1f} {p1[1]:.1f} A {outer:.1f} {outer:.1f} 0 0 1 {p2[0]:.1f} {p2[1]:.1f} L {p3[0]:.1f} {p3[1]:.1f} A {sign_r:.1f} {sign_r:.1f} 0 0 0 {p4[0]:.1f} {p4[1]:.1f} Z' fill='{sign_fill[i]}' stroke='#e7e2dc' stroke-width='1'/>")
         mid = math.radians(-75 + i * 30)
         tx = cx + ((outer + sign_r) / 2) * math.cos(mid)
         ty = cy + ((outer + sign_r) / 2) * math.sin(mid)
-        parts.append(f"<text x='{tx:.1f}' y='{ty:.1f}' text-anchor='middle' dominant-baseline='middle' font-size='15' font-weight='700' fill='rgba(232,224,212,0.88)'>{sign_jp[i]}</text>")
-    for r, stroke, sw in [
-        (outer, 'rgba(201,169,110,0.58)', 1.5),
-        (sign_r, 'rgba(201,169,110,0.42)', 1.2),
-        (house_r, 'rgba(201,169,110,0.22)', 1),
-        (outer_planet_r, 'rgba(201,169,110,0.16)', 1),
-        (inner_planet_r, 'rgba(201,169,110,0.16)', 1),
-        (aspect_r, 'rgba(201,169,110,0.20)', 1),
-    ]:
+        parts.append(f"<text x='{tx:.1f}' y='{ty:.1f}' text-anchor='middle' dominant-baseline='middle' font-size='15' font-weight='700' fill='#111'>{sign_jp[i]}</text>")
+    for r, stroke, sw in [(outer, '#d9d2cb', 1.5), (sign_r, '#e7e2dc', 1.2), (house_r, '#eee6df', 1), (outer_planet_r, '#f1ebe5', 1), (inner_planet_r, '#f1ebe5', 1), (aspect_r, '#e7e2dc', 1)]:
         parts.append(f"<circle cx='{cx}' cy='{cy}' r='{r:.1f}' fill='none' stroke='{stroke}' stroke-width='{sw}'/>")
     houses = (_raw_western(person_a).get('houses') or person_a.get('houses') or [])
     if isinstance(houses, list):
@@ -335,7 +328,7 @@ def _synastry_chart_svg(person_a: dict[str, Any], person_b: dict[str, Any], size
             y2 = cy + outer * math.sin(ang)
             x1 = cx + aspect_r * math.cos(ang)
             y1 = cy + aspect_r * math.sin(ang)
-            parts.append(f"<line x1='{x1:.1f}' y1='{y1:.1f}' x2='{x2:.1f}' y2='{y2:.1f}' stroke='rgba(201,169,110,0.22)' stroke-width='1'/>")
+            parts.append(f"<line x1='{x1:.1f}' y1='{y1:.1f}' x2='{x2:.1f}' y2='{y2:.1f}' stroke='#d2cbc4' stroke-width='1'/>")
     glyph = PLANET_SYMBOLS
     def place(points, radius, fill, stroke, text_fill):
         occupied: list[float] = []
@@ -362,17 +355,18 @@ def _synastry_chart_svg(person_a: dict[str, Any], person_b: dict[str, Any], size
     major = {'Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','ASC','MC'}
     pa = [p for p in planets_a if _safe_text(p.get('name')) in major]
     pb = [p for p in planets_b if _safe_text(p.get('name')) in major]
-    placed_a = place(pa, inner_planet_r, 'rgba(37,30,49,0.96)', '#c9a96e', '#efe6d6')
-    placed_b = place(pb, outer_planet_r, 'rgba(27,22,38,0.96)', '#c9a96e', '#efe6d6')
+    # 両方ゴールド系に統一（内外で濃淡だけ変える）
+    placed_a = place(pa, inner_planet_r, '#2d2438', '#c9a96e', '#e8e0d4')
+    placed_b = place(pb, outer_planet_r, '#1f1a2a', '#c9a96e', '#e8e0d4')
 
     map_a = {_safe_text(p.get('name')): (x, y) for x, y, p in placed_a}
     map_b = {_safe_text(p.get('name')): (x, y) for x, y, p in placed_b}
     aspect_colors = {
-        'Conjunction': 'rgba(201,169,110,0.62)',
-        'Sextile': 'rgba(201,169,110,0.34)',
-        'Square': 'rgba(201,169,110,0.30)',
-        'Trine': 'rgba(201,169,110,0.46)',
-        'Opposition': 'rgba(201,169,110,0.46)',
+        'Conjunction': 'rgba(201,169,110,0.6)',
+        'Sextile': 'rgba(201,169,110,0.4)',
+        'Square': 'rgba(196,120,138,0.4)',
+        'Trine': 'rgba(201,169,110,0.5)',
+        'Opposition': 'rgba(196,120,138,0.5)',
     }
     for asp in _synastry_aspects(person_a, person_b):
         a_pt = map_a.get(asp['planet1'])
@@ -380,8 +374,8 @@ def _synastry_chart_svg(person_a: dict[str, Any], person_b: dict[str, Any], size
         if not a_pt or not b_pt:
             continue
         parts.append(f"<line x1='{a_pt[0]:.1f}' y1='{a_pt[1]:.1f}' x2='{b_pt[0]:.1f}' y2='{b_pt[1]:.1f}' stroke='{aspect_colors.get(asp['aspect'], '#a0a0a0')}' stroke-width='1.2' opacity='0.82'/>")
-    parts.append(f"<text x='{cx - 78:.1f}' y='{size - 16:.1f}' font-size='11' fill='rgba(201,169,110,0.92)'>内円：あなた</text>")
-    parts.append(f"<text x='{cx + 14:.1f}' y='{size - 16:.1f}' font-size='11' fill='rgba(201,169,110,0.78)'>外円：お相手</text>")
+    parts.append(f"<text x='{cx - 78:.1f}' y='{size - 16:.1f}' font-size='11' fill='#8b6e32'>内円：あなた</text>")
+    parts.append(f"<text x='{cx + 14:.1f}' y='{size - 16:.1f}' font-size='11' fill='#6d60a0'>外円：お相手</text>")
     parts.append('</svg>')
     return ''.join(parts)
 
