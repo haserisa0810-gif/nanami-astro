@@ -14,6 +14,10 @@ AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "int
 AnalysisType = Literal["single", "compatibility"]
 
 
+TRUE_VALUES = {"1", "true", "on", "yes", "y"}
+FALSE_VALUES = {"0", "false", "off", "no", "n", ""}
+
+
 def _analyze_helpers():
     from analyze_engine import (
         build_base_meta,
@@ -45,65 +49,27 @@ def _calc_helpers():
     )
 
 
-def _normalize_checkbox_flags(**flags: str | None) -> dict[str, bool]:
-    return {key: value is not None for key, value in flags.items()}
+def _parse_checkbox(value: Any, *, default: bool = False) -> bool:
+    """Robust checkbox parser.
+
+    HTML checkbox values vary by template and browser: omitted / on / true / 1.
+    Also, some older templates may omit generate_ai entirely. In that case,
+    we want generate_ai to default to True, not False.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in TRUE_VALUES:
+        return True
+    if text in FALSE_VALUES:
+        return False
+    return default
 
 
 def _build_inputs_view(**kwargs: Any) -> dict[str, Any]:
     return dict(kwargs)
-
-
-def _build_compatibility_transit_data(
-    *,
-    payload_a: dict[str, Any],
-    birth_date_b: str | None,
-    birth_time_b: str | None,
-    birth_place_b: str | None,
-    prefecture_b: str | None,
-    lat_b: float | None,
-    lon_b: float | None,
-    calc_transits_synastry,
-    calc_transits_long_term,
-    calc_western_from_payload,
-):
-    from shared import _calc_payload_from_inputs  # type: ignore
-
-    _tmp_a = calc_western_from_payload(payload_a)
-    natal_a_tmp = _tmp_a.get("planets", [])
-    _unknowns_b: list[str] = []
-    _payload_b = _calc_payload_from_inputs(
-        birth_date=birth_date_b or "",
-        birth_time=birth_time_b,
-        birth_place=birth_place_b,
-        prefecture=prefecture_b,
-        lat=lat_b,
-        lon=lon_b,
-        unknowns=_unknowns_b,
-    )
-    _tmp_b = calc_western_from_payload(_payload_b)
-    natal_b_tmp = _tmp_b.get("planets", [])
-    synastry_transit = calc_transits_synastry(natal_a_tmp, natal_b_tmp)
-    long_term_a = calc_transits_long_term(natal_a_tmp)
-    long_term_b = calc_transits_long_term(natal_b_tmp)
-    return {
-        **synastry_transit,
-        "long_term": long_term_a,
-        "long_term_b": long_term_b,
-    }
-
-
-def _build_single_transit_data(
-    *,
-    payload_a: dict[str, Any],
-    calc_transits_single,
-    calc_transits_long_term,
-    calc_western_from_payload,
-):
-    _tmp = calc_western_from_payload(payload_a)
-    natal_planets_tmp = _tmp.get("planets", [])
-    today_transit = calc_transits_single(natal_planets_tmp)
-    long_term = calc_transits_long_term(natal_planets_tmp)
-    return {**today_transit, "long_term": long_term}
 
 
 @router.post("/analyze", response_class=HTMLResponse)
@@ -126,6 +92,8 @@ def analyze(
     output_style: str = Form("normal"),
     detail_level: str = Form("standard"),
     ai_model: str | None = Form(None),
+    generate_ai: str | None = Form(None),
+    yaml_only: str | None = Form(None),
     house_system: str = Form("P"),
     node_mode: str = Form("true"),
     lilith_mode: str = Form("mean"),
@@ -154,20 +122,19 @@ def analyze(
         calc_western_from_payload,
     ) = _calc_helpers()
 
-    flags = _normalize_checkbox_flags(
-        include_asteroids=include_asteroids,
-        include_chiron=include_chiron,
-        include_lilith=include_lilith,
-        include_vertex=include_vertex,
-        include_reader=include_reader,
-        include_transit=include_transit,
-    )
-    include_asteroids = flags["include_asteroids"]
-    include_chiron = flags["include_chiron"]
-    include_lilith = flags["include_lilith"]
-    include_vertex = flags["include_vertex"]
-    include_reader = flags["include_reader"]
-    include_transit = flags["include_transit"]
+    include_asteroids_flag = _parse_checkbox(include_asteroids, default=False)
+    include_chiron_flag = _parse_checkbox(include_chiron, default=False)
+    include_lilith_flag = _parse_checkbox(include_lilith, default=False)
+    include_vertex_flag = _parse_checkbox(include_vertex, default=False)
+    include_reader_flag = _parse_checkbox(include_reader, default=False)
+    include_transit_flag = _parse_checkbox(include_transit, default=False)
+
+    # Important: AI本文はUIでチェックが消えたり name がズレたときでも、
+    # 既定では ON 扱いにする。
+    yaml_only_flag = _parse_checkbox(yaml_only, default=False)
+    generate_ai_flag = _parse_checkbox(generate_ai, default=True)
+    if yaml_only_flag:
+        generate_ai_flag = False
 
     unknowns: list[str] = []
 
@@ -182,10 +149,10 @@ def analyze(
         house_system=house_system,
         node_mode=node_mode,
         lilith_mode=lilith_mode,
-        include_asteroids=include_asteroids,
-        include_chiron=include_chiron,
-        include_lilith=include_lilith,
-        include_vertex=include_vertex,
+        include_asteroids=include_asteroids_flag,
+        include_chiron=include_chiron_flag,
+        include_lilith=include_lilith_flag,
+        include_vertex=include_vertex_flag,
         unknowns=unknowns,
     )
 
@@ -196,11 +163,11 @@ def analyze(
         house_system=house_system,
         node_mode=node_mode,
         lilith_mode=lilith_mode,
-        include_asteroids=include_asteroids,
-        include_chiron=include_chiron,
-        include_lilith=include_lilith,
-        include_vertex=include_vertex,
-        include_reader=include_reader,
+        include_asteroids=include_asteroids_flag,
+        include_chiron=include_chiron_flag,
+        include_lilith=include_lilith_flag,
+        include_vertex=include_vertex_flag,
+        include_reader=include_reader_flag,
         theme=theme,
         message=message,
         observations_text=observations_text,
@@ -213,6 +180,8 @@ def analyze(
         gender=gender,
         gender_b=gender_b,
     )
+    base_meta["generate_ai"] = generate_ai_flag
+    base_meta["yaml_only"] = yaml_only_flag
 
     inputs_view = _build_inputs_view(
         analysis_type=analysis_type,
@@ -235,15 +204,18 @@ def analyze(
         house_system=house_system,
         node_mode=node_mode,
         lilith_mode=lilith_mode,
-        include_asteroids=include_asteroids,
-        include_chiron=include_chiron,
-        include_lilith=include_lilith,
-        include_vertex=include_vertex,
-        include_reader=include_reader,
+        include_asteroids=include_asteroids_flag,
+        include_chiron=include_chiron_flag,
+        include_lilith=include_lilith_flag,
+        include_vertex=include_vertex_flag,
+        include_reader=include_reader_flag,
+        include_transit=include_transit_flag,
         theme=theme,
         message=message,
         observations_text=(observations_text or "").strip(),
         day_change_at_23=day_change_at_23,
+        generate_ai=generate_ai_flag,
+        yaml_only=yaml_only_flag,
     )
 
     astro_result: dict[str, Any] = {}
@@ -253,15 +225,7 @@ def analyze(
             if not birth_date_b:
                 raise HTTPException(status_code=400, detail="相性分析では相手の生年月日が必要です。")
 
-            # 応急処置:
-            # 相性鑑定 + トランジットON は /analyze 内で先にトランジット計算すると
-            # A/B の natal 計算 + synastry + 長期トランジットまで一括実行になり、
-            # Cloud Run でタイムアウトしやすい。
-            #
-            # 相性本文の生成を先に返すことを優先し、トランジットは結果画面側で
-            # /transit/synastry を別リクエストで取りに行く前提にする。
             transit_data = None
-
             astro_result, payload_view, report_web, report_line, report_raw, report_reader = run_compatibility(
                 payload_a=payload_a,
                 birth_date_b=birth_date_b,
@@ -274,25 +238,24 @@ def analyze(
                 house_system=house_system,
                 node_mode=node_mode,
                 lilith_mode=lilith_mode,
-                include_asteroids=include_asteroids,
-                include_chiron=include_chiron,
-                include_lilith=include_lilith,
-                include_vertex=include_vertex,
-                include_reader=include_reader,
+                include_asteroids=include_asteroids_flag,
+                include_chiron=include_chiron_flag,
+                include_lilith=include_lilith_flag,
+                include_vertex=include_vertex_flag,
+                include_reader=include_reader_flag,
                 base_meta=base_meta,
                 unknowns=unknowns,
             )
             guard_meta: dict[str, Any] = {}
         else:
             transit_data = None
-            if include_transit:
+            if include_transit_flag:
                 try:
-                    transit_data = _build_single_transit_data(
-                        payload_a=payload_a,
-                        calc_transits_single=calc_transits_single,
-                        calc_transits_long_term=calc_transits_long_term,
-                        calc_western_from_payload=calc_western_from_payload,
-                    )
+                    _tmp = calc_western_from_payload(payload_a)
+                    natal_planets_tmp = _tmp.get("planets", [])
+                    today_transit = calc_transits_single(natal_planets_tmp)
+                    long_term = calc_transits_long_term(natal_planets_tmp)
+                    transit_data = {**today_transit, "long_term": long_term}
                 except Exception:
                     traceback.print_exc()
                     transit_data = {"error": "トランジット計算に失敗しました"}
@@ -302,7 +265,7 @@ def analyze(
                 payload_a=payload_a,
                 base_meta=base_meta,
                 message=message,
-                include_reader=include_reader,
+                include_reader=include_reader_flag,
                 day_change_at_23=day_change_at_23,
                 transit_data=transit_data,
             )
@@ -315,7 +278,7 @@ def analyze(
             report_line=report_line,
             detail_level=detail_level,
             output_style=output_style,
-            include_reader=include_reader,
+            include_reader=include_reader_flag,
         )
 
         bias_guard_obj = guard_meta if isinstance(guard_meta, dict) else {}
@@ -333,6 +296,16 @@ def analyze(
             transit=transit_data,
         )
 
+        # YAML-only のときだけ YAML を本文欄に出す。
+        # generate_ai が何らかの都合で false でも yaml_only でなければ、
+        # 既存の本文があるならそれを優先して落とさない。
+        if yaml_only_flag:
+            report_web = "YAMLログのみ作成モードです。下の内容を確認してください。\n\n" + (
+                logs.get("handoff_yaml_full") or logs.get("handoff_yaml") or ""
+            )
+            report_line = ""
+            report_reader = ""
+
         return templates.TemplateResponse(
             request=request,
             name="result.html",
@@ -347,7 +320,7 @@ def analyze(
                 "raw_reader_text": report_raw,
                 "reader_text": report_reader,
                 "line_text": report_line,
-                "include_reader": include_reader,
+                "include_reader": include_reader_flag,
                 "handoff_json": logs["handoff_json"],
                 "handoff_yaml": logs["handoff_yaml"],
                 "handoff_json_full": logs["handoff_json_full"],

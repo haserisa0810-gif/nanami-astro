@@ -1,5 +1,5 @@
 {% extends "platform_base.html" %}{% set title = "占いお申込み" %}{% block content %}
-<div class="card"><h1>占いお申込み</h1><p class="muted">STORESご購入後の情報入力フォームです。購入完了メールに記載の注文番号をご用意ください。</p></div>
+<div class="card"><h1>占いお申込み</h1><p class="muted">STORESご購入後の情報入力フォームです。購入完了メールに記載の10桁の注文番号をご用意ください。ストア通知メールによっては購入時メールアドレスが照合できない場合があります。</p></div>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 <div class="card">
   <form method="post" action="/order/start">
@@ -13,14 +13,15 @@
       <div><label>生年月日</label><input type="date" name="birth_date" required value="{{ (form_values.birth_date if form_values else '') or (initial_free_order.birth_date.isoformat() if initial_free_order and initial_free_order.birth_date else '') }}"></div>
       <div><label>出生時間</label><input type="time" name="birth_time" value="{{ (form_values.birth_time if form_values else '') or (initial_free_order.birth_time if initial_free_order else '') }}"></div>
       <div><label>都道府県（任意）</label><select name="birth_prefecture"><option value="">選択なし</option>{% for pref in prefecture_options %}<option value="{{ pref }}" {% if ((form_values.birth_prefecture if form_values else none) == pref) or (not form_values and initial_free_order and initial_free_order.birth_prefecture == pref) %}selected{% endif %}>{{ pref }}</option>{% endfor %}</select></div>
-      <div><label>出生地（市区町村など・任意）</label><input name="birth_place" placeholder="足立区 / 横浜市 など" value="{{ (form_values.birth_place if form_values else '') or (initial_free_order.birth_place if initial_free_order else '') }}"></div>
+      <div><label>出生地（市区町村など・任意）</label><input name="birth_place" placeholder="千代田区 / 横浜市 など" value="{{ (form_values.birth_place if form_values else '') or (initial_free_order.birth_place if initial_free_order else '') }}"></div>
       <div><label>性別（任意）</label><select name="gender"><option value="">未選択</option><option value="1" {% if initial_free_order and initial_free_order.gender == '1' %}selected{% endif %}>女性</option><option value="2" {% if initial_free_order and initial_free_order.gender == '2' %}selected{% endif %}>男性</option><option value="3" {% if initial_free_order and initial_free_order.gender == '3' %}selected{% endif %}>その他</option><option value="4" {% if initial_free_order and initial_free_order.gender == '4' %}selected{% endif %}>回答しない</option></select></div>
-      <div><label>STORES注文番号</label><input name="base_order_ref" required placeholder="123456789" value="{{ (form_values.base_order_ref if form_values else '') or initial_base_order_ref or '' }}"></div>
+      <div><label>STORES注文番号</label><input name="base_order_ref" required inputmode="numeric" pattern="\d{10}" minlength="10" maxlength="10" placeholder="1100724822" value="{{ (form_values.payment_order_ref if form_values else '') or initial_payment_order_ref or '' }}"></div>
+      <div><label>STORES購入時メールアドレス</label><input type="email" name="payment_email" required autocomplete="email" placeholder="purchase@example.com" value="{{ (form_values.payment_email if form_values else '') or initial_payment_email or '' }}"></div>
       <div><label>無料鑑定ID（お持ちの方のみ）</label><input name="free_reading_code" placeholder="F-260328-8K3M" value="{{ initial_free_reading_code or '' }}"></div>
     </div>
     <div style="margin-top:12px"><label>ご相談内容（任意）</label><textarea name="consultation_text" placeholder="恋愛、仕事、人間関係など">{{ initial_free_order.consultation_text if initial_free_order else '' }}</textarea></div>
-    <p class="muted" style="margin-top:10px">STORES購入後にこのフォームを送信すると受付完了になります。以前の無料鑑定IDがあればあわせてご記入ください。</p>
-    {% if initial_line_user_id %}<p class="muted" style="margin-top:6px">このフォームはLINE連携済みです。納品時にLINE通知を利用できます。</p>{% endif %}
+    <p class="muted" style="margin-top:10px">STORES購入後にこのフォームを送信すると受付完了になります。注文番号をもとに照合します。ストア通知メールに購入時メールアドレスが含まれない場合は、注文番号優先で受付します。以前の無料鑑定IDがあればあわせてご記入ください。</p>
+    {% if initial_line_user_id %}<p class="muted" style="margin-top:6px">このフォームはLINE連携済みです。LINEから開いた場合は内部の line_user_id が自動で引き継がれるため、納品時にLINE通知を利用できます。</p>{% endif %}
     <p class="muted" style="margin-top:10px">都道府県だけでも受付できます。市区町村まで入力すると、より正確な出生地設定ができます。座標は内部で自動取得し、必要な場合は管理画面で手修正できます。</p>
     <div style="margin-top:14px"><button type="submit">確認画面へ進む</button></div>
   </form>

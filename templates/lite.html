@@ -707,10 +707,20 @@
         <div class="row">
           <label>文章量</label>
           <select name="detail_level">
-            <option value="standard">標準</option>
-            <option value="short">短め</option>
-            <option value="detailed">詳細</option>
+            <option value="short">軽量（約1200〜1700字）</option>
+            <option value="standard" selected>標準（約1500〜2400字）</option>
+            <option value="detailed">やや長め（約2200〜3200字）</option>
           </select>
+        </div>
+
+        <div class="row">
+          <label>AIモデル <span class="pill">通常はFlash / Proは高コスト</span></label>
+          <select name="ai_model" id="ai_model">
+            <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash（通常運用）</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite（試験用）</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro（高品質・高コスト）</option>
+          </select>
+          <div class="hint" style="margin-top:8px;">通常は Flash 推奨です。Pro は必要なときだけ使ってください。</div>
         </div>
 
         <div class="row">

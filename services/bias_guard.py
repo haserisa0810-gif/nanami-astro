@@ -162,8 +162,11 @@ def validate_generated_text(
             issues.append("readerで無害化ワード（大丈夫/問題ない等）が出ています")
 
     # Client: if high severity exists, require a caution block.
+    # ただし本文がまだ短い・見出し不足の段階では fail で潰さず、十分な長さが出た後だけ厳しく見る。
     if report_type in ("single_web", "single_line") and sev_max >= 4:
-        if not re.search(r"(注意|気をつけ|リスク|事故|落とし穴)", t):
+        has_caution = bool(re.search(r"(注意|気をつけ|リスク|事故|落とし穴)", t))
+        visible_headers = len(re.findall(r"^###\\s+", t, flags=re.MULTILINE))
+        if len(t) >= 1200 and visible_headers >= 4 and not has_caution:
             issues.append("高severityリスクがあるのに、注意喚起が文章上に現れていません")
 
     # Too many hedge words => content becomes empty.

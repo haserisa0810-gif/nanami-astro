@@ -6,7 +6,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from models import Customer, Menu, Order, OrderInputSnapshot, OrderStatusLog
+from models import Customer, IntakeDraft, Menu, Order, OrderInputSnapshot, OrderStatusLog
 
 
 def generate_order_code() -> str:
@@ -22,6 +22,10 @@ def get_or_create_customer(db: Session, *, display_name: str | None = None, line
     if customer:
         if display_name and not customer.display_name:
             customer.display_name = display_name
+        if line_user_id and not customer.line_user_id:
+            customer.line_user_id = line_user_id
+        if email and not customer.email:
+            customer.email = email
         if phone and not customer.phone:
             customer.phone = phone
         return customer
@@ -118,3 +122,41 @@ def auto_assign_reader(db: Session, order: Order, *, preferred_reader_id: int | 
     if order.status == 'paid':
         update_order_status(db, order, to_status='assigned', actor_type=actor_type, actor_id=None, note=note or 'auto assigned after payment')
     return reader
+
+
+
+def create_order_from_draft(
+    db: Session,
+    *,
+    draft: IntakeDraft,
+    menu: Menu,
+    customer: Customer | None = None,
+    status: str = "paid",
+) -> Order:
+    order = create_order(
+        db,
+        menu=menu,
+        user_name=(draft.user_name or "申込者").strip(),
+        user_contact=(draft.user_contact or "").strip() or None,
+        birth_date=draft.birth_date or date.today(),
+        birth_time=draft.birth_time,
+        birth_prefecture=draft.birth_prefecture,
+        birth_place=draft.birth_place,
+        birth_lat=draft.birth_lat,
+        birth_lon=draft.birth_lon,
+        location_source=draft.location_source,
+        location_note=draft.location_note,
+        gender=draft.gender,
+        consultation_text=draft.consultation_text,
+        customer=customer,
+        source=draft.source or "web",
+        external_platform=draft.external_platform,
+        external_order_ref=draft.external_order_ref,
+        status=status,
+    )
+    order.order_kind = draft.order_kind or order.order_kind
+    order.input_origin = "draft_promoted"
+    draft.promoted_order_id = order.id
+    draft.draft_status = "promoted"
+    db.flush()
+    return order

@@ -2,10 +2,10 @@
 {% extends "platform_base.html" %}{% set title = "受付完了" %}{% block content %}
 <div class="card">
   <h1>受付完了</h1>
-  <p class="muted">鑑定内容を受け付けました。管理画面で確認後、鑑定を開始します。</p>
+  <p class="muted">{% if updated %}同じSTORES注文番号の受付が見つかったため、内容を最新の入力で更新しました。{% else %}鑑定内容を受け付けました。管理画面で確認後、鑑定を開始します。{% endif %}</p>
   <div class="grid">
     <div><strong>受付番号</strong><div>{{ order.order_code }}</div></div>
-    <div><strong>BASE注文番号</strong><div>{{ order.external_order_ref or '-' }}</div></div>
+    <div><strong>STORES注文番号</strong><div>{{ order.external_order_ref or '-' }}</div></div>
     <div><strong>お名前</strong><div>{{ order.user_name }}</div></div>
     <div><strong>メニュー</strong><div>{{ order.menu.name if order.menu else '-' }}</div></div>
     <div><strong>生年月日</strong><div>{{ order.birth_date }}</div></div>

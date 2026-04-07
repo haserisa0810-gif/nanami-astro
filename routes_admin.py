@@ -399,3 +399,29 @@ def admin_yaml_logs(request: Request, admin: AdminUser = Depends(get_current_adm
 def admin_audit_logs(request: Request, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
     logs = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(200)).all()
     return templates.TemplateResponse(request=request, name='admin_audit_logs.html', context={'request': request, 'admin': admin, 'logs': logs})
+
+
+@router.post('/admin/maintenance/cleanup-drafts')
+def admin_cleanup_drafts(
+    dry_run: str = Form('1'),
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    dry = str(dry_run or '1').strip() != '0'
+    result = cleanup_expired_drafts(db, dry_run=dry)
+    if not dry:
+        db.commit()
+    return result
+
+
+@router.post('/admin/maintenance/cleanup-orphan-reports')
+def admin_cleanup_orphan_reports(
+    dry_run: str = Form('1'),
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    dry = str(dry_run or '1').strip() != '0'
+    result = cleanup_orphan_reports(db, dry_run=dry)
+    if not dry:
+        db.commit()
+    return result

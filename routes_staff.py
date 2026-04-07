@@ -193,6 +193,18 @@ def _build_publish_payload(order: Order, yaml_log: YamlLog):
     return payload, delivery
 
 
+def _preferred_default_reader(db: Session) -> Astrologer | None:
+    readers = db.scalars(select(Astrologer).where(Astrologer.status == "active").order_by(Astrologer.id.asc())).all()
+    if not readers:
+        return None
+    for reader in readers:
+        display_name = (reader.display_name or "").strip()
+        login_email = (reader.login_email or "").strip().lower()
+        if "七海" in display_name or "nanami" in display_name.lower() or login_email.startswith("nanami"):
+            return reader
+    return readers[0]
+
+
 def _ensure_reader_for_save(db: Session, order: Order, staff: dict[str, object]) -> Astrologer:
     if staff.get("role") == "reader":
         reader = staff.get("user")
@@ -204,7 +216,7 @@ def _ensure_reader_for_save(db: Session, order: Order, staff: dict[str, object])
         reader = db.get(Astrologer, order.assigned_reader_id)
         if reader and reader.status == "active":
             return reader
-    reader = db.scalar(select(Astrologer).where(Astrologer.status == "active").order_by(Astrologer.id.asc()))
+    reader = _preferred_default_reader(db)
     if not reader:
         raise HTTPException(status_code=400, detail="有効な占い師がいません。占い師アカウントを有効化してください。")
     order.assigned_reader_id = reader.id
@@ -328,6 +340,8 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
         raise HTTPException(status_code=404, detail="order not found")
 
     readers = db.scalars(select(Astrologer).where(Astrologer.status == "active").order_by(Astrologer.display_name.asc())).all()
+    default_reader = _preferred_default_reader(db)
+    default_reader_id = default_reader.id if default_reader else None
     previous_logs = []
     if order.customer_id:
         previous_logs = db.scalars(
@@ -397,6 +411,7 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
             "has_line_contact": bool(_customer_line_id(order)),
             "customer_line_id": _customer_line_id(order),
             "customer_email": _customer_email(order),
+            "default_reader_id": default_reader_id,
         },
     )
 

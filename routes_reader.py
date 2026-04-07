@@ -16,7 +16,7 @@ from routes_staff import _resolve_reader_login
 from services.order_service import update_order_status
 from services.yaml_log_service import upsert_yaml_log
 from services.reader_availability import line_status_label, normalize_line_status
-from services.notification_service import notify_line_delivery
+from services.notification_service import notify_delivery_email, notify_line_delivery
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -120,7 +120,11 @@ def reader_save_delivery(order_code: str, request: Request, delivery_text: str =
         db.add(delivery)
 
     should_notify = action in {"deliver_notify", "deliver_auto"}
-    notify_mode = "auto" if action == "deliver_auto" else "delivery"
+    has_report_html = bool(order.result_views and any(getattr(v, "report_html", None) for v in order.result_views))
+    if action == "deliver_auto":
+        notify_mode = "auto"
+    else:
+        notify_mode = "delivery_with_report" if has_report_html else "delivery"
 
     if action in {"deliver", "deliver_notify", "deliver_auto"}:
         update_order_status(db, order, to_status="delivered", actor_type="reader", actor_id=reader.id, note="delivery completed")
@@ -130,7 +134,14 @@ def reader_save_delivery(order_code: str, request: Request, delivery_text: str =
     db.commit()
 
     if should_notify:
-        _run_async_notification(notify_line_delivery(order, mode=notify_mode))
+        try:
+            _run_async_notification(notify_line_delivery(order, mode=notify_mode))
+        except Exception:
+            pass
+        try:
+            _run_async_notification(notify_delivery_email(order, mode=notify_mode))
+        except Exception:
+            pass
 
     return RedirectResponse(url=f"/reader/orders/{order_code}", status_code=303)
 

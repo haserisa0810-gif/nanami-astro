@@ -194,6 +194,84 @@ def _ensure_order_result_view_columns() -> None:
             if name not in columns:
                 conn.execute(text(ddl))
 
+
+
+def _ensure_intake_draft_table() -> None:
+    inspector = inspect(engine)
+    try:
+        tables = set(inspector.get_table_names())
+    except Exception:
+        return
+    if "intake_drafts" in tables:
+        return
+    from models import IntakeDraft
+    IntakeDraft.__table__.create(bind=engine, checkfirst=True)
+
+
+def _ensure_report_table() -> None:
+    inspector = inspect(engine)
+    try:
+        tables = set(inspector.get_table_names())
+    except Exception:
+        return
+    if "reports" in tables:
+        return
+    from models import Report
+    Report.__table__.create(bind=engine, checkfirst=True)
+
+
+def _ensure_order_report_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {col["name"] for col in inspector.get_columns("orders")}
+    except Exception:
+        return
+    required = {
+        "primary_report_id": "ALTER TABLE orders ADD COLUMN primary_report_id INTEGER",
+        "input_origin": "ALTER TABLE orders ADD COLUMN input_origin VARCHAR(30)",
+    }
+    with engine.begin() as conn:
+        for name, ddl in required.items():
+            if name not in columns:
+                conn.execute(text(ddl))
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_input_origin ON orders (input_origin)"))
+        except Exception:
+            pass
+
+
+def _backfill_reports_from_orders() -> None:
+    inspector = inspect(engine)
+    try:
+        tables = set(inspector.get_table_names())
+    except Exception:
+        return
+    if "reports" not in tables or "orders" not in tables:
+        return
+    with SessionLocal() as db:
+        rows = db.execute(text("""
+            SELECT id, result_payload_json, result_html, ai_status
+            FROM orders
+            WHERE (result_payload_json IS NOT NULL OR result_html IS NOT NULL)
+              AND (primary_report_id IS NULL OR primary_report_id = 0)
+        """)).mappings().all()
+        if not rows:
+            return
+        for row in rows:
+            report_id = db.execute(text("""
+                INSERT INTO reports (order_id, report_type, yaml_status, ai_status, result_payload_json, result_html, created_at, updated_at)
+                VALUES (:order_id, 'legacy_order', 'pending', :ai_status, :result_payload_json, :result_html, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            """), {
+                "order_id": row["id"],
+                "ai_status": (row["ai_status"] or "completed"),
+                "result_payload_json": row["result_payload_json"],
+                "result_html": row["result_html"],
+            }).scalar()
+            if report_id:
+                db.execute(text("UPDATE orders SET primary_report_id = :report_id, input_origin = COALESCE(input_origin, 'legacy') WHERE id = :order_id"), {"report_id": report_id, "order_id": row["id"]})
+        db.commit()
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_daily_card_indexes(engine)
@@ -203,8 +281,12 @@ def init_db() -> None:
     _ensure_astrologer_line_columns()
     _ensure_staff_security_columns()
     _ensure_yaml_log_columns()
+    _ensure_intake_draft_table()
+    _ensure_report_table()
+    _ensure_order_report_columns()
     _ensure_order_result_view_table()
     _ensure_order_result_view_columns()
+    _backfill_reports_from_orders()
 
 
 def seed_defaults(db: Session) -> None:

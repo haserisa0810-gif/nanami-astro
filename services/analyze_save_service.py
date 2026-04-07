@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from models import Order, OrderDelivery, OrderResultView
+from models import IntakeDraft, Order, OrderDelivery, OrderResultView
 
 
 def loads_jsonish(value: str):
@@ -39,6 +39,8 @@ def save_analysis_result_to_order(
 ) -> str:
     from db import db_session
     from sqlalchemy import select
+    from services.draft_service import link_report_to_draft
+    from services.report_service import attach_report_to_order, ensure_report, update_report_ai, update_report_yaml
     from services.result_builder import (
         build_result_payload,
         build_yaml_from_analysis,
@@ -118,6 +120,13 @@ def save_analysis_result_to_order(
         )
         db.flush()
 
+        draft = db.scalar(select(IntakeDraft).where(IntakeDraft.promoted_order_id == order.id).order_by(IntakeDraft.id.desc()).limit(1))
+        report = ensure_report(db, report_type="normal_web", order=order)
+        update_report_yaml(db, report, yaml_payload=yaml_body, prompt_version="v2-draft-report")
+        if draft:
+            link_report_to_draft(db, draft, report)
+        attach_report_to_order(db, report, order)
+
         delivery = db.scalar(
             select(OrderDelivery)
             .where(OrderDelivery.order_id == order.id)
@@ -159,6 +168,19 @@ def save_analysis_result_to_order(
         except Exception:
             view.report_html = None
         view.horoscope_image_url = payload.get("horoscope_image_url") or None
+
+        update_report_ai(
+            db,
+            report,
+            sections={"web": report_web, "reader": report_reader, "line": report_line},
+            result_payload=payload,
+            result_html=view.result_html,
+            model="gemini-2.5-flash",
+            prompt_version="v2-draft-report",
+        )
+        if draft:
+            link_report_to_draft(db, draft, report)
+        order.primary_report_id = report.id
 
         if order.status in {"received", "paid", "assigned"}:
             order.status = "in_progress"

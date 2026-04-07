@@ -28,6 +28,36 @@ from shared import (
     format_by_style,
 )
 
+def _debug_report_snapshot(label: str, text: str) -> None:
+    try:
+        headings = []
+        for line in (text or "").splitlines():
+            s = line.strip()
+            if s.startswith("###"):
+                headings.append(s)
+        print("[analyze_engine][snapshot]", {
+            "label": label,
+            "chars": len(text or ""),
+            "headings": headings[:12],
+            "preview": ((text or "").replace("\n", " ").strip()[:180] + "...") if len((text or "").strip()) > 180 else (text or "").replace("\n", " ").strip(),
+        })
+    except Exception:
+        pass
+
+
+def _debug_guard(label: str, gr: Any, text: str) -> None:
+    try:
+        print("[analyze_engine][guard]", {
+            "label": label,
+            "ok": getattr(gr, "ok", None),
+            "status": getattr(gr, "status", None),
+            "issues": getattr(gr, "issues", None),
+            "chars": len(text or ""),
+        })
+    except Exception:
+        pass
+
+
 
 def _should_force_pro_model(
     *,
@@ -328,11 +358,14 @@ def run_single(
         astro_result["transit"] = transit_data
 
     report_web  = generate_report(astro_result, style="web", report_type="single_web")
+    _debug_report_snapshot("single_web:first", report_web)
     report_line = ""
 
     # 占い師メモ：構造版のみ（raw版は廃止・API節約）
     report_raw    = ""
     report_reader = generate_report(astro_result, style="web", report_type="single_web_reader") if include_reader else ""
+    if include_reader:
+        _debug_report_snapshot("single_web_reader:first", report_reader)
 
     # バイアスガード（構造版のみ対象。裏カルテはシビアな内容を意図的に許容）
     risk_flags = derive_risk_flags_from_astro(astro_result)
@@ -341,10 +374,12 @@ def run_single(
     if include_reader:
         for attempt in range(2):
             gr = validate_generated_text(text=report_reader, report_type="single_web_reader", risk_flags=risk_flags)
+            _debug_guard(f"reader_attempt_{attempt+1}", gr, report_reader)
             if gr.ok:
                 guard_meta = compact_guard_meta(gr)
                 break
             fix = build_fix_instructions(gr, "single_web_reader")
+            print("[analyze_engine][outer_rerun]", {"label": f"reader_attempt_{attempt+1}", "reason": getattr(gr, "issues", []), "before_chars": len(report_reader or "")})
             report_reader = generate_report(
                 astro_result,
                 style="web",
@@ -352,17 +387,21 @@ def run_single(
                 meta={"message": ((message or "") + "\n\n" + fix).strip()},
             )
             gr.retries = attempt + 1
+            _debug_report_snapshot(f"single_web_reader:rerun_{attempt+1}", report_reader)
             guard_meta = compact_guard_meta(gr)
 
     grc = validate_generated_text(text=report_web, report_type="single_web", risk_flags=risk_flags)
+    _debug_guard("single_web:first_guard", grc, report_web)
     if not grc.ok:
         fix = build_fix_instructions(grc, "single_web")
+        print("[analyze_engine][outer_rerun]", {"label": "single_web", "reason": getattr(grc, "issues", []), "before_chars": len(report_web or "")})
         report_web = generate_report(
             astro_result,
             style="web",
             report_type="single_web",
             meta={"message": ((message or "") + "\n\n" + fix).strip()},
         )
+        _debug_report_snapshot("single_web:rerun", report_web)
 
     payload_view = {**payload_a, "day_change_at_23": day_change_at_23}
     return astro_result, payload_view, report_web, report_line, report_raw, report_reader, guard_meta

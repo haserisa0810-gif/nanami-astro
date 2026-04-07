@@ -1,35 +1,28 @@
 from __future__ import annotations
-
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
-
 from services.astro_hint_builder import build_astro_hint_line
-
 try:
     from services.text_formatter import format_ai_text as fix_punctuation
 except Exception:
     def fix_punctuation(text: str) -> str:
         return text
-
 try:
     from google import genai
     from google.genai import types
 except Exception:
     genai = None  # type: ignore
     types = None  # type: ignore
-
-
 DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 ALLOWED_MODEL_NAMES = {
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
 }
-
-
 def _normalize_requested_model(value: Any) -> str | None:
     raw = str(value or "").strip()
     if not raw:
@@ -44,24 +37,16 @@ def _normalize_requested_model(value: Any) -> str | None:
     if normalized in ALLOWED_MODEL_NAMES:
         return normalized
     return None
-
-
 def _resolve_model_name(requested_model: Any = None) -> tuple[str, str]:
     requested = _normalize_requested_model(requested_model)
     if requested:
         return requested, "request"
-
     raw = _normalize_requested_model(os.getenv("GEMINI_MODEL"))
     if raw:
         return raw, "env"
     return DEFAULT_MODEL_NAME, "default"
-
-
 MODEL_NAME, MODEL_SOURCE = _resolve_model_name()
-
 _PROMPTS_DIR = (Path(__file__).resolve().parents[1] / "prompts").resolve()
-
-
 def _read_prompt_file(name: str) -> str:
     p = (_PROMPTS_DIR / name).resolve()
     if _PROMPTS_DIR not in p.parents and p != _PROMPTS_DIR:
@@ -69,24 +54,17 @@ def _read_prompt_file(name: str) -> str:
     if not p.exists():
         raise FileNotFoundError(f"Prompt template not found: {p}")
     return p.read_text(encoding="utf-8")
-
-
 def _render_prompt(template: str, ctx: dict[str, Any]) -> str:
     class _D(dict):
         def __missing__(self, key: str) -> str:
             return ""
-
     return template.format_map(_D(ctx)).strip()
-
-
 def _extract_text(resp: Any) -> str:
     if resp is None:
         return ""
-
     t = getattr(resp, "text", None)
     if isinstance(t, str) and t.strip():
         return t
-
     candidates = getattr(resp, "candidates", None)
     if isinstance(candidates, list) and candidates:
         c0 = candidates[0]
@@ -100,7 +78,6 @@ def _extract_text(resp: Any) -> str:
                     buf.append(pt)
             if buf:
                 return "\n".join(buf)
-
     if isinstance(resp, dict):
         if isinstance(resp.get("text"), str):
             return resp["text"]
@@ -114,40 +91,28 @@ def _extract_text(resp: Any) -> str:
                     return "\n".join(buf)
         except Exception:
             pass
-
     return ""
-
-
 def _safe_get_meta(astro_data: Any) -> dict[str, Any]:
     if not isinstance(astro_data, dict):
         return {}
-
     m = astro_data.get("_meta")
     if isinstance(m, dict) and m:
         return dict(m)
-
     m2 = astro_data.get("meta")
     if isinstance(m2, dict) and m2:
         return dict(m2)
-
     return {}
-
-
 def _merge_meta(base: dict[str, Any], extra: dict[str, Any] | None) -> dict[str, Any]:
     out = dict(base)
     if isinstance(extra, dict) and extra:
         out.update(extra)
     return out
-
-
 def _limit_text(value: Any, max_chars: int = 2500) -> str:
     s = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
     s = (s or "").strip()
     if len(s) <= max_chars:
         return s
     return s[:max_chars] + "\n...(truncated)"
-
-
 def _extract_planets(astro_data: dict[str, Any]) -> list[dict[str, Any]]:
     def norm_planet(p: Any) -> dict[str, Any] | None:
         if not isinstance(p, dict):
@@ -167,28 +132,23 @@ def _extract_planets(astro_data: dict[str, Any]) -> list[dict[str, Any]]:
         except Exception:
             return None
         return {"name": name, "lon": lon_f, "sign": p.get("sign")}
-
     candidates: list[Any] = []
     if isinstance(astro_data.get("planets"), list):
         candidates = astro_data["planets"]
     elif isinstance(astro_data.get("western"), dict) and isinstance(astro_data["western"].get("planets"), list):
         candidates = astro_data["western"]["planets"]
-
     out: list[dict[str, Any]] = []
     for p in candidates:
         np = norm_planet(p)
         if np:
             out.append(np)
     return out
-
-
 def _extract_house_cusps(astro_data: dict[str, Any]) -> list[float] | None:
     houses = astro_data.get("houses")
     if not isinstance(houses, list) and isinstance(astro_data.get("western"), dict):
         houses = astro_data["western"].get("houses")
     if not isinstance(houses, list):
         return None
-
     cusps: list[float] = []
     for h in houses:
         if not isinstance(h, dict):
@@ -202,14 +162,87 @@ def _extract_house_cusps(astro_data: dict[str, Any]) -> list[float] | None:
             cusps.append(float(lon))
         except Exception:
             continue
-
     return cusps[:12] if len(cusps) >= 12 else None
-
-
 def _build_structure_summary(astro_data: Any) -> str:
     try:
         if not isinstance(astro_data, dict):
             return ""
+
+        western_data = astro_data.get("western") if isinstance(astro_data.get("western"), dict) else astro_data
+        planets_src = western_data.get("planets") if isinstance(western_data.get("planets"), list) else []
+        aspects_src = western_data.get("aspects") if isinstance(western_data.get("aspects"), list) else []
+        houses_src = western_data.get("houses") if isinstance(western_data.get("houses"), list) else []
+        skipped_src = western_data.get("skipped_bodies") if isinstance(western_data.get("skipped_bodies"), list) else []
+        calc_engine = western_data.get("calc_engine") if isinstance(western_data.get("calc_engine"), dict) else {}
+        options = western_data.get("options") if isinstance(western_data.get("options"), dict) else {}
+
+        major_names = {"Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"}
+        optional_names = {"North Node", "South Node", "Lilith", "Chiron", "Ceres", "Pallas", "Juno", "Vesta", "Vertex"}
+
+        def _planet_row(item: Any) -> dict[str, Any] | None:
+            if not isinstance(item, dict):
+                return None
+            name = str(item.get("name") or "").strip()
+            if not name:
+                return None
+            row: dict[str, Any] = {
+                "name": name,
+                "sign": item.get("sign"),
+                "house": item.get("house"),
+            }
+            if item.get("retrograde"):
+                row["retrograde"] = True
+            return row
+
+        major_planets: list[dict[str, Any]] = []
+        optional_points: list[dict[str, Any]] = []
+        for item in planets_src:
+            row = _planet_row(item)
+            if not row:
+                continue
+            name = str(row.get("name") or "")
+            if name in major_names:
+                major_planets.append(row)
+            elif name in optional_names:
+                optional_points.append(row)
+
+        major_aspects: list[dict[str, Any]] = []
+        optional_aspects: list[dict[str, Any]] = []
+        for item in aspects_src:
+            if not isinstance(item, dict):
+                continue
+            p1 = str(item.get("planet1") or "").strip()
+            p2 = str(item.get("planet2") or "").strip()
+            if not p1 or not p2:
+                continue
+            row = {
+                "planet1": p1,
+                "planet2": p2,
+                "type": item.get("type") or item.get("aspect"),
+                "orb": item.get("orb"),
+            }
+            if p1 in major_names and p2 in major_names:
+                major_aspects.append(row)
+            elif p1 in optional_names or p2 in optional_names:
+                optional_aspects.append(row)
+
+        house_digest: list[dict[str, Any]] = []
+        for item in houses_src[:12]:
+            if not isinstance(item, dict):
+                continue
+            house_digest.append({
+                "house": item.get("house"),
+                "sign": item.get("sign"),
+            })
+
+        skipped_bodies: list[dict[str, Any]] = []
+        for item in skipped_src[:8]:
+            if not isinstance(item, dict):
+                continue
+            skipped_bodies.append({
+                "name": item.get("name"),
+                "reason": item.get("reason"),
+            })
 
         derived: dict[str, Any] = {}
         try:
@@ -219,14 +252,12 @@ def _build_structure_summary(astro_data: Any) -> str:
                 analyze_vedic_structure,
                 derive_vedic_flags,
             )
-
             planets = _extract_planets(astro_data)
             cusps = _extract_house_cusps(astro_data)
             if planets:
                 structure = analyze_structure(planets, cusps)
                 derived["structure"] = structure
-                derived["risk_flags"] = derive_risk_flags(structure)
-
+                derived["risk_flags"] = derive_risk_flags(structure)[:5]
             vedic_data = None
             if isinstance(astro_data.get("vedic"), dict):
                 vedic_data = astro_data.get("vedic")
@@ -235,34 +266,37 @@ def _build_structure_summary(astro_data: Any) -> str:
             if isinstance(vedic_data, dict):
                 vedic_structure = analyze_vedic_structure(vedic_data)
                 derived["vedic_structure"] = vedic_structure
-                derived["vedic_flags"] = derive_vedic_flags(vedic_structure)
+                derived["vedic_flags"] = derive_vedic_flags(vedic_structure)[:5]
         except Exception:
             pass
 
-        keys = [
-            "planets", "houses", "aspects", "angles", "skipped_bodies", "ephemeris",
-            "nakshatra", "strength", "structure",
-            "western", "vedic", "shichusuimei", "pillars",
-            "summary", "features", "raw", "input", "normalized_data", "structure_report",
-            "personA", "personB", "synastry",
-        ]
-        picked: dict[str, Any] = {}
-        for k in keys:
-            v = astro_data.get(k)
-            if v is not None:
-                picked[k] = v
-
+        picked: dict[str, Any] = {
+            "major_planets": major_planets[:12],
+            "major_aspects": major_aspects[:18],
+            "optional_points": optional_points[:10],
+            "optional_aspects": optional_aspects[:10],
+            "houses": house_digest,
+            "options": options,
+            "calc_engine": calc_engine,
+            "skipped_bodies": skipped_bodies,
+        }
         if derived:
             picked["_derived"] = derived
-
-        if astro_data.get("system") == "shichusuimei" or astro_data.get("module") == "shichusuimei":
-            summary = astro_data.get("summary") if isinstance(astro_data.get("summary"), dict) else {}
-            raw = astro_data.get("raw") if isinstance(astro_data.get("raw"), dict) else {}
+        if isinstance(astro_data.get("vedic"), dict):
+            vedic = astro_data.get("vedic") or {}
+            picked["vedic_digest"] = {
+                "nakshatra": vedic.get("nakshatra"),
+                "strength": vedic.get("strength"),
+            }
+        if astro_data.get("system") == "shichusuimei" or astro_data.get("module") == "shichusuimei" or isinstance(astro_data.get("shichusuimei"), dict):
+            shichu = astro_data.get("shichusuimei") if isinstance(astro_data.get("shichusuimei"), dict) else astro_data
+            summary = shichu.get("summary") if isinstance(shichu.get("summary"), dict) else {}
+            raw = shichu.get("raw") if isinstance(shichu.get("raw"), dict) else {}
             raw_options = raw.get("options") if isinstance(raw.get("options"), dict) else {}
             raw_pillars = raw.get("pillars") if isinstance(raw.get("pillars"), dict) else {}
-            input_data = astro_data.get("input") if isinstance(astro_data.get("input"), dict) else {}
+            input_data = shichu.get("input") if isinstance(shichu.get("input"), dict) else {}
             assumptions = input_data.get("assumptions") if isinstance(input_data.get("assumptions"), dict) else {}
-            digest = {
+            picked["shichusuimei_digest"] = {
                 "day_kanshi": summary.get("day_kanshi") or raw_pillars.get("day"),
                 "hour_kanshi": summary.get("hour_kanshi") or raw_pillars.get("hour"),
                 "year_kanshi": summary.get("year_kanshi") or raw_pillars.get("year"),
@@ -270,35 +304,26 @@ def _build_structure_summary(astro_data: Any) -> str:
                 "day_change_at_23": assumptions.get("day_change_at_23", raw_options.get("day_change_at_23")),
                 "day_boundary_rule": assumptions.get("day_boundary_rule") or raw_options.get("day_boundary") or "00:00切替",
             }
-            picked = {"shichusuimei_digest": digest, **picked}
-
-        if not picked:
+        if not any(v for v in picked.values()):
             top_keys = [k for k in astro_data.keys() if k not in ("meta", "_meta")]
             return f"available_keys: {top_keys[:60]}"
-
         return json.dumps(picked, ensure_ascii=False)
-
     except Exception:
         return ""
-
-
 def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
     try:
         if not isinstance(astro_data, dict):
             return ""
-
         planets = astro_data.get("planets")
         if not isinstance(planets, list) and isinstance(astro_data.get("western"), dict):
             planets = astro_data["western"].get("planets")
         if not isinstance(planets, list):
             planets = []
-
         aspects = astro_data.get("aspects")
         if not isinstance(aspects, list) and isinstance(astro_data.get("western"), dict):
             aspects = astro_data["western"].get("aspects")
         if not isinstance(aspects, list):
             aspects = []
-
         priority = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"]
         picked: list[str] = []
         by_name: dict[str, dict[str, Any]] = {}
@@ -308,7 +333,6 @@ def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
             name = str(item.get("name") or "").strip()
             if name and name not in by_name:
                 by_name[name] = item
-
         for name in priority:
             item = by_name.get(name)
             if not item:
@@ -318,7 +342,6 @@ def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
             house_text = f" / {int(house)}ハウス" if isinstance(house, (int, float)) else ""
             retro = " / 逆行" if item.get("retrograde") else ""
             picked.append(f"{name}: {sign}{house_text}{retro}")
-
         major_names = {"Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"}
         aspect_lines: list[str] = []
         for a in aspects:
@@ -335,7 +358,6 @@ def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
                 aspect_lines.append(f"{p1} - {p2}: {atype}{orb_text}")
             if len(aspect_lines) >= 6:
                 break
-
         lines: list[str] = []
         if picked:
             lines.append("【この人の主要配置】")
@@ -343,19 +365,15 @@ def _build_free_reading_key_data(astro_data: dict[str, Any]) -> str:
         if aspect_lines:
             lines.append("【主要アスペクト】")
             lines.extend(aspect_lines)
-
         return "\n".join(lines).strip()
     except Exception:
         return ""
-
-
 def _major_planet_digest(data: dict[str, Any]) -> list[str]:
     planets = data.get("planets")
     if not isinstance(planets, list) and isinstance(data.get("western"), dict):
         planets = data["western"].get("planets")
     if not isinstance(planets, list):
         planets = []
-
     priority = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "ASC", "MC"]
     rows: list[str] = []
     by_name: dict[str, dict[str, Any]] = {}
@@ -373,15 +391,12 @@ def _major_planet_digest(data: dict[str, Any]) -> list[str]:
         house_text = f"/{int(house)}H" if isinstance(house, (int, float)) else ""
         rows.append(f"{name}:{sign}{house_text}")
     return rows[:9]
-
-
 def _major_aspect_digest(data: dict[str, Any], limit: int = 8) -> list[str]:
     aspects = data.get("aspects")
     if not isinstance(aspects, list) and isinstance(data.get("western"), dict):
         aspects = data["western"].get("aspects")
     if not isinstance(aspects, list):
         aspects = []
-
     rows: list[str] = []
     for a in aspects:
         if not isinstance(a, dict):
@@ -394,8 +409,6 @@ def _major_aspect_digest(data: dict[str, Any], limit: int = 8) -> list[str]:
         if len(rows) >= limit:
             break
     return rows
-
-
 def _build_prompt_astro_digest(astro_data: dict[str, Any], *, compat_mode: bool = False) -> str:
     try:
         if compat_mode:
@@ -408,7 +421,6 @@ def _build_prompt_astro_digest(astro_data: dict[str, Any], *, compat_mode: bool 
                 "personB_aspects": _major_aspect_digest(pb, limit=6),
             }
             return json.dumps(digest, ensure_ascii=False)
-
         digest: dict[str, Any] = {
             "major_positions": _major_planet_digest(astro_data),
             "major_aspects": _major_aspect_digest(astro_data, limit=8),
@@ -431,25 +443,19 @@ def _build_prompt_astro_digest(astro_data: dict[str, Any], *, compat_mode: bool 
         return json.dumps(digest, ensure_ascii=False)
     except Exception:
         return _limit_text(astro_data, 2200)
-
-
 def _build_transit_summary(astro_data: dict[str, Any]) -> str:
     try:
         transit = astro_data.get("transit") or astro_data.get("transit_data")
         if not isinstance(transit, dict):
             return ""
-
         transit_date = transit.get("transit_date", "")
         today_planets = transit.get("today_planets") or []
         aspects = transit.get("aspects") or transit.get("layer_a") or []
-
         if not today_planets and not aspects:
             return ""
-
         lines: list[str] = []
         if transit_date:
             lines.append(f"トランジット日: {transit_date}")
-
         if today_planets:
             planet_strs = [
                 f"{p['name']} {p.get('sign', '')} {p.get('degree', '')}°"
@@ -458,7 +464,6 @@ def _build_transit_summary(astro_data: dict[str, Any]) -> str:
             ]
             if planet_strs:
                 lines.append("今日の天体: " + " / ".join(planet_strs))
-
         if aspects:
             asp_strs: list[str] = []
             for a in aspects[:10]:
@@ -472,12 +477,9 @@ def _build_transit_summary(astro_data: dict[str, Any]) -> str:
                     asp_strs.append(f"T{t} {asp} N{n}(orb {orb}°)")
             if asp_strs:
                 lines.append("有効アスペクト: " + " / ".join(asp_strs))
-
         return "\n".join(lines) if lines else ""
     except Exception:
         return ""
-
-
 def _normalize_report_type(report_type: str | None) -> str:
     rt = (report_type or "").strip().lower()
     if rt in (
@@ -495,8 +497,6 @@ def _normalize_report_type(report_type: str | None) -> str:
     if rt in ("single", ""):
         return "single_web"
     return "single_web"
-
-
 def _parse_age_years(value: Any) -> int | None:
     try:
         if value is None:
@@ -509,8 +509,6 @@ def _parse_age_years(value: Any) -> int | None:
         return int(float(s))
     except Exception:
         return None
-
-
 def _detect_available_systems(astro_data: dict[str, Any], astrology_system: str) -> dict[str, bool]:
     western = bool(astro_data.get("western") or astro_data.get("planets") or astrology_system == "western")
     vedic = bool(astro_data.get("vedic") or astrology_system == "vedic")
@@ -528,8 +526,6 @@ def _detect_available_systems(astro_data: dict[str, Any], astrology_system: str)
         vedic = True
         shichu = True
     return {"western": western, "vedic": vedic, "shichu": shichu}
-
-
 def _life_phase(age_years: Any) -> tuple[str, str]:
     age = _parse_age_years(age_years)
     if age is None:
@@ -541,8 +537,6 @@ def _life_phase(age_years: Any) -> tuple[str, str]:
     if age < 56:
         return ("転換期", "これまで築いた現実的な力を土台にしながら、より本質的な選択へ重心を移す時期")
     return ("統合期", "積み上げてきた経験を整理し、不要なものを削ぎ落として、自分の核を生かす時期")
-
-
 def _transit_focus(age_years: Any, available_systems: dict[str, bool]) -> str:
     age = _parse_age_years(age_years)
     if available_systems.get("vedic") and available_systems.get("shichu"):
@@ -556,113 +550,10 @@ def _transit_focus(age_years: Any, available_systems: dict[str, bool]) -> str:
     if age is not None and age >= 45:
         base += "。特に今は、増やすより削る判断が効きやすい"
     return base
-
-def _theme_label(theme: Any) -> str:
-    mapping = {
-        "overall": "全体",
-        "love": "恋愛",
-        "work": "仕事",
-        "relationship": "人間関係",
-        "timing": "時期",
-        "free_reading": "無料鑑定",
-    }
-    raw = str(theme or "overall").strip().lower()
-    return mapping.get(raw, raw or "全体")
-
-
-def _theme_prompt_bundle(theme: Any, user_message: Any, *, compat_mode: bool = False) -> dict[str, str]:
-    raw_theme = str(theme or "overall").strip().lower()
-    message = str(user_message or "").strip()
-
-    default_focus = (
-        "相談テーマが指定されていても、命式の読みを無理に狭めず、全体像の中で今いちばん重要な論点を優先して深掘りする。"
-    )
-
-    if compat_mode:
-        theme_focus_map = {
-            "love": "恋愛相性として、惹かれ方・安心感・距離の詰め方・すれ違い方を中心に読む。",
-            "work": "仕事相性として、役割分担・意思決定・衝突しやすい論点・組みやすさを中心に読む。",
-            "relationship": "人間関係として、付き合いやすさ・境界線・感情の受け止め方・長く関われるかを中心に読む。",
-            "timing": "二人の関係が進みやすい時期、動かし方、焦らない方がよい局面を中心に読む。",
-            "overall": "関係全体として、相性の構造、安心感、衝突、継続性をバランスよく読む。",
-        }
-        theme_axes_map = {
-            "love": "惹かれやすい接点 / 愛情表現のズレ / 親密さの深まり方 / 関係を壊しやすい反応",
-            "work": "役割の噛み合わせ / 会話テンポ / 評価観の違い / 一緒に動く時の詰まり",
-            "relationship": "安心できる距離感 / 気疲れポイント / 言わなくても伝わる部分 / 境界線の引き方",
-            "timing": "動くと進みやすい時期 / 立ち止まるべき時期 / 焦りが空回りしやすい局面 / 熟成が必要な部分",
-            "overall": "関係の核 / 安心感 / すれ違い / 実際の付き合い方",
-        }
-        fallback_map = {
-            "love": "二人は恋愛において、惹かれ合うのに噛み合わない点や、気持ちの温度差が気になりやすい前提で読む。",
-            "work": "二人は仕事や共同作業において、得意分野の違いと進め方のズレが出やすい前提で読む。",
-            "relationship": "二人は人間関係において、距離感や関わり方の違いが出やすい前提で読む。",
-            "timing": "二人は今後どう動くと関係が進みやすいか、どこで急がない方がよいかを知りたい前提で読む。",
-            "overall": "二人の関係全体について、相性の良い点と詰まりやすい点を知りたい前提で読む。",
-        }
-    else:
-        theme_focus_map = {
-            "love": "恋愛相談として、惹かれ方、相手に求めやすいもの、距離感、関係でつまずく癖を中心に読む。",
-            "work": "仕事相談として、適性、評価されやすい場面、停滞要因、働き方の癖を中心に読む。",
-            "relationship": "人間関係相談として、対人距離、気疲れポイント、誤解されやすい言動、境界線の引き方を中心に読む。",
-            "timing": "時期相談として、今は攻める時期か整える時期か、動き出しやすいタイミング、焦りやすい局面を中心に読む。",
-            "overall": "人生全体として、今のテーマ、繰り返しやすいパターン、方向修正ポイントを広く読む。",
-        }
-        theme_axes_map = {
-            "love": "恋愛での本音 / 惹かれやすい相手像 / 距離が崩れる瞬間 / 愛情表現の癖",
-            "work": "仕事での強み / 評価されにくい詰まり / 合う環境 / 疲弊しやすい進め方",
-            "relationship": "対人の第一印象 / 深く関わると出る癖 / 気を遣いすぎる場面 / 線引きの課題",
-            "timing": "今の現在地 / 数ヶ月先の流れ / 先に整えるべきこと / 無理を避けるべき局面",
-            "overall": "核となる性質 / 表と内側のズレ / 現実での出方 / 今後の整え方",
-        }
-        fallback_map = {
-            "love": "相談者は恋愛において、相手の気持ちが読みにくい、距離の詰め方が分からない、または関係が進む時に自分から崩しやすい前提で読む。",
-            "work": "相談者は仕事において、今の働き方が合っているか、評価されにくい理由、進むべき方向に迷いがある前提で読む。",
-            "relationship": "相談者は人間関係において、気を遣いすぎる・誤解される・距離の取り方が難しい前提で読む。",
-            "timing": "相談者は今動くべきか待つべきか、何を先に整えると流れが良くなるかを知りたい前提で読む。",
-            "overall": "相談者は人生全体について、このままで良いのか、何を軸に見直すべきかを知りたい前提で読む。",
-        }
-
-    focus = theme_focus_map.get(raw_theme, default_focus)
-    axes = theme_axes_map.get(raw_theme, theme_axes_map.get("overall", ""))
-    if message:
-        consultation = (
-            "【相談の最優先事項】\n"
-            "以下の相談内容を最優先で読み解く。テーマ指定より相談文の具体性を優先する。\n"
-            f"{message}"
-        )
-    else:
-        consultation = (
-            "【相談の前提】\n"
-            + fallback_map.get(raw_theme, fallback_map.get("overall", ""))
-        )
-
-    instruction = (
-        f"【テーマ別の読み筋】\n"
-        f"- 選択テーマ: {_theme_label(raw_theme)}\n"
-        f"- 重点: {focus}\n"
-        f"- 優先観点: {axes}\n"
-        "- 表面的な一般論で済ませず、なぜそうなるか、どんな場面で出るか、どう扱うと良いかまで踏み込む。\n"
-        "- 相談内容が具体的なら、その状況に結びつく感情・行動・関係の癖を優先して書く。\n"
-    )
-
-    short = f"theme={_theme_label(raw_theme)} / focus={focus} / axes={axes}"
-    return {
-        "label": _theme_label(raw_theme),
-        "focus": focus,
-        "axes": axes,
-        "consultation": consultation,
-        "instruction": instruction,
-        "short": short,
-    }
-
-
-
 def _line_fallback_text(meta2: dict[str, Any]) -> str:
     age = meta2.get("age_years")
     today = (meta2.get("today") or "").strip()
     phase_label, phase_theme = _life_phase(age)
-
     display_name = (
         (meta2.get("line_display_name") or "").strip()
         or (meta2.get("display_name") or "").strip()
@@ -670,11 +561,9 @@ def _line_fallback_text(meta2: dict[str, Any]) -> str:
     )
     if display_name in ("あなた", ""):
         display_name = ""
-
     header_lines: list[str] = []
     if display_name:
         header_lines.append(display_name)
-
     age_text = ""
     if age not in (None, "", "未計算"):
         age_text = f"{age}歳"
@@ -682,18 +571,14 @@ def _line_fallback_text(meta2: dict[str, Any]) -> str:
         age_text = f"{age_text}・{today}時点" if age_text else f"{today}時点"
     if age_text:
         header_lines.append(f"（{age_text}）")
-
     body = (
         "今は、無理に広げるよりも、自分に合うやり方を見極め直す方が流れに乗りやすい時期です。\n"
         f"人生の現在地でいうと『{phase_label}』にあたり、{phase_theme}。\n"
         "直近3〜6ヶ月は、新しいことを増やすより、続けるものと手放すものを整理するほど動きやすくなります。"
     )
-
     if header_lines:
         return "\n".join(header_lines) + "\n\n" + body
     return body
-
-
 def _debug_model_info(requested_model: Any = None) -> str:
     resolved_model, source = _resolve_model_name(requested_model)
     env_model = os.getenv("GEMINI_MODEL")
@@ -704,167 +589,248 @@ def _debug_model_info(requested_model: Any = None) -> str:
         f"env_GEMINI_MODEL={repr(env_model)}, "
         f"default_model={DEFAULT_MODEL_NAME}"
     )
-
-
 def _is_flash_model(model_name: str) -> bool:
     return model_name in {"gemini-2.5-flash", "gemini-2.5-flash-lite"}
-
-
 def _looks_truncated(text: str) -> bool:
     body = (text or "").strip()
     if not body:
         return True
-    if len(body) < 800:
+    if len(body) < 500:
         return True
     if body.endswith(("は", "が", "を", "に", "で", "と", "も", "や", "へ", "、", ",", "・")):
         return True
     if not body.endswith(("。", "！", "？", "」", "』", "】")):
         return True
     return False
-
-
-def _expected_headers(compat_mode: bool) -> list[str]:
-    return (
-        [f"### {i})" for i in range(1, 9)] if compat_mode
-        else [f"###{i}" for i in range(1, 9)]
-    )
-
-
-def _has_enough_sections(text: str, compat_mode: bool) -> bool:
-    body = text or ""
+def _detail_policy(detail_level: str, *, is_line: bool, compat_mode: bool, theme: str, report_type: str) -> dict[str, int]:
+    level = str(detail_level or "standard").strip().lower()
+    if is_line:
+        return {"min_chars": 180, "target_chars": 400, "max_tokens": 900}
+    if "reader" in report_type:
+        return {"min_chars": 500, "target_chars": 900, "max_tokens": 1400}
     if compat_mode:
-        count = 0
-        for i in range(1, 9):
-            if f"### {i})" in body or f"### {i}）" in body:
-                count += 1
-        return count >= 8
-    count = 0
-    for i in range(1, 9):
-        if f"###{i}" in body or f"### {i}" in body:
-            count += 1
-    return count >= 8
+        if level == "detailed":
+            return {"min_chars": 1800, "target_chars": 2600, "max_tokens": 3200}
+        if level == "short":
+            return {"min_chars": 1200, "target_chars": 1800, "max_tokens": 2200}
+        return {"min_chars": 1500, "target_chars": 2200, "max_tokens": 2600}
+    if theme == "timing":
+        if level == "detailed":
+            return {"min_chars": 1400, "target_chars": 2200, "max_tokens": 2600}
+        if level == "short":
+            return {"min_chars": 1000, "target_chars": 1500, "max_tokens": 1800}
+        return {"min_chars": 1200, "target_chars": 1800, "max_tokens": 2200}
+    if level == "detailed":
+        return {"min_chars": 1600, "target_chars": 2400, "max_tokens": 2800}
+    if level == "short":
+        return {"min_chars": 1000, "target_chars": 1600, "max_tokens": 1800}
+    return {"min_chars": 1200, "target_chars": 1900, "max_tokens": 2200}
+
+def _section_headers(theme: str, compat_mode: bool = False) -> list[str]:
+    if compat_mode:
+        return [
+            "### 1. 個体の関係特性",
+            "### 2. 感情的安心構造",
+            "### 3. 愛情表現と魅力認識",
+            "### 4. 親密性と距離感",
+            "### 5. 衝突発生メカニズム",
+            "### 6. 長期安定構造",
+            "### 7. 強い引力と変容作用",
+            "### 8. 実践的ヒント",
+        ]
+    if str(theme or "").strip().lower() == "timing":
+        return [
+            "### 1. 過去の流れ",
+            "### 2. 現在地",
+            "### 3. 近未来",
+            "### 4. 当たりやすい動き方",
+        ]
+    return [
+        "### 1. この人の核",
+        "### 2. 表に出る姿",
+        "### 3. 内側の本質とズレ",
+        "### 4. 現実での出方",
+        "### 5. 盲点と詰まりやすい癖",
+        "### 6. 扱い方のコツ",
+        "### 7. 人生の流れと現在地",
+        "### 8. これから3〜6ヶ月の流れ",
+    ]
+
+def _has_required_headers(text: str, headers: list[str]) -> bool:
+    body = text or ""
+    found = sum(1 for h in headers if h in body)
+    needed = len(headers)
+    return found >= needed
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    s = str(value or "").strip().lower()
+    return s in {"1", "true", "on", "yes", "y"}
 
 
-def _needs_longform_flash_retry(text: str, *, is_web: bool, model_name: str, compat_mode: bool = False) -> bool:
-    if not is_web or model_name != "gemini-2.5-flash":
-        return False
+def _header_count(text: str, headers: list[str]) -> int:
+    body = text or ""
+    return sum(1 for h in headers if h in body)
+
+
+
+def _extract_present_headers(text: str, headers: list[str]) -> list[str]:
+    t = text or ""
+    out: list[str] = []
+    for h in headers:
+        if h and h in t:
+            out.append(h)
+    return out
+
+
+def _debug_preview(text: str, max_chars: int = 160) -> str:
+    s = (text or "").replace("\n", " ").strip()
+    if len(s) <= max_chars:
+        return s
+    return s[:max_chars] + "..."
+
+
+def _debug_candidate(stage: str, attempt: int, text: str, headers: list[str], policy: dict[str, int]) -> None:
+    try:
+        print("[ai_report][candidate]", {
+            "stage": stage,
+            "attempt": attempt,
+            "chars": len(text or ""),
+            "header_count": _header_count(text or "", headers),
+            "present_headers": _extract_present_headers(text or "", headers),
+            "looks_truncated": _looks_truncated(text or ""),
+            "min_chars": policy.get("min_chars"),
+            "preview": _debug_preview(text or ""),
+        })
+    except Exception:
+        pass
+
+
+def _debug_retry_decision(stage: str, attempt: int, reason: str, current_text: str, best_text: str) -> None:
+    try:
+        print("[ai_report][retry_decision]", {
+            "stage": stage,
+            "attempt": attempt,
+            "reason": reason,
+            "current_chars": len(current_text or ""),
+            "best_chars": len(best_text or ""),
+            "current_preview": _debug_preview(current_text or ""),
+        })
+    except Exception:
+        pass
+
+
+def _debug_final_choice(stage: str, chosen_text: str, headers: list[str], policy: dict[str, int], note: str) -> None:
+    try:
+        print("[ai_report][final_choice]", {
+            "stage": stage,
+            "note": note,
+            "chars": len(chosen_text or ""),
+            "header_count": _header_count(chosen_text or "", headers),
+            "present_headers": _extract_present_headers(chosen_text or "", headers),
+            "looks_truncated": _looks_truncated(chosen_text or ""),
+            "min_chars": policy.get("min_chars"),
+            "preview": _debug_preview(chosen_text or ""),
+        })
+    except Exception:
+        pass
+
+def _clean_intro(text: str) -> str:
     body = (text or "").strip()
-    if len(body) < 1800:
+    if not body:
+        return ""
+    lines = [ln.rstrip() for ln in body.splitlines()]
+    drop_prefixes = (
+        "この度は",
+        "ご依頼いただきありがとうございます",
+        "ありがとうございます",
+        "あなたの星の配置から",
+        "現在の状況とこれからの流れを",
+        "---",
+    )
+    cleaned = []
+    started = False
+    for ln in lines:
+        stripped = ln.strip()
+        if not started:
+            if not stripped:
+                continue
+            if stripped.startswith("### "):
+                started = True
+                cleaned.append(stripped)
+                continue
+            if stripped.startswith(drop_prefixes):
+                continue
+            # if a non-heading intro remains, skip until first heading for web reports
+            continue
+        cleaned.append(ln)
+    return "\n".join(cleaned).strip() if cleaned else body
+
+
+
+
+def _is_incomplete_web(text: str, headers: list[str] | None = None) -> bool:
+    t = (text or "").strip()
+    if not t:
         return True
-    if compat_mode and not _has_enough_sections(body, True):
-        return True
-    if not any(body.endswith(ch) for ch in ("。", "！", "？", "」", "』", "】", ">")):
+    if headers:
+        found = _header_count(t, headers)
+        needed = 7 if len(headers) >= 8 else len(headers)
+        if found < needed:
+            return True
+    if not t.endswith(("。", "！", "？", "」", "』", "】")):
         return True
     return False
 
 
-def _should_use_multipart_web_generation(
-    *,
-    ctx: dict[str, Any],
-    model_name: str,
-    is_web: bool,
-    theme: str,
-) -> bool:
-    if not is_web:
-        return False
-    if theme == "free_reading":
-        return False
-    if model_name not in {"gemini-2.5-flash-lite", "gemini-2.5-flash"}:
-        return False
-
-    consultation = str(ctx.get("theme_consultation") or "").strip()
-    user_message = str(ctx.get("message") or "").strip()
-    detail_level = str(ctx.get("detail_level") or "standard").strip().lower()
-
-    # 相談文があるケースは、分割生成だと API 呼び出し回数が増えて
-    # Cloud Run の同期リクエストでタイムアウトしやすい。
-    # この場合は単発生成を優先する。
-    if user_message or consultation:
-        return False
-
-    # 詳細指定だけ multipart に寄せる。標準・短めは単発で十分。
-    if detail_level != "detailed":
-        return False
-
-    return True
+def _make_continue_prompt(*, previous_text: str, headers: list[str] | None = None) -> str:
+    tpl = _read_prompt_file("continue_web.txt")
+    header_text = " / ".join(headers or [])
+    return _render_prompt(tpl, {"previous_text": previous_text, "headers": header_text})
+def _block_header_groups(theme: str, compat_mode: bool, detail_level: str, is_line: bool) -> list[list[str]]:
+    headers = _section_headers(theme, compat_mode=compat_mode)
+    if is_line or not headers:
+        return [headers]
+    level = str(detail_level or "standard").strip().lower()
+    if len(headers) <= 4:
+        if level == "detailed":
+            return [headers[:2], headers[2:4]]
+        return [headers]
+    if level == "detailed":
+        return [headers[0:2], headers[2:4], headers[4:6], headers[6:8]]
+    if level == "standard":
+        return [headers[0:4], headers[4:8]]
+    return [headers]
 
 
-def _flash_web_boost_prompt(compat_mode: bool = False) -> str:
-    if compat_mode:
-        return (
-            "【Gemini 2.5 Flash 専用の追加指示】\n"
-            "- この相性鑑定は短くまとめないこと。\n"
-            "- 必ず以下の8章をすべて出すこと。\n"
-            "  1. 個体の関係特性\n"
-            "  2. 感情的安心構造\n"
-            "  3. 愛情表現と魅力認識\n"
-            "  4. 親密性と距離感\n"
-            "  5. 衝突発生メカニズム\n"
-            "  6. 長期安定構造\n"
-            "  7. 強い引力と変容作用\n"
-            "  8. 実践的ヒント\n"
-            "- 各章は最低でも4文以上。\n"
-            "- 第8章で必ず最後まで完結させること。\n"
-            "- 文章末尾を途中で終わらせないこと。\n"
-        )
-    return (
-        "【Gemini 2.5 Flash 専用の追加指示】\n"
-        "- この鑑定は短くまとめないこと。\n"
-        "- 必ず以下の8章をすべて出すこと。\n"
-        "  1. この人の核\n"
-        "  2. 表に出る姿\n"
-        "  3. 内側の本質とズレ\n"
-        "  4. 現実での出方\n"
-        "  5. 盲点と詰まりやすい癖\n"
-        "  6. 扱い方のコツ\n"
-        "  7. 人生の流れと現在地\n"
-        "  8. これから3〜6ヶ月の流れ\n"
-        "- 各章は最低でも5文以上で書くこと。\n"
-        "- 箇条書きではなく、自然な日本語の段落で書くこと。\n"
-        "- 全体の文字数は最低1800文字以上、理想は2200〜3200文字。\n"
-        "- 途中で終わらせず、最後まで完結させること。\n"
-        "- 具体例、状況描写、行動アドバイスを入れて厚みを出すこと。"
-    )
+def _build_yaml_only_text(*, ctx: dict[str, Any], report_type: str, compat_mode: bool) -> str:
+    title = "compatibility" if compat_mode else "single"
+    parts = [
+        f"mode: yaml_only",
+        f"report_type: {report_type}",
+        f"analysis_scope: {title}",
+        f"theme: {ctx.get('theme') or 'overall'}",
+        f"user_name: {ctx.get('user_name') or 'あなた'}",
+        "",
+        "astro_digest: |",
+    ]
+    for line in str(ctx.get("astro_digest") or "").splitlines()[:60]:
+        parts.append(f"  {line}")
+    structure = str(ctx.get("structure_summary") or "").strip()
+    if structure:
+        parts.extend(["", "structure_summary: |"])
+    for line in structure.splitlines()[:80]:
+        parts.append(f"  {line}")
+    transit = str(ctx.get("transit_summary") or "").strip()
+    if transit:
+        parts.extend(["", "transit_summary: |"])
+    for line in transit.splitlines()[:50]:
+        parts.append(f"  {line}")
+    return "\n".join(parts).strip()
 
 
-def _extract_json_object(text: str) -> dict[str, Any]:
-    s = (text or "").strip()
-    if not s:
-        return {}
-    if s.startswith("```"):
-        lines = s.splitlines()
-        if lines:
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        s = "\n".join(lines).strip()
-        if s.lower().startswith("json"):
-            s = s[4:].strip()
-    try:
-        data = json.loads(s)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        pass
-    start = s.find("{")
-    end = s.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            data = json.loads(s[start:end + 1])
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
-    return {}
-
-
-def _call_model_once(
-    *,
-    client: Any,
-    model_name: str,
-    prompt: str,
-    max_tokens: int,
-    temperature: float,
-    top_p: float = 0.95,
-) -> tuple[str, Any]:
+def _call_model_once(*, client: Any, model_name: str, prompt: str, max_tokens: int, temperature: float, top_p: float = 0.95) -> tuple[str, Any]:
     config = types.GenerateContentConfig(
         temperature=temperature,
         top_p=top_p,
@@ -896,330 +862,143 @@ def _log_usage(resp: Any, *, model_name: str, source: str, attempt: int, stage: 
         pass
 
 
-def _compat_names(astro_data: dict[str, Any], meta2: dict[str, Any]) -> tuple[str, str]:
-    person_a = astro_data.get("personA") if isinstance(astro_data.get("personA"), dict) else {}
-    person_b = astro_data.get("personB") if isinstance(astro_data.get("personB"), dict) else {}
-
-    name_a = (
-        person_a.get("name")
-        or meta2.get("name")
-        or meta2.get("user_name")
-        or "A"
-    )
-    name_b = (
-        person_b.get("name")
-        or meta2.get("name_b")
-        or "B"
-    )
-    return str(name_a).strip() or "A", str(name_b).strip() or "B"
+def _section_length_rule(detail_level: str, headers: list[str]) -> str:
+    level = str(detail_level or "standard").lower()
+    if len(headers) >= 8:
+        if level == "detailed":
+            return "各章は3〜5文で、章ごとに350〜650字程度を目安にしてください。"
+        if level == "standard":
+            return "各章は2〜4文で、章ごとに220〜450字程度を目安にしてください。"
+        return "各章は2〜3文で、章ごとに150〜320字程度を目安にしてください。"
+    return "各見出しを短すぎず、最後まで書き切ってください。"
 
 
-def _compat_name_rules(name_a: str, name_b: str) -> str:
-    return (
-        "【登場人物名の固定ルール】\n"
-        f"- PersonA → {name_a}さん\n"
-        f"- PersonB → {name_b}さん\n"
-        "- 「PersonA」「PersonB」「A」「B」という表記は本文で使わないこと。\n"
-        f"- 必ず「{name_a}さん」「{name_b}さん」で書くこと。\n"
-        "- 二人称で雑に省略せず、誰の話か曖昧にしないこと。\n"
-    )
+def _build_single_prompt(base_prompt: str, *, headers: list[str], policy: dict[str, int], detail_level: str) -> str:
+    extra = [
+        "",
+        "【出力の必須ルール】",
+        "- 冒頭の挨拶文は禁止です。すぐに最初の見出しから書き始めてください。",
+        f"- 最低{policy['min_chars']}文字以上、目安は{policy['target_chars']}文字前後です。",
+        "- 見出しを省略せず、最後まで書き切ってください。",
+        "- 途中で終わる文章は禁止です。",
+        "- 同じ意味の言い換えで水増しせず、具体的な場面や行動描写で厚みを出してください。",
+        _section_length_rule(detail_level, headers),
+    ]
+    if headers:
+        extra.append("- 必ず次の見出しをこの順番で使ってください: " + " / ".join(headers))
+    return base_prompt.rstrip() + "\n\n" + "\n".join(extra)
 
 
-def _default_outline(*, compat_mode: bool = False) -> dict[str, Any]:
-    section_titles = (
-        [
-            "個体の関係特性",
-            "感情的安心構造",
-            "愛情表現と魅力認識",
-            "親密性と距離感",
-            "衝突発生メカニズム",
-            "長期安定構造",
-            "強い引力と変容作用",
-            "実践的ヒント",
-        ] if compat_mode else [
-            "この人の核",
-            "表に出る姿",
-            "内側の本質とズレ",
-            "現実での出方",
-            "盲点と詰まりやすい癖",
-            "扱い方のコツ",
-            "人生の流れと現在地",
-            "これから3〜6ヶ月の流れ",
-        ]
-    )
-    return {
-        "voice": "落ち着いた分析調で、抽象だけでなく具体例も交えて書く",
-        "central_theme": "主要配置から見た関係構造の理解",
-        "sections": [
-            {
-                "id": i + 1,
-                "title": title,
-                "goal": "主要な読み筋を整理する",
-                "points": ["配置の特徴を拾う", "関係の出方を具体化する"],
-                "advice": ["現実で使える行動ヒントを1つ入れる", "断定しすぎない"],
-            }
-            for i, title in enumerate(section_titles)
-        ],
-    }
-
-
-def _outline_prompt(*, ctx: dict[str, Any], single_web_prompt: str) -> str:
-    compat_mode = bool(ctx.get("compat_mode"))
-    name_rules = _compat_name_rules(
-        str(ctx.get("name_a") or "A"),
-        str(ctx.get("name_b") or "B"),
-    ) if compat_mode else ""
-
-    section_titles = (
-        [
-            "個体の関係特性", "感情的安心構造", "愛情表現と魅力認識", "親密性と距離感",
-            "衝突発生メカニズム", "長期安定構造", "強い引力と変容作用", "実践的ヒント",
-        ] if compat_mode else [
-            "この人の核", "表に出る姿", "内側の本質とズレ", "現実での出方",
-            "盲点と詰まりやすい癖", "扱い方のコツ", "人生の流れと現在地", "これから3〜6ヶ月の流れ",
-        ]
-    )
-    sections_json = ",\n".join(
-        [f'    {{"id": {i+1}, "title": "{title}", "goal": "...", "points": ["..."], "advice": ["..."]}}' for i, title in enumerate(section_titles)]
-    )
-    return (
-        "あなたは占い鑑定文の設計者です。本文は書かず、有効なJSONのみ返してください。\n"
-        "長文本文を2回に分けて書くための設計図を作ります。説明文は禁止です。\n\n"
-        + name_rules
-        + "\n【必須条件】\n"
-        "- sections は必ず8件。\n"
-        "- 各 section は title / goal / points / advice を持つ。\n"
-        "- points と advice は各2〜4件の短文。\n"
-        "- 占術別にバラさず統合した読み筋にする。\n"
-        "- 名前が空なら呼びかけ不要。未来は断定しない。\n\n"
-        + "【返却形式】\n{\n  \"voice\": \"文体方針\",\n  \"central_theme\": \"全体テーマ\",\n  \"sections\": [\n"
-        + sections_json
-        + "\n  ]\n}\n\n"
-        + "【入力要約】\n"
-        + f"digest: {ctx.get('astro_digest')}\n"
-        + f"structure: {ctx.get('structure_summary')}\n"
-        + f"meta: system={ctx.get('astrology_system')}, compat={compat_mode}, theme={ctx.get('theme_label')}, display={ctx.get('display_name')}, phase={ctx.get('life_phase_label')}, flow={ctx.get('transit_focus')}\n"
-        + f"theme_focus: {ctx.get('theme_short')}\n"
-        + f"consultation: {ctx.get('theme_consultation')}\n"
-        + f"transit: {ctx.get('transit_summary')}\n"
-    )
-
-
-def _part_prompt(*, outline: dict[str, Any], ctx: dict[str, Any], part: int) -> str:
-    compat_mode = bool(ctx.get("compat_mode"))
-    if part == 1:
-        section_range = "1〜4章"
-        extra = (
-            "- 1〜4章のみ書く。5〜8章には触れない。\n"
-            "- 前半は人物像や関係の土台を具体化する。\n"
-            "- 目安1200〜2200文字。\n"
-        )
+def _build_block_prompt(base_prompt: str, *, all_headers: list[str], block_headers: list[str], policy: dict[str, int], detail_level: str, is_first: bool) -> str:
+    extra = [
+        "",
+        "【出力の必須ルール】",
+        "- 冒頭の挨拶文は禁止です。すぐに見出しから書き始めてください。",
+        "- 指定された見出しだけを書いてください。他の章は書かないでください。",
+        "- 途中で終わる文章は禁止です。",
+        "- 重複説明を避け、各章ごとに別の論点を担当させてください。",
+        _section_length_rule(detail_level, block_headers),
+        "- このブロックで使う見出し: " + " / ".join(block_headers),
+        "- 全体の見出し構成: " + " / ".join(all_headers),
+    ]
+    if is_first:
+        extra.append(f"- このブロックだけで最低{max(500, policy['min_chars']//2)}文字以上を目安にしてください。")
     else:
-        section_range = "5〜8章"
-        extra = (
-            "- 5〜8章のみ書く。1〜4章を繰り返さない。\n"
-            "- 後半は課題・扱い方・今後のヒントまで書き切る。\n"
-            "- 第8章の最後まで完結させる。\n"
-            "- 目安1200〜2200文字。\n"
-        )
-
-    scope_line = (
-        "- 二者の相互作用として書く。相性の良し悪し判定ではなく、起きやすい仕組みを書く。\n"
-        if compat_mode else
-        "- 占術別の説明書きではなく、1人の人格として統合して描く。\n"
-    )
-
-    name_rules = _compat_name_rules(
-        str(ctx.get("name_a") or "A"),
-        str(ctx.get("name_b") or "B"),
-    ) if compat_mode else ""
-
-    return (
-        "あなたは占い鑑定を行うプロの占い師です。以下の設計図に従い、このパートだけを完結した日本語本文として書いてください。\n\n"
-        + name_rules
-        + "\n【重要】\n"
-        "- このパート以外の章は書かない。\n"
-        "- 箇条書きは禁止。自然な段落だけで書く。\n"
-        "- 短くまとめず、根拠のある具体表現を入れる。\n"
-        "- 名前が空なら呼びかけ不要。敬称は付けない。\n"
-        + scope_line
-        + "- 章タイトルは本文内にそのまま表示してよい。\n"
-        + extra
-        + "\n【今回書く範囲】\n"
-        + section_range
-        + "\n\n【設計図(JSON)】\n"
-        + _limit_text(json.dumps(outline, ensure_ascii=False), 3500)
-        + "\n\n【補助情報】\n"
-        + f"digest: {ctx.get('astro_digest')}\n"
-        + f"display_name: {ctx.get('display_name')}\n"
-        + f"name_a: {ctx.get('name_a')}\n"
-        + f"name_b: {ctx.get('name_b')}\n"
-        + f"life_phase: {ctx.get('life_phase_label')} / {ctx.get('life_phase_theme')}\n"
-        + f"theme_focus: {ctx.get('theme_short')}\n"
-        + f"consultation: {ctx.get('theme_consultation')}\n"
-        + f"transit_focus: {ctx.get('transit_focus')}\n"
-        + f"transit_summary: {ctx.get('transit_summary')}\n"
-    )
+        extra.append(f"- このブロックだけで最低{max(450, policy['min_chars']//3)}文字以上を目安にしてください。")
+    return base_prompt.rstrip() + "\n\n" + "\n".join(extra)
 
 
-def _completion_prompt(*, existing_text: str, ctx: dict[str, Any], compat_mode: bool) -> str:
-    name_rules = _compat_name_rules(
-        str(ctx.get("name_a") or "A"),
-        str(ctx.get("name_b") or "B"),
-    ) if compat_mode else ""
-    return (
-        "以下の本文は末尾が途中で切れています。"
-        "重複せず、続きだけを自然につないで第8章の最後まで完結させてください。\n"
-        "400〜900字程度で十分です。箇条書きは禁止です。\n\n"
-        + name_rules
-        + "\n【すでに出ている本文】\n"
-        + _limit_text(existing_text, 3000)
-    )
-
-
-def _complete_tail_if_needed(
-    *,
-    client: Any,
-    model_name: str,
-    model_source: str,
-    text: str,
-    ctx: dict[str, Any],
-    compat_mode: bool,
-) -> str:
-    body = (text or "").strip()
-    if not body:
-        return body
-    if not _looks_truncated(body):
-        return body
-
-    try:
-        prompt = _completion_prompt(existing_text=body, ctx=ctx, compat_mode=compat_mode)
-        tail, resp = _call_model_once(
+def _generate_single_report(*, client: Any, model_name: str, model_source: str, prompt: str, headers: list[str], policy: dict[str, int], detail_level: str) -> str:
+    best_text = ""
+    best_score = -1
+    working_prompt = _build_single_prompt(prompt, headers=headers, policy=policy, detail_level=detail_level)
+    for attempt in range(2):
+        text1, resp = _call_model_once(
             client=client,
             model_name=model_name,
-            prompt=prompt,
-            max_tokens=1400,
-            temperature=0.15,
+            prompt=working_prompt,
+            max_tokens=policy["max_tokens"],
+            temperature=0.2 if _is_flash_model(model_name) else 0.15,
         )
-        _log_usage(resp, model_name=model_name, source=model_source, attempt=1, stage="tail")
-        tail = (tail or "").strip()
-        if tail:
-            merged = (body + "\n" + tail).strip()
-            if not _looks_truncated(merged):
-                return merged
-    except Exception:
-        pass
-    return body
+        _log_usage(resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage="single")
+        text1 = _clean_intro(text1)
+        _debug_candidate("single", attempt + 1, text1, headers, policy)
+        score = len(text1) + (_header_count(text1, headers) * 1000)
+        if score > best_score:
+            best_score = score
+            best_text = text1
+            _debug_final_choice("single-best-update", best_text, headers, policy, note="updated_best")
+        enough = len(text1) >= policy["min_chars"] and _has_required_headers(text1, headers) and not _looks_truncated(text1)
+        if enough:
+            _debug_final_choice("single", text1, headers, policy, note="accepted_without_retry")
+            return fix_punctuation(text1)
+        reasons: list[str] = []
+        if len(text1) < policy["min_chars"]:
+            reasons.append(f"too_short<{policy['min_chars']}")
+        if headers and not _has_required_headers(text1, headers):
+            reasons.append("missing_headers")
+        if _looks_truncated(text1):
+            reasons.append("looks_truncated")
+        _debug_retry_decision("single", attempt + 1, " / ".join(reasons) or "unknown", text1, best_text)
+        working_prompt += "\n\n【再指示】前回の出力は短すぎる、または見出しが不足しています。冒頭挨拶を入れず、未出力の見出しも含めて最初から最後まで完全版を書き直してください。"
+        time.sleep(0.4)
+    if best_text:
+        _debug_final_choice("single", best_text, headers, policy, note="return_best_after_retry")
+        return fix_punctuation(best_text)
+    raise RuntimeError("single generation failed")
 
 
-def _generate_longform_in_parts(
-    *,
-    client: Any,
-    model_name: str,
-    model_source: str,
-    ctx: dict[str, Any],
-    single_web_prompt: str,
-) -> str:
-    outline_prompt = _outline_prompt(ctx=ctx, single_web_prompt=single_web_prompt)
-    outline: dict[str, Any] = {}
-    compat_mode = bool(ctx.get("compat_mode"))
-
-    for attempt in range(2):
-        try:
-            outline_text, outline_resp = _call_model_once(
+def _generate_multipart_report(*, client: Any, model_name: str, model_source: str, prompt: str, headers: list[str], policy: dict[str, int], detail_level: str, compat_mode: bool, theme: str, is_line: bool) -> str:
+    groups = _block_header_groups(theme, compat_mode, detail_level, is_line)
+    parts: list[str] = []
+    for idx, group in enumerate(groups, start=1):
+        block_prompt = _build_block_prompt(prompt, all_headers=headers, block_headers=group, policy=policy, detail_level=detail_level, is_first=(idx == 1))
+        block_best = ""
+        for attempt in range(2):
+            text1, resp = _call_model_once(
                 client=client,
                 model_name=model_name,
-                prompt=outline_prompt,
-                max_tokens=2200,
-                temperature=0.1,
+                prompt=block_prompt,
+                max_tokens=max(1100, min(policy["max_tokens"], 1800 if detail_level == "detailed" else 1500)),
+                temperature=0.2 if _is_flash_model(model_name) else 0.15,
             )
-            _log_usage(outline_resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage="outline")
-            outline = _extract_json_object(outline_text)
-            sections = outline.get("sections") if isinstance(outline, dict) else None
-            if isinstance(sections, list) and len(sections) >= 8:
+            _log_usage(resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage=f"block{idx}")
+            text1 = _clean_intro(text1)
+            _debug_candidate(f"block{idx}", attempt + 1, text1, group, policy)
+            if len(text1) > len(block_best):
+                block_best = text1
+            enough = _has_required_headers(text1, group) and not _looks_truncated(text1) and len(text1) >= (450 if detail_level == "detailed" else 280)
+            if enough:
+                parts.append(text1)
                 break
-            outline = {}
-            outline_prompt += "\n\n【再指示】有効なJSONだけを返してください。sections は必ず8件です。"
-            time.sleep(0.4)
-        except Exception:
-            outline = {}
-            time.sleep(0.6)
-
-    if not outline:
-        outline = _default_outline(compat_mode=compat_mode)
-
-    parts: list[str] = []
-
-    for part in (1, 2):
-        part_prompt = _part_prompt(outline=outline, ctx=ctx, part=part)
-        part_text = ""
-        for attempt in range(3):
-            try:
-                candidate, part_resp = _call_model_once(
-                    client=client,
-                    model_name=model_name,
-                    prompt=part_prompt,
-                    max_tokens=4200,
-                    temperature=0.15,
-                )
-                _log_usage(part_resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage=f"part{part}")
-
-                candidate = (candidate or "").strip()
-                if part == 2:
-                    candidate = _complete_tail_if_needed(
-                        client=client,
-                        model_name=model_name,
-                        model_source=model_source,
-                        text=candidate,
-                        ctx=ctx,
-                        compat_mode=compat_mode,
-                    )
-
-                too_short = len(candidate) < (1100 if part == 1 else 900)
-                bad_tail = _looks_truncated(candidate)
-
-                if too_short or bad_tail:
-                    if attempt < 2:
-                        part_prompt += (
-                            "\n\n【再指示】\n"
-                            "前回の出力は短すぎるか、途中で終わっています。"
-                            "このパートだけを最初から書き直し、最後まで完結させてください。"
-                            "具体例と関係の出方、行動ヒントを増やしてください。"
-                        )
-                        time.sleep(0.4)
-                        continue
-
-                part_text = candidate
-                if part_text:
-                    break
-            except Exception:
-                time.sleep(0.6)
-
-        if not part_text:
-            raise RuntimeError(f"part{part} generation failed")
-
-        parts.append(part_text)
-
-    if len(parts) != 2:
-        raise RuntimeError("multipart generation incomplete")
-
-    full = "\n\n".join(p for p in parts if p.strip()).strip()
-    full = _complete_tail_if_needed(
-        client=client,
-        model_name=model_name,
-        model_source=model_source,
-        text=full,
-        ctx=ctx,
-        compat_mode=compat_mode,
-    )
-
-    if len(full) < 1800 or _looks_truncated(full):
-        raise RuntimeError("combined text too short or truncated")
-
-    if compat_mode and not _has_enough_sections(full, True):
-        raise RuntimeError("compat sections incomplete")
-
-    return fix_punctuation(full)
+            _debug_retry_decision(f"block{idx}", attempt + 1, "block_retry", text1, block_best)
+            block_prompt += "\n\n【再指示】前回の出力は短すぎるか、指定見出しが不足しています。このブロックの見出しだけを、冒頭挨拶なしで最後まで書き切ってください。"
+            time.sleep(0.35)
+        else:
+            if block_best:
+                parts.append(block_best)
+    combined = "\n\n".join(p for p in parts if p.strip())
+    combined = _clean_intro(combined)
+    if combined and len(combined) >= policy["min_chars"] and _header_count(combined, headers) >= max(4, len(headers) - 1):
+        _debug_final_choice("multipart", combined, headers, policy, note="accepted_before_rescue")
+        _debug_final_choice("multipart", combined, headers, policy, note="return_after_rescue")
+    return fix_punctuation(combined)
+    # one rescue pass for missing headers
+    missing = [h for h in headers if h not in combined]
+    if missing:
+        rescue_prompt = prompt.rstrip() + "\n\n【不足見出しの追記】\n- 冒頭挨拶は禁止です。\n- 次の不足見出しだけを書いてください: " + " / ".join(missing)
+        text2, resp2 = _call_model_once(
+            client=client,
+            model_name=model_name,
+            prompt=rescue_prompt,
+            max_tokens=max(900, min(policy["max_tokens"], 1400)),
+            temperature=0.2 if _is_flash_model(model_name) else 0.15,
+        )
+        _log_usage(resp2, model_name=model_name, source=model_source, attempt=1, stage="rescue")
+        text2 = _clean_intro(text2)
+        if text2:
+            combined = (combined + "\n\n" + text2).strip()
+    return fix_punctuation(combined)
 
 
 def generate_report(
@@ -1229,53 +1008,30 @@ def generate_report(
     report_type: str | None = None,
     meta: dict[str, Any] | None = None,
 ) -> str:
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not api_key:
-        return "GEMINI_API_KEY が未設定です"
-
-    if genai is None or types is None:
-        return "google-genai が読み込めません（requirements.txt を確認）"
-
-    try:
-        client = genai.Client(api_key=api_key)
-    except Exception as e:
-        return f"Gemini client 初期化エラー: {e} / {_debug_model_info()}"
-
     base_meta = _safe_get_meta(astro_data)
     meta2 = _merge_meta(base_meta, meta)
-    requested_model = _normalize_requested_model(meta2.get("ai_model")) if isinstance(meta2, dict) else None
-    model_name, model_source = _resolve_model_name(requested_model)
-
     if style:
         meta2["output_style"] = style
-
     rt = _normalize_report_type(report_type)
-
-    output_style = (style or meta2.get("output_style", "web") or "web").strip()
-    detail_level = (meta2.get("detail_level", "standard") or "standard").strip()
+    output_style = (style or meta2.get("output_style", "web") or "web").strip().lower()
+    detail_level = (meta2.get("detail_level", "standard") or "standard").strip().lower()
     astrology_system = (meta2.get("astrology_system", "western") or "western").strip().lower()
-
-    birth_date = meta2.get("birth_date", "未取得")
-    today = meta2.get("today", "未取得")
-    age_years = meta2.get("age_years", "未計算")
-    era_title = meta2.get("era_title", "いまの転換期")
-    theme = meta2.get("theme", "overall")
+    theme = (meta2.get("theme", "overall") or "overall").strip().lower()
     user_message = meta2.get("message", "")
     observations_text = (meta2.get("observations_text", "") or "").strip()
-    user_name = (meta2.get("user_name", "") or "").strip()
-    display_name = user_name if user_name not in ("あなた",) else ""
+    user_name = (meta2.get("user_name") or meta2.get("name") or "")
+    display_name = user_name if user_name not in ("", "あなた") else ""
+    requested_model = _normalize_requested_model(meta2.get("ai_model")) if isinstance(meta2, dict) else None
+    model_name, model_source = _resolve_model_name(requested_model)
+    compat_mode = rt in {"compat_web", "compat_line"}
+    is_line = (output_style == "line" or "line" in rt)
+    astro_digest = _build_prompt_astro_digest(astro_data, compat_mode=compat_mode)
+    structure_summary = _limit_text(_build_structure_summary(astro_data), 2400 if compat_mode else 3000)
+    transit_summary = _limit_text(_build_transit_summary(astro_data), 1200)
     available_systems = _detect_available_systems(astro_data, astrology_system)
+    age_years = meta2.get("age_years", "未計算")
     life_phase_label, life_phase_theme = _life_phase(age_years)
     transit_focus = _transit_focus(age_years, available_systems)
-
-    compat_mode = rt in {"compat_web", "compat_line"}
-    theme_bundle = _theme_prompt_bundle(theme, user_message, compat_mode=compat_mode)
-    name_a, name_b = _compat_names(astro_data, meta2)
-
-    astro_digest = _build_prompt_astro_digest(astro_data, compat_mode=compat_mode)
-    structure_summary = _limit_text(_build_structure_summary(astro_data), 1800 if compat_mode else 2600)
-    transit_summary = _limit_text(_build_transit_summary(astro_data), 700)
-
     ctx: dict[str, Any] = {
         "astro_data": astro_digest,
         "astro_digest": astro_digest,
@@ -1284,10 +1040,10 @@ def generate_report(
         "theme": theme,
         "user_message": user_message,
         "observations_text": observations_text,
-        "birth_date": birth_date,
-        "today": today,
+        "birth_date": meta2.get("birth_date", "未取得"),
+        "today": meta2.get("today", "未取得"),
         "age_years": age_years,
-        "era_title": era_title,
+        "era_title": meta2.get("era_title", "いまの転換期"),
         "detail_level": detail_level,
         "user_name": user_name or "あなた",
         "display_name": display_name,
@@ -1296,161 +1052,100 @@ def generate_report(
         "life_phase_theme": life_phase_theme,
         "transit_focus": transit_focus,
         "transit_summary": transit_summary,
-        "theme_label": theme_bundle["label"],
-        "theme_focus": theme_bundle["focus"],
-        "theme_axes": theme_bundle["axes"],
-        "theme_consultation": theme_bundle["consultation"],
-        "theme_instruction": theme_bundle["instruction"],
-        "theme_short": theme_bundle["short"],
         "free_reading_key_data": _build_free_reading_key_data(astro_data),
         "astro_hint_line": build_astro_hint_line(astro_data),
-        "compat_mode": compat_mode,
-        "name_a": name_a,
-        "name_b": name_b,
     }
-
     common_rules_tpl = _read_prompt_file("common_rules.txt")
-    ctx["common_rules"] = (_render_prompt(common_rules_tpl, ctx) + "\n\n" + ctx["theme_instruction"] + "\n" + ctx["theme_consultation"]).strip()
-
-    single_web_tpl = _read_prompt_file("single_web.txt")
-    single_line_tpl = _read_prompt_file("single_line.txt")
-    single_web_reader_tpl = _read_prompt_file("single_web_reader.txt")
-    single_line_reader_tpl = _read_prompt_file("single_line_reader.txt")
-    compat_web_tpl = _read_prompt_file("compat_web.txt")
-    compat_line_tpl = _read_prompt_file("compat_line.txt")
-
-    single_web_prompt = _render_prompt(single_web_tpl, ctx)
-    single_line_prompt = _render_prompt(single_line_tpl, ctx)
-    single_web_reader_prompt = _render_prompt(single_web_reader_tpl, ctx)
-    single_line_reader_prompt = _render_prompt(single_line_reader_tpl, ctx)
-    compat_web_prompt = _render_prompt(compat_web_tpl, ctx)
-    compat_line_prompt = _render_prompt(compat_line_tpl, ctx)
-
-    if compat_mode:
-        name_rules = _compat_name_rules(name_a, name_b)
-        compat_web_prompt = name_rules + "\n" + compat_web_prompt
-        compat_line_prompt = name_rules + "\n" + compat_line_prompt
-
-    free_reading_prompt = ""
+    ctx["common_rules"] = _render_prompt(common_rules_tpl, ctx)
+    yaml_only = _truthy(meta2.get("yaml_only"))
+    generate_ai_flag = meta2.get("generate_ai", True)
+    if yaml_only or (generate_ai_flag is False):
+        return _build_yaml_only_text(ctx=ctx, report_type=rt, compat_mode=compat_mode)
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        return "GEMINI_API_KEY が未設定です"
+    if genai is None or types is None:
+        return "google-genai が読み込めません（requirements.txt を確認）"
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as e:
+        return f"Gemini client 初期化エラー: {e} / {_debug_model_info()}"
+    single_web_template_name = "single_web_timing.txt" if theme == "timing" else "single_web.txt"
+    prompt_map = {
+        "single_web": _render_prompt(_read_prompt_file(single_web_template_name), ctx),
+        "single_line": _render_prompt(_read_prompt_file("single_line.txt"), ctx),
+        "single_web_reader": _render_prompt(_read_prompt_file("single_web_reader.txt"), ctx),
+        "single_line_reader": _render_prompt(_read_prompt_file("single_line_reader.txt"), ctx),
+        "compat_web": _render_prompt(_read_prompt_file("compat_web.txt"), ctx),
+        "compat_line": _render_prompt(_read_prompt_file("compat_line.txt"), ctx),
+    }
     if theme == "free_reading":
-        free_reading_tpl = _read_prompt_file("free_reading_web.txt")
-        free_reading_prompt = _render_prompt(free_reading_tpl, ctx)
-
-    guard = ""
-    if astrology_system == "integrated":
-        guard = _read_prompt_file("guard_integrated.txt").strip()
-    elif astrology_system == "integrated3":
-        guard = _read_prompt_file("guard_integrated3.txt").strip()
-
-    if guard:
-        single_web_prompt += "\n\n" + guard
-        single_line_prompt += "\n\n" + guard
-        single_web_reader_prompt += "\n\n" + guard
-        single_line_reader_prompt += "\n\n" + guard
-        compat_web_prompt += "\n\n" + guard
-        compat_line_prompt += "\n\n" + guard
-
-    vedic_guard = ""
-    if astrology_system == "vedic":
-        vedic_guard = _read_prompt_file("guard_vedic.txt").strip()
-
-    if rt == "raw_prompt":
-        prompt = (meta2.get("message") or user_message or "").strip()
-    elif rt == "compat_line" or (rt == "compat_web" and output_style == "line"):
-        prompt = compat_line_prompt
-    elif rt == "compat_web":
-        prompt = compat_web_prompt
-    elif rt == "single_line_reader":
-        prompt = single_line_reader_prompt
+        prompt_map["single_web"] = _render_prompt(_read_prompt_file("free_reading_web.txt"), ctx)
+    prompt = prompt_map.get(rt) or prompt_map["single_web"]
+    if rt == "single_web" and output_style == "line":
+        prompt = prompt_map["single_line"]
     elif rt == "single_web_reader" and output_style == "line":
-        prompt = single_line_reader_prompt
-    elif rt == "single_web_reader":
-        prompt = single_web_reader_prompt
-    elif rt == "single_line" or (rt == "single_web" and output_style == "line"):
-        prompt = single_line_prompt
-    else:
-        prompt = free_reading_prompt or single_web_prompt
-
-    is_line = (output_style == "line" or "line" in rt)
-    is_web = not is_line
-
-    if vedic_guard:
-        prompt = vedic_guard + "\n\n" + prompt
-
-    if is_web and model_name == "gemini-2.5-flash":
-        prompt = prompt.rstrip() + "\n\n" + _flash_web_boost_prompt(compat_mode)
-
-    if _should_use_multipart_web_generation(
-        ctx=ctx,
-        model_name=model_name,
-        is_web=is_web,
-        theme=theme,
-    ):
-        try:
-            return _generate_longform_in_parts(
+        prompt = prompt_map["single_line_reader"]
+    elif rt == "compat_web" and output_style == "line":
+        prompt = prompt_map["compat_line"]
+    policy = _detail_policy(detail_level, is_line=is_line, compat_mode=compat_mode, theme=theme, report_type=rt)
+    headers = [] if is_line or "reader" in rt else _section_headers(theme, compat_mode=compat_mode)
+    try:
+        legacy_single_mode = (rt in {"single_web", "compat_web"}) and not is_line and "reader" not in rt
+        if legacy_single_mode:
+            print("=== AI REPORT LEGACY SINGLE COMPLETE ===", {
+                "report_type": rt,
+                "detail_level": detail_level,
+                "theme": theme,
+                "model": model_name,
+            })
+            text = _generate_single_report(
                 client=client,
                 model_name=model_name,
                 model_source=model_source,
-                ctx=ctx,
-                single_web_prompt=single_web_prompt,
-            )
-        except Exception as e:
-            print("[ai_report] multipart fallback", {"model": model_name, "error": str(e)})
-
-    if is_line:
-        max_tokens = 1400
-    elif theme == "free_reading":
-        max_tokens = 1400
-    elif model_name == "gemini-2.5-flash":
-        max_tokens = 4200 if str(ctx.get("message") or "").strip() else 5600
-    else:
-        max_tokens = 5200
-
-    last_error = None
-
-    for attempt in range(3):
-        try:
-            text1, resp = _call_model_once(
-                client=client,
-                model_name=model_name,
                 prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=0.15 if _is_flash_model(model_name) else 0.1,
+                headers=headers,
+                policy=policy,
+                detail_level=detail_level,
             )
-            _log_usage(resp, model_name=model_name, source=model_source, attempt=attempt + 1, stage="single")
-            if not text1:
-                raise RuntimeError("empty text")
-
-            if compat_mode:
-                text1 = _complete_tail_if_needed(
+            best_text = text or ""
+            continue_round = 0
+            while continue_round < 2 and _is_incomplete_web(best_text, headers=headers):
+                continue_round += 1
+                continue_prompt = _make_continue_prompt(previous_text=best_text, headers=headers)
+                text2, resp2 = _call_model_once(
                     client=client,
                     model_name=model_name,
-                    model_source=model_source,
-                    text=text1,
-                    ctx=ctx,
-                    compat_mode=True,
+                    prompt=continue_prompt,
+                    max_tokens=max(1400, policy["max_tokens"]),
+                    temperature=0.15 if _is_flash_model(model_name) else 0.1,
                 )
-
-            if _needs_longform_flash_retry(text1, is_web=is_web, model_name=model_name, compat_mode=compat_mode) and attempt < 2:
-                print("[ai_report] flash output too short", {
-                    "model": model_name,
-                    "chars": len(text1),
-                    "attempt": attempt + 1,
-                })
-                prompt = (
-                    prompt.rstrip()
-                    + "\n\n【再指示】\n"
-                    + "前回の出力は短すぎるか、文が途中で終わっています。必ず8章すべてを最後まで書き切り、"
-                    + "選択テーマと相談内容から外れず、全体で1800文字以上になるように、具体例・状況描写・行動アドバイスを増やして最初から書き直してください。"
-                )
-                time.sleep(0.5)
-                continue
-
-            return fix_punctuation(text1)
-        except Exception as e:
-            last_error = e
-            time.sleep(0.8)
-
-    if is_line:
-        return fix_punctuation(_line_fallback_text(meta2))
-    return f"AI生成エラー: {last_error} / {_debug_model_info(requested_model)}"
+                _log_usage(resp2, model_name=model_name, source=model_source, attempt=continue_round, stage="continue")
+                text2 = _clean_intro(text2)
+                if text2.strip():
+                    merged = (best_text.rstrip() + "\n\n" + text2.strip()).strip()
+                else:
+                    merged = best_text
+                _debug_candidate("continue", continue_round, merged, headers, policy)
+                if len(merged) > len(best_text):
+                    best_text = merged
+                else:
+                    break
+            text = best_text
+        else:
+            text = _generate_single_report(
+                client=client,
+                model_name=model_name,
+                model_source=model_source,
+                prompt=prompt,
+                headers=headers,
+                policy=policy,
+                detail_level=detail_level,
+            )
+        if text and len(text.strip()) >= max(300, policy["min_chars"] // 2):
+            return fix_punctuation(text)
+        return fix_punctuation(text)
+    except Exception as e:
+        if is_line:
+            return fix_punctuation(_line_fallback_text(meta2))
+        return f"AI生成エラー: {e} / {_debug_model_info(requested_model)}"

@@ -290,9 +290,11 @@ async def line_webhook(request: Request) -> dict[str, Any]:
             continue
 
         looks_like_booking_payload = _looks_like_booking_payload(raw_text)
+        form_keywords = {'フォーム', 'フォームだけ', '購入完了', '購入済み', '直接購入'}
         force_order_flow = bool(
             should_start_order(raw_text)
             or looks_like_booking_payload
+            or ((raw_text or '').strip() in form_keywords)
             or (current_state not in {None, '', 'idle'})
         )
         is_new_order_start = bool(
@@ -401,24 +403,33 @@ async def line_webhook(request: Request) -> dict[str, Any]:
                     )
                     continue
 
-            reply_text, next_session, should_clear, created_order_code = handle_order_message(
-                user_id, raw_text, session, line_display_name
-            )
-            if should_clear:
-                clear_session(user_id)
-            else:
-                upsert_session(user_id, next_session)
+            try:
+                reply_text, next_session, should_clear, created_order_code = handle_order_message(
+                    user_id, raw_text, session, line_display_name
+                )
+                if should_clear:
+                    clear_session(user_id)
+                else:
+                    upsert_session(user_id, next_session)
 
-            await _line_reply(reply_token, reply_text, user_id)
+                await _line_reply(reply_token, reply_text, user_id)
 
-            if created_order_code:
-                order = get_order_by_code(created_order_code)
-                if order:
-                    try:
-                        await notify_new_line_reservation(order)
-                    except Exception as exc:
-                        print("notify_new_line_reservation error:", repr(exc))
+                if created_order_code:
+                    order = get_order_by_code(created_order_code)
+                    if order:
+                        try:
+                            await notify_new_line_reservation(order)
+                        except Exception as exc:
+                            print("notify_new_line_reservation error:", repr(exc))
+            except Exception as exc:
+                print("LINE order flow error:", repr(exc))
+                await _line_reply(
+                    reply_token,
+                    '予約処理で一時的なエラーが発生しました。\nもう一度「予約」と送ってください。',
+                    user_id,
+                )
             continue
+
 
         # 予約フロー以外は通常問い合わせとして受ける
         await _line_reply(

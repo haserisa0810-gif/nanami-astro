@@ -760,11 +760,12 @@
 
         <div class="row">
           <label>文章量</label>
-          <select name="detail_level">
-            <option value="standard">標準</option>
-            <option value="short">短め</option>
-            <option value="detailed">詳細</option>
+          <select name="detail_level" id="detail_level">
+            <option value="short">軽量（約1200〜1800字）</option>
+            <option value="standard" selected>標準（約1800〜2800字）</option>
+            <option value="detailed">長め（約2800〜4200字 / 分割生成）</option>
           </select>
+          <div class="hint" id="detail_level_hint" style="margin-top:8px;">標準・長めは安定化のため分割生成します。通常より少し時間がかかります。</div>
         </div>
 
         <div class="row">
@@ -796,6 +797,15 @@
         <div class="row">
           <label>観測事実（任意） <span class="pill">ユーザー申告 / 確認済みの事実だけ</span></label>
           <textarea name="observations_text" rows="4" placeholder="例）\n睡眠: 5-6h\nストレス時の衝動買い: たまに\nクレカ比率: 高め\n（※解釈ではなく事実だけ）"></textarea>
+        </div>
+
+        <div class="row">
+          <label>生成オプション</label>
+          <div style="display:grid; gap:10px;">
+            <label class="checkbox-line"><input type="checkbox" name="generate_ai" id="generate_ai" value="true" checked style="width:auto;" /> AI本文も生成する</label>
+            <label class="checkbox-line"><input type="checkbox" name="yaml_only" id="yaml_only" value="true" style="width:auto;" /> YAMLログのみ作成（本文なし）</label>
+            <div class="hint" style="margin:4px 0 0;">YAMLのみをONにすると、AI本文生成は自動でOFFになります。</div>
+          </div>
         </div>
 
         <div class="hint">
@@ -889,7 +899,7 @@
         <div class="row">
           <label>追加生成</label>
           <div style="display:grid; gap:10px;">
-            <label class="checkbox-line"><input type="checkbox" name="include_reader" value="true" style="width:auto;" /> 占い師メモも生成する</label>
+            <label class="checkbox-line"><input type="checkbox" name="include_reader" value="true" style="width:auto;" /> 占い師向けメモを生成する</label>
             <label class="checkbox-line"><input type="checkbox" name="include_transit" value="true" style="width:auto;" /> トランジットを鑑定に含める（今日の天体×出生図）</label>
             <div class="hint" style="margin:4px 0 0;">通常はOFF推奨です。待ち時間とGemini利用量を抑えられます。</div>
           </div>
@@ -1449,6 +1459,41 @@
       bindStaticUI();
     }
   })();
+
+  const yamlOnlyToggle = document.getElementById("yaml_only");
+  const generateAiToggle = document.getElementById("generate_ai");
+  const detailLevelSelect = document.getElementById("detail_level");
+  const detailLevelHint = document.getElementById("detail_level_hint");
+
+  function syncYamlOnlyState() {
+    if (!yamlOnlyToggle || !generateAiToggle) return;
+    if (yamlOnlyToggle.checked) {
+      generateAiToggle.checked = false;
+      generateAiToggle.disabled = true;
+    } else {
+      generateAiToggle.disabled = false;
+    }
+  }
+
+  function syncDetailHint() {
+    if (!detailLevelSelect || !detailLevelHint) return;
+    if (detailLevelSelect.value === "detailed") {
+      detailLevelHint.style.display = "block";
+      detailLevelHint.textContent = "標準・長めは安定化のため分割生成します。通常より少し時間がかかります。";
+    } else {
+      detailLevelHint.style.display = "block";
+      detailLevelHint.textContent = "軽量は単発生成、標準・長めは分割生成です。";
+    }
+  }
+
+  if (yamlOnlyToggle) {
+    yamlOnlyToggle.addEventListener("change", syncYamlOnlyState);
+    syncYamlOnlyState();
+  }
+  if (detailLevelSelect) {
+    detailLevelSelect.addEventListener("change", syncDetailHint);
+    syncDetailHint();
+  }
 </script>
 </body>
 </html>

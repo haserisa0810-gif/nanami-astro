@@ -24,6 +24,9 @@
     {% if order.order_kind == 'free' and order.free_reading_code %}
     <div><strong>無料鑑定ID</strong><div><span class="code">{{ order.free_reading_code }}</span></div></div>
     {% endif %}
+    <div><strong>外部注文番号</strong><div>{{ order.external_order_ref or '-' }}</div></div>
+    <div><strong>入力由来</strong><div>{{ order.input_origin or 'legacy/direct' }}</div></div>
+    <div><strong>主レポートID</strong><div>{{ order.primary_report_id or '-' }}</div></div>
   </div>
 
   {% if order.source_free_order %}
@@ -60,7 +63,7 @@
       <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
         <span class="pill {% if auto_ai_ready %}danger{% elif result_status == 'draft' %}warning{% elif result_status == 'completed' %}success{% else %}secondary{% endif %}">{{ result_status_label }}</span>
         {% if order.ai_status == 'running' %}
-          <span class="muted">自動鑑定を処理中です。完了後にこの画面を再読込します。</span>
+          <span class="muted">自動鑑定を処理中です。完了後は手動で再読込してください。</span>
         {% elif auto_ai_ready %}
           <span class="muted">自動鑑定の下書きがあります。確認後に「結果画面を開く」を押してください。</span>
         {% else %}
@@ -87,12 +90,29 @@
         </div>
         <textarea name="delivery_text" style="min-height:560px;font-size:15px;line-height:1.8">{{ editor_seed_text or '' }}</textarea>
 
-        {# --- 下書き保存（LINE送信なし・確認不要） --- #}
         <div style="margin-top:12px">
           <button type="submit" name="action" value="draft">下書き保存</button>
         </div>
 
-        {# --- 通知系（必ず本文 + 鑑定書URLを送信） --- #}
+        <div style="margin-top:16px;padding:14px;border:1px solid #e0e0e0;border-radius:10px;background:#f8f8f8">
+          {% if auto_ai_ready %}
+            <p style="margin:0 0 10px;font-size:13px;color:#c0392b;font-weight:bold">
+              ⚠️ 未反映の自動鑑定下書きがあります。内容を確認してから「結果画面を開く」で反映してください。
+            </p>
+          {% else %}
+            <p style="margin:0 0 10px;font-size:13px;color:#555">
+              結果画面への反映・鑑定書の作成はこちらから行います。
+            </p>
+          {% endif %}
+          <div class="row" style="gap:10px;flex-wrap:wrap">
+            <button id="publish-result-button" type="submit" formaction="/staff/orders/{{ order.order_code }}/publish-result" {% if auto_ai_ready %}class="danger"{% endif %}>結果画面を開く</button>
+            <button type="submit" formaction="/staff/orders/{{ order.order_code }}/generate-report" class="secondary">鑑定書を作成</button>
+            {% if result_view and result_view.report_html %}
+              <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-download">鑑定書をダウンロード</a>
+            {% endif %}
+          </div>
+        </div>
+
         <div style="margin-top:16px;padding:16px;border:2px solid #f0c040;border-radius:12px;background:#fffdf0">
           <p style="margin:0 0 12px;font-size:13px;font-weight:700;color:#9a6f00">⚠️ 以下の操作はユーザーに通知が送信されます</p>
           <div style="display:grid;gap:10px;margin-bottom:12px">
@@ -105,7 +125,6 @@
                 鑑定書がまだ作成されていないため、納品完了も通知再送もできません。先に「鑑定書を作成」を押してください。
               </p>
             {% endif %}
-
             {% if has_line_contact %}
               <p class="muted" style="margin:0;font-size:12px;padding-left:2px">この案件はLINE連携済みです。LINEへ送信します。</p>
             {% endif %}
@@ -123,30 +142,6 @@
           <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6">「通知を再送」は案件内容を変更せず、本文と鑑定書URLを利用可能な連絡先すべてへ再送します。</p>
         </div>
       </form>
-
-      {# --- 結果画面・鑑定書 --- #}
-      <div style="margin-top:16px;padding:14px;border:1px solid #e0e0e0;border-radius:10px;background:#f8f8f8">
-        {% if auto_ai_ready %}
-          <p style="margin:0 0 10px;font-size:13px;color:#c0392b;font-weight:bold">
-            ⚠️ 未反映の自動鑑定下書きがあります。内容を確認してから「結果画面を開く」で反映してください。
-          </p>
-        {% else %}
-          <p style="margin:0 0 10px;font-size:13px;color:#555">
-            結果画面への反映・鑑定書の作成はこちらから行います。
-          </p>
-        {% endif %}
-        <div class="row" style="gap:10px;flex-wrap:wrap">
-          <form method="post" action="/staff/orders/{{ order.order_code }}/publish-result">
-            <button type="submit" {% if auto_ai_ready %}class="danger"{% endif %}>結果画面を開く</button>
-          </form>
-          <form method="post" action="/staff/orders/{{ order.order_code }}/generate-report">
-            <button type="submit" class="secondary">鑑定書を作成</button>
-          </form>
-          {% if result_view and result_view.report_html %}
-            <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-download">鑑定書をダウンロード</a>
-          {% endif %}
-        </div>
-      </div>
     </div>
   </div>
 
@@ -154,7 +149,7 @@
     <div class="card">
       <h2>2. ユーザー情報入力</h2>
       <p class="muted">必要項目を整えて、そのまま自動鑑定を開始します。</p>
-      <form method="post" action="/staff/orders/{{ order.order_code }}/auto-generate" style="margin-top:14px">
+      <form method="post" action="/staff/orders/{{ order.order_code }}/auto-generate" style="margin-top:14px" id="auto-generate-form">
         <div class="grid">
           <div><label>氏名</label><input name="user_name" value="{{ order.user_name or '' }}"></div>
           <div><label>ご連絡先</label><input value="{{ order.user_contact or (order.customer.email if order.customer and order.customer.email else '') }}" readonly placeholder="未入力"></div>
@@ -168,12 +163,11 @@
           <div style="grid-column:1 / -1"><label>相談内容</label><textarea name="consultation_text" style="min-height:120px">{{ order.consultation_text or '' }}</textarea></div>
         </div>
         <div class="row" style="margin-top:12px;flex-wrap:wrap">
-          <button type="submit">自動鑑定を開始</button>
+          <button id="auto-generate-button" type="submit">自動鑑定を開始</button>
           <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/analyze">通常鑑定を開く</a>
-         <!-- <a class="btn secondary" href="/result/{{ order.order_code }}">結果画面を開く</a>-->
         </div>
         <p class="muted" style="margin-top:10px">現在の座標情報: {{ location_summary }}</p>
-         <label>自動鑑定は西洋占星術のみ。他の鑑定やオプションONの場合は通常鑑定から鑑定してください</label>
+        <label>自動鑑定は西洋占星術のみ。他の鑑定やオプションONの場合は通常鑑定から鑑定してください</label>
       </form>
     </div>
 
@@ -217,24 +211,55 @@
 </style>
 
 <script>
+const AUTO_AI_STATUS = {{ (order.ai_status or '') | tojson }};
+const AUTO_AI_ACTIVE = ['queued', 'running'].includes(AUTO_AI_STATUS);
+
 function copyYamlText() {
   const el = document.getElementById('yaml-copy-source');
   if (!el) return;
-  navigator.clipboard.writeText(el.innerText || el.textContent || '');
+  const text = el.innerText || el.textContent || '';
+  if (!text) return;
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(() => alert('YAMLをコピーしました'))
+      .catch(() => fallbackCopyYaml(text));
+    return;
+  }
+  fallbackCopyYaml(text);
 }
+
+function fallbackCopyYaml(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', 'readonly');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    const ok = document.execCommand('copy');
+    if (ok) {
+      alert('YAMLをコピーしました');
+    } else {
+      alert('コピーに失敗しました。YAML欄を手動でコピーしてください。');
+    }
+  } catch (e) {
+    alert('コピーに失敗しました。YAML欄を手動でコピーしてください。');
+  } finally {
+    document.body.removeChild(ta);
+  }
+}
+
 function copyYamlFromMain() { copyYamlText(); }
 function copyYamlFromDetails() { copyYamlText(); }
 
 function confirmDeliver() {
   const userName = {{ order.user_name | tojson }};
   const orderCode = {{ order.order_code | tojson }};
-  const sendText = document.querySelector('input[name="send_line_text"]')?.checked;
-  const sendReport = document.querySelector('input[name="send_line_report"]')?.checked && !document.querySelector('input[name="send_line_report"]')?.disabled;
-  let msg = `【納品完了】この操作を実行しますか？\n\n顧客: ${userName}（${orderCode}）\n`;
-  if (sendText) msg += '・本文を送信します\n';
-  if (sendReport) msg += '・鑑定書URLを送信します\n';
-  if (!sendText && !sendReport) msg += '・本文通知はOFFです\n';
-  msg += '\n本当に実行しますか？';
+  const msg = `【納品完了】本当に実行しますか？\n\n顧客: ${userName}（${orderCode}）\n\n本文と鑑定書URLを利用可能な連絡先へ送信します。`;
   if (confirm(msg)) {
     const form = document.getElementById('delivery-form');
     const input = document.createElement('input');
@@ -260,11 +285,33 @@ function confirmResend() {
     form.submit();
   }
 }
-</script>
 
-{% if order.ai_status == 'running' %}
-<script>
-  setTimeout(function(){ window.location.reload(); }, 5000);
+function startAutoAiPolling() {
+  if (!AUTO_AI_ACTIVE) return;
+
+  const publishButton = document.getElementById('publish-result-button');
+  if (publishButton) {
+    publishButton.classList.remove('danger');
+  }
+
+  window.setTimeout(() => {
+    window.location.reload();
+  }, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const autoGenerateForm = document.getElementById('auto-generate-form');
+  const autoGenerateButton = document.getElementById('auto-generate-button');
+
+  if (autoGenerateForm && autoGenerateButton) {
+    autoGenerateForm.addEventListener('submit', () => {
+      autoGenerateButton.disabled = true;
+      autoGenerateButton.textContent = '自動鑑定を開始中…';
+    });
+  }
+
+  startAutoAiPolling();
+});
+
 </script>
-{% endif %}
 {% endblock %}

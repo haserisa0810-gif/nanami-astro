@@ -117,6 +117,55 @@ class DailyCardDraw(Base):
     drawn_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+
+
+class IntakeDraft(TimestampMixin, Base):
+    __tablename__ = "intake_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    draft_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+
+    source: Mapped[str] = mapped_column(String(32), default="web", nullable=False, index=True)
+    external_platform: Mapped[Optional[str]] = mapped_column(String(50))
+    external_order_ref: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+
+    requested_menu_code: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    menu_id: Mapped[Optional[int]] = mapped_column(ForeignKey("menus.id"))
+    order_kind: Mapped[str] = mapped_column(String(20), default="paid", nullable=False, index=True)
+
+    user_name: Mapped[Optional[str]] = mapped_column(String(100))
+    user_contact: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+
+    birth_date: Mapped[Optional[date]] = mapped_column(Date)
+    birth_time: Mapped[Optional[str]] = mapped_column(String(20))
+    birth_prefecture: Mapped[Optional[str]] = mapped_column(String(50))
+    birth_place: Mapped[Optional[str]] = mapped_column(String(255))
+    birth_lat: Mapped[Optional[float]] = mapped_column(Float)
+    birth_lon: Mapped[Optional[float]] = mapped_column(Float)
+    location_source: Mapped[Optional[str]] = mapped_column(String(50))
+    location_note: Mapped[Optional[str]] = mapped_column(String(255))
+    gender: Mapped[Optional[str]] = mapped_column(String(20))
+    consultation_text: Mapped[Optional[str]] = mapped_column(Text)
+
+    generate_ai: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    yaml_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    draft_status: Mapped[str] = mapped_column(String(30), default="input_pending", nullable=False, index=True)
+    yaml_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    ai_status: Mapped[str] = mapped_column(String(20), default="not_requested", nullable=False, index=True)
+
+    latest_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("reports.id"))
+    promoted_order_id: Mapped[Optional[int]] = mapped_column(ForeignKey("orders.id"), index=True)
+
+    staff_memo: Mapped[Optional[str]] = mapped_column(Text)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+
+    menu: Mapped[Optional[Menu]] = relationship()
+    latest_report: Mapped[Optional["Report"]] = relationship(foreign_keys=[latest_report_id])
+    reports: Mapped[list["Report"]] = relationship(back_populates="draft", foreign_keys="Report.draft_id")
+
+
 class Order(TimestampMixin, Base):
     __tablename__ = "orders"
 
@@ -146,6 +195,7 @@ class Order(TimestampMixin, Base):
     menu_id: Mapped[int] = mapped_column(ForeignKey("menus.id"), nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending_payment", nullable=False, index=True)
+    input_origin: Mapped[Optional[str]] = mapped_column(String(30), index=True)
     result_payload_json: Mapped[Optional[str]] = mapped_column(Text)
     result_html: Mapped[Optional[str]] = mapped_column(Text)
     free_result_text: Mapped[Optional[str]] = mapped_column(Text)
@@ -155,6 +205,7 @@ class Order(TimestampMixin, Base):
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    primary_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("reports.id"))
 
     customer: Mapped[Optional[Customer]] = relationship(back_populates="orders")
     source_free_order: Mapped[Optional[Order]] = relationship(
@@ -177,6 +228,8 @@ class Order(TimestampMixin, Base):
     yaml_logs: Mapped[list[YamlLog]] = relationship(back_populates="order", cascade="all, delete-orphan")
     input_snapshots: Mapped[list[OrderInputSnapshot]] = relationship(back_populates="order", cascade="all, delete-orphan")
     result_views: Mapped[list[OrderResultView]] = relationship(back_populates="order", cascade="all, delete-orphan")
+    primary_report: Mapped[Optional["Report"]] = relationship(foreign_keys=[primary_report_id])
+    reports: Mapped[list["Report"]] = relationship(back_populates="order", foreign_keys="Report.order_id")
 
 
 class OrderDelivery(TimestampMixin, Base):
@@ -254,6 +307,34 @@ class OrderInputSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     order: Mapped[Order] = relationship(back_populates="input_snapshots")
+
+
+
+
+class Report(TimestampMixin, Base):
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    draft_id: Mapped[Optional[int]] = mapped_column(ForeignKey("intake_drafts.id"), index=True)
+    order_id: Mapped[Optional[int]] = mapped_column(ForeignKey("orders.id"), index=True)
+
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    yaml_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    yaml_payload: Mapped[Optional[str]] = mapped_column(Text)
+
+    ai_status: Mapped[str] = mapped_column(String(20), default="not_requested", nullable=False, index=True)
+    sections_json: Mapped[Optional[str]] = mapped_column(Text)
+    result_payload_json: Mapped[Optional[str]] = mapped_column(Text)
+    result_html: Mapped[Optional[str]] = mapped_column(Text)
+
+    model: Mapped[Optional[str]] = mapped_column(String(100))
+    prompt_version: Mapped[Optional[str]] = mapped_column(String(50))
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    draft: Mapped[Optional["IntakeDraft"]] = relationship(back_populates="reports", foreign_keys=[draft_id])
+    order: Mapped[Optional[Order]] = relationship(back_populates="reports", foreign_keys=[order_id])
 
 
 class YamlLog(TimestampMixin, Base):
