@@ -22,6 +22,7 @@ def fix_punctuation(text: str) -> str:
         return ''
 
     text = str(text).translate(_FULLWIDTH_PUNCT_MAP)
+    text = re.sub(r'\*\*', '', text)
     patterns = [
         (r'([をにもへや])、', r'\1'),
         (r'(こと|もの|ところ|ため|はず|わけ|よう)が、', r'\1が'),

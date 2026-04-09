@@ -758,13 +758,7 @@
 
       <!-- ─── TAB 1: 鑑定結果 ─────────────────────────────────────── -->
       <div id="pg_result" class="pg-panel active" role="tabpanel">
-        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-          <h2 style="margin:0;">占い結果（AI）</h2>
-          <button type="button" onclick="copyYamlQuick()" id="yamlQuickBtn"
-            style="font-size:12px; padding:4px 10px; background:#f0ebe4; border:1px solid #ccc; border-radius:4px; cursor:pointer; color:#555;">
-            YAMLコピー
-          </button>
-        </div>
+        <h2>占い結果（AI）</h2>
         <div class="report" id="aiReport">{{ ai_text | safe }}</div>
         <div class="btn-row" style="position:relative; z-index:1;">
           <button type="button" onclick="copyAiResult()">コピー</button>
@@ -975,14 +969,6 @@
     var counter = byId('aiCount');
     if(counter) counter.textContent = ok ? text.length.toLocaleString()+'文字をコピー' : 'コピーに失敗しました';
     alert(ok?'コピーしました':'コピーに失敗しました');
-  }
-  async function copyYamlQuick(){
-    // mini yaml（デフォルト）をワンクリックでコピー
-    var yaml = ((handoff['mini']||{})['yaml']||'').trim();
-    if(!yaml){ alert('YAMLデータが見つかりません'); return; }
-    var ok = await writeClipboard(yaml);
-    var btn = byId('yamlQuickBtn');
-    if(btn){ btn.textContent = ok ? 'コピー完了！' : 'コピー失敗'; setTimeout(function(){ btn.textContent='YAMLコピー'; }, 2000); }
   }
   async function copyWestern(){
     var el = byId('westernText');

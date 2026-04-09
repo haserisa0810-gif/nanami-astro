@@ -90,6 +90,7 @@ def analyze(
     message: str | None = Form(None),
     observations_text: str | None = Form(None),
     output_style: str = Form("normal"),
+    reading_style: str = Form("general"),
     detail_level: str = Form("standard"),
     ai_model: str | None = Form(None),
     generate_ai: str | None = Form(None),
@@ -182,6 +183,7 @@ def analyze(
     )
     base_meta["generate_ai"] = generate_ai_flag
     base_meta["yaml_only"] = yaml_only_flag
+    base_meta["style"] = reading_style
 
     inputs_view = _build_inputs_view(
         analysis_type=analysis_type,

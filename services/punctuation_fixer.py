@@ -27,9 +27,9 @@ def fix_punctuation(text: str) -> str:
     text = text.replace('，', '、')
     text = text.replace('｡', '。')
     text = text.replace('､', '、')
+    text = text.replace("**", "")
 
     return text
-
 
 # ── テスト ────────────────────────────────────────────────────
 if __name__ == '__main__':

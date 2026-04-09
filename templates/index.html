@@ -697,7 +697,8 @@
         </div>
 
         <div class="hint">
-          出生地は地図で選ぶか、都道府県を選択してください。
+          出生地は地図で選ぶか、都道府県を選択してください。<br>
+          県を選ぶと緯度経度入力はロック（グレーアウト）します。逆に緯度経度を入れるなら、県は未選択のままでOK。
         </div>
         <input type="hidden" name="birth_place" id="birth_place">
 
@@ -748,46 +749,22 @@
         </div>
 
 
-        <div class="row">
-          <label>出力スタイル <span class="pill">Webは長め / LINEは短め</span></label>
-          <select name="output_style" id="output_style">
-            <option value="normal">通常鑑定（Web表示）</option>
-            <option value="line">LINE返信（貼り付け用）</option>
-            <option value="instagram">Instagram（見出し＋読みやすさ）</option>
-            <option value="points">要点まとめ（箇条書き）</option>
-          </select>
-        </div>
+        <input type="hidden" name="output_style" id="output_style" value="normal">
+
+        <input type="hidden" name="detail_level" id="detail_level" value="standard">
 
         <div class="row">
-          <label>文章量</label>
-          <select name="detail_level" id="detail_level">
-            <option value="short">軽量（約1200〜1800字）</option>
-            <option value="standard" selected>標準（約1800〜2800字）</option>
-            <option value="detailed">長め（約2800〜4200字 / 分割生成）</option>
-          </select>
-          <div class="hint" id="detail_level_hint" style="margin-top:8px;">標準・長めは安定化のため分割生成します。通常より少し時間がかかります。</div>
-        </div>
-
-        <div class="row">
-          <label>AIモデル <span class="pill">通常はFlash / 試験はLite</span></label>
-          <select name="ai_model" id="ai_model">
-            <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash（通常運用）</option>
-            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite（試験用）</option>
-            <option value="gemini-2.5-pro">Gemini 2.5 Pro（高品質・高コスト）</option>
-          </select>
-          <div class="hint" style="margin-top:8px;">Flash は本番向け、Flash-Lite は試験向けです。Pro は必要なときだけ使ってください。</div>
-        </div>
-
-        <div class="row">
-          <label>相談テーマ</label>
-          <select name="theme">
-            <option value="overall">全体</option>
-            <option value="love">恋愛</option>
-            <option value="work">仕事</option>
+          <label>鑑定スタイル</label>
+          <select name="reading_style" id="reading_style">
+            <option value="general" selected>総合鑑定</option>
+            <option value="love">恋愛・パートナーシップ</option>
+            <option value="work">仕事・キャリア</option>
             <option value="relationship">人間関係</option>
-            <option value="timing">時期</option>
+            <option value="timing">今の時期・流れ</option>
           </select>
         </div>
+
+        <input type="hidden" name="theme" id="theme" value="overall">
 
         <div class="row">
           <label>相談内容（任意）</label>
@@ -808,9 +785,19 @@
           </div>
         </div>
 
-        <div class="hint">
-          県を選ぶと、緯度経度入力はロック（グレーアウト）します。<br>
-          逆に緯度経度を入れるなら、県は未選択のままでOK。
+        <div class="row" id="ai_provider_row">
+          <label>AIプロバイダー</label>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <select name="ai_provider" id="ai_provider" style="width:auto;">
+              <option value="claude" selected>Claude</option>
+              <option value="gemini">Gemini</option>
+            </select>
+            <select name="ai_model" id="ai_model" style="width:auto;">
+              <option value="haiku" selected>Haiku（速い）</option>
+              <option value="sonnet">Sonnet（高品質）</option>
+            </select>
+            <span class="hint" id="ai_model_hint" style="margin:0;">Haiku=高速, Sonnet=高品質</span>
+          </div>
         </div>
 
         <!-- 相性（相手）入力欄 -->
@@ -900,7 +887,7 @@
           <label>追加生成</label>
           <div style="display:grid; gap:10px;">
             <label class="checkbox-line"><input type="checkbox" name="include_reader" value="true" style="width:auto;" /> 占い師向けメモを生成する</label>
-            <label class="checkbox-line"><input type="checkbox" name="include_transit" value="true" style="width:auto;" /> トランジットを鑑定に含める（今日の天体×出生図）</label>
+            <label class="checkbox-line"><input type="checkbox" name="include_transit" id="include_transit" value="true" checked style="width:auto;" /> トランジットを鑑定に含める（今日の天体×出生図）</label>
             <div class="hint" style="margin:4px 0 0;">通常はOFF推奨です。待ち時間とGemini利用量を抑えられます。</div>
           </div>
         </div>
@@ -1493,6 +1480,75 @@
   if (detailLevelSelect) {
     detailLevelSelect.addEventListener("change", syncDetailHint);
     syncDetailHint();
+  }
+
+  // AIプロバイダー切り替え
+  const aiProviderSelect = document.getElementById("ai_provider");
+  const readingStyleSelect = document.getElementById("reading_style");
+  const aiModelSelect = document.getElementById("ai_model");
+  const aiModelHint = document.getElementById("ai_model_hint");
+  const aiProviderRow = document.getElementById("ai_provider_row");
+  const generateAiCheckbox = document.getElementById("generate_ai");
+
+  const MODEL_OPTIONS = {
+    claude: [
+      { value: "haiku", label: "Haiku（速い・安い）" },
+      { value: "sonnet", label: "Sonnet（高品質）" },
+    ],
+    gemini: [
+      { value: "flash-lite", label: "Flash Lite（速い・安い）" },
+      { value: "flash",      label: "Flash（標準）" },
+      { value: "pro",        label: "Pro（高品質）" },
+    ],
+  };
+  const MODEL_HINTS = {
+    claude: "Claude: Haiku=高速, Sonnet=高品質",
+    gemini: "Gemini: Flash Lite=高速, Flash=標準, Pro=高品質",
+  };
+
+  function syncAiProviderUI() {
+    if (!aiProviderSelect || !aiModelSelect) return;
+    const provider = aiProviderSelect.value;
+    const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.claude;
+    aiModelSelect.innerHTML = options.map((o, i) =>
+      `<option value="${o.value}"${i === 0 ? " selected" : ""}>${o.label}</option>`
+    ).join("");
+    if (aiModelHint) aiModelHint.textContent = MODEL_HINTS[provider] || "";
+  }
+
+  // generate_ai が OFF のときはプロバイダー選択を薄くする（送信は通す）
+  function syncAiProviderVisibility() {
+    if (!aiProviderRow || !generateAiCheckbox) return;
+    aiProviderRow.style.opacity = generateAiCheckbox.checked ? "1" : "0.4";
+  }
+
+  if (aiProviderSelect) {
+    aiProviderSelect.addEventListener("change", syncAiProviderUI);
+    syncAiProviderUI();
+  }
+
+  // 鑑定スタイル → theme を自動マッピング
+  const STYLE_THEME_MAP = {
+    "general":      "overall",
+    "love":         "love",
+    "work":         "work",
+    "relationship": "relationship",
+    "timing":       "timing",
+  };
+  const themeInput = document.getElementById("theme");
+
+  function syncThemeFromStyle() {
+    if (!readingStyleSelect || !themeInput) return;
+    themeInput.value = STYLE_THEME_MAP[readingStyleSelect.value] || "overall";
+  }
+
+  if (readingStyleSelect) {
+    readingStyleSelect.addEventListener("change", syncThemeFromStyle);
+    syncThemeFromStyle();
+  }
+  if (generateAiCheckbox) {
+    generateAiCheckbox.addEventListener("change", syncAiProviderVisibility);
+    syncAiProviderVisibility();
   }
 </script>
 </body>

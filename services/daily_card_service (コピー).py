@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import random
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
-from sqlalchemy import desc, select
+from sqlalchemy import select
 
 from db import SessionLocal
 from models import DailyCardDraw
@@ -26,80 +24,15 @@ def load_cards() -> list[dict[str, Any]]:
     return data
 
 
-def _card_sort_key(card: dict[str, Any]) -> str:
-    return str(card.get("id") or card.get("image") or card.get("title") or "")
-
-
-def _card_id(card: dict[str, Any]) -> str:
-    return str(card.get("id") or "")
-
-
-def _stable_seed(line_user_id: str, target_date: date) -> int:
-    # 環境差や Python の hash() 依存を避ける
-    # 任意の salt を足せるようにしておくと、将来の再偏り対策にもなる
-    salt = (os.getenv("DAILY_CARD_SEED_SALT") or "daily-card-v2").strip()
-    key = f"{salt}:{line_user_id}:{target_date.isoformat()}"
-    digest = hashlib.sha256(key.encode("utf-8")).digest()
-    return int.from_bytes(digest, "big")
-
-
-def _get_recent_draw_card_ids(
-    line_user_id: str,
-    *,
-    target_date: date,
-    lookback_days: int = 3,
-) -> list[str]:
-    """
-    直近のカードIDを新しい順で返す。
-    当日は除外し、target_date より前だけを見る。
-    """
-    with SessionLocal() as db:
-        rows = db.scalars(
-            select(DailyCardDraw)
-            .where(
-                DailyCardDraw.line_user_id == line_user_id,
-                DailyCardDraw.draw_date < target_date,
-            )
-            .order_by(desc(DailyCardDraw.draw_date))
-            .limit(lookback_days)
-        ).all()
-    return [str(row.card_id or "") for row in rows if row.card_id]
-
-
 def select_card_for_user(line_user_id: str, target_date: date | None = None) -> dict[str, Any]:
-    """
-    そのユーザーに対して、その日だけは固定。
-    ただし直近数日の重複を避け、体感上の偏りを減らす。
-    """
-    target_date = target_date or date.today()
-
     cards = load_cards()
     if not cards:
         raise ValueError("daily cards are empty")
-
-    # JSON順依存を減らす
-    cards = sorted(cards, key=_card_sort_key)
-
-    # 直近数日の重複を避ける
-    recent_card_ids = set(
-        _get_recent_draw_card_ids(
-            line_user_id,
-            target_date=target_date,
-            lookback_days=3,
-        )
-    )
-
-    eligible_cards = [card for card in cards if _card_id(card) not in recent_card_ids]
-
-    # 全部 recent に引っかかったらフォールバック
-    if not eligible_cards:
-        eligible_cards = cards
-
-    rng = random.Random(_stable_seed(line_user_id, target_date))
-    shuffled = eligible_cards[:]
-    rng.shuffle(shuffled)
-
-    return shuffled[0]
+    target_date = target_date or date.today()
+    key = f"{line_user_id}:{target_date.isoformat()}"
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    index = int(digest[:8], 16) % len(cards)
+    return cards[index]
 
 
 async def fetch_line_identity(access_token: str) -> dict[str, Any]:
@@ -125,6 +58,7 @@ async def fetch_line_identity(access_token: str) -> dict[str, Any]:
     }
 
 
+
 def get_today_draw(line_user_id: str, target_date: date | None = None) -> DailyCardDraw | None:
     target_date = target_date or date.today()
     with SessionLocal() as db:
@@ -136,13 +70,8 @@ def get_today_draw(line_user_id: str, target_date: date | None = None) -> DailyC
         )
 
 
-def save_today_draw(
-    *,
-    line_user_id: str,
-    card_id: str,
-    display_name: str | None = None,
-    target_date: date | None = None,
-) -> DailyCardDraw:
+
+def save_today_draw(*, line_user_id: str, card_id: str, display_name: str | None = None, target_date: date | None = None) -> DailyCardDraw:
     target_date = target_date or date.today()
     now = datetime.utcnow()
     with SessionLocal() as db:
@@ -168,6 +97,7 @@ def save_today_draw(
         db.commit()
         db.refresh(row)
         return row
+
 
 
 def build_card_payload(card: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,35 @@
 {% extends "platform_base.html" %}
 {% set title = "今日の空気ジェネレーター" %}
 {% block content %}
+
+<style>
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stats {
+    grid-template-columns: 1fr !important;
+  }
+
+  .topnav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  textarea {
+    min-height: 120px;
+  }
+
+  #regionalHouseList .stat,
+  #strongAspectList .stat {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+</style>
+
 <div class="topnav">
   <a class="btn secondary" href="/dashboard">管理画面</a>
   <a class="btn secondary" href="/staff/orders">案件一覧</a>
@@ -89,10 +118,47 @@
       <ul id="avoidList"></ul>
     </div>
     <div>
-      <h3>SNS向け一言</h3>
-      <textarea id="socialPost" readonly></textarea>
+      <h3>占星術の根拠メモ</h3>
+      <ul id="basisList"></ul>
     </div>
   </div>
+</div>
+
+<div id="snsCard" class="card" style="display:none;">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2>SNS向け一言</h2>
+      <div class="muted">読み手のレベルに合わせて使い分けしやすいように分けています。</div>
+      <div id="regionalSnsLine" class="muted" style="margin-top:8px;"></div>
+    </div>
+    <span class="pill">SNS</span>
+  </div>
+
+  <div class="grid" style="margin-top:18px;">
+    <div class="stat">
+      <div class="muted">やさしめ</div>
+      <textarea id="socialLight" readonly></textarea>
+    </div>
+    <div class="stat">
+      <div class="muted">根拠つき標準</div>
+      <textarea id="socialStandard" readonly></textarea>
+    </div>
+    <div class="stat">
+      <div class="muted">占い好き向け</div>
+      <textarea id="socialPro" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<div id="aspectCard" class="card" style="display:none;">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2>強く効いているアスペクト</h2>
+      <div class="muted">orbが狭いものを優先して表示します。</div>
+    </div>
+    <span class="pill">アスペクト</span>
+  </div>
+  <div id="strongAspectList" class="grid" style="margin-top:18px;"></div>
 </div>
 
 <div id="typeToolCard" class="card" style="display:none;">
@@ -128,8 +194,25 @@
   <div id="typeResultList" class="grid" style="margin-top:18px;"></div>
 </div>
 
+
+<div id="regionalCard" class="card" style="display:none;">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2>地域別ハウス（正午基準）</h2>
+      <div class="muted">東日本は東京、西日本は福岡で、同日の正午基準で見ています。</div>
+    </div>
+    <span class="pill">地域差</span>
+  </div>
+  <div id="regionalHouseList" class="grid" style="margin-top:18px;"></div>
+</div>
+
 <div id="transitCard" class="card" style="display:none;">
-  <h2>元になった全体トランジット</h2>
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <div>
+      <h2>元になった全体トランジット</h2>
+      <div id="transitMeta" class="muted"></div>
+    </div>
+  </div>
   <div class="grid">
     <div>
       <h3>天体配置</h3>
@@ -163,6 +246,81 @@ function renderList(id, items) {
     li.textContent = item;
     el.appendChild(li);
   });
+}
+
+function renderTransitSource(data) {
+  const transit = data?.transit_source || {};
+  const transitDate = transit.transit_date || data?.date || "";
+  byId("transitMeta").textContent = transitDate ? `${transitDate} の全体トランジット` : "";
+  byId("planetDump").textContent = (transit.planet_summary || "").trim() || "（データなし）";
+  byId("aspectDump").textContent = (transit.aspect_summary || "").trim() || "（データなし）";
+}
+
+function renderStrongAspects(items) {
+  const wrap = byId("strongAspectList");
+  wrap.innerHTML = "";
+  (items || []).forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "stat";
+    card.innerHTML = `
+      <div><strong>${escapeHtml(item.planets || "")}</strong></div>
+      <div style="margin-top:8px;">${escapeHtml(item.aspect || "")} / orb ${escapeHtml(item.orb || "")}°</div>
+      <div class="muted" style="margin-top:8px;">${escapeHtml(item.meaning || "")}</div>
+    `;
+    wrap.appendChild(card);
+  });
+  byId("aspectCard").style.display = (items || []).length ? "block" : "none";
+}
+
+function renderSocialLevels(data) {
+  const levels = data?.social_levels || {};
+  byId("socialLight").value = levels.light || data.social_post || "";
+  byId("socialStandard").value = levels.standard || data.social_post || "";
+  byId("socialPro").value = levels.pro || data.social_post || "";
+}
+
+
+function renderRegionalHouses(items) {
+  const wrap = byId("regionalHouseList");
+  wrap.innerHTML = "";
+  (items || []).forEach((item) => {
+    const focusPlanets = (item.focus_planets || []).map(
+      (p) => `<li>${escapeHtml(p.planet || "")}：${escapeHtml(p.house || "")}ハウス（${escapeHtml(p.theme || "")}）</li>`
+    ).join("");
+
+    const houseRows = (item.houses || []).map(
+      (h) => `<div class="muted" style="margin-top:4px;">${escapeHtml(h.house || "")}H：${escapeHtml(h.sign || "")} ${escapeHtml(h.degree || "")}°</div>`
+    ).join("");
+
+    const card = document.createElement("div");
+    card.className = "stat";
+    card.innerHTML = `
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <h3 style="margin:0;">${escapeHtml(item.label || "")}</h3>
+          <div class="muted" style="margin-top:6px;">${escapeHtml(item.city || "")}</div>
+        </div>
+        <span class="pill">${escapeHtml(item.city || "")}</span>
+      </div>
+      <div style="margin-top:14px;"><strong>ASC</strong><div style="margin-top:6px;">${escapeHtml(item.asc || "—")}</div></div>
+      <div style="margin-top:14px;"><strong>MC</strong><div style="margin-top:6px;">${escapeHtml(item.mc || "—")}</div></div>
+      <div style="margin-top:14px;"><strong>地域の出方</strong><div style="margin-top:6px;">${escapeHtml(item.focus_summary || "")}</div></div>
+      <div style="margin-top:14px;"><strong>注目天体の入り先</strong><ul>${focusPlanets || "<li>（データなし）</li>"}</ul></div>
+      <details style="margin-top:14px;"><summary><strong>ハウス一覧</strong></summary><div style="margin-top:8px;">${houseRows || '<div class="muted">（データなし）</div>'}</div></details>
+    `;
+    wrap.appendChild(card);
+  });
+
+  byId("regionalCard").style.display = (items || []).length ? "block" : "none";
+}
+
+
+function renderRegionalSnsLine(data) {
+  const text = (data?.regional_sns_line || "").trim();
+  const el = byId("regionalSnsLine");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "block" : "none";
 }
 
 function renderTypeItems(items) {
@@ -212,30 +370,25 @@ async function generateTheme() {
 
     latestTheme = data;
     byId("resultCard").style.display = "block";
+    byId("snsCard").style.display = "block";
     byId("typeToolCard").style.display = "block";
     byId("transitCard").style.display = "block";
+
     byId("resultMeta").textContent = `${data.date || ""} / ${data.period || ""} / ${data.axis || ""}`;
     byId("summaryText").textContent = data.summary || "";
     byId("typeAxisText").textContent = data.type_translation_axis || "";
-    byId("socialPost").value = data.social_post || "";
 
     renderList("coreThemes", data.core_themes);
     renderList("pushList", data.push);
     renderList("cautionList", data.caution);
     renderList("actionList", data.recommended_actions);
     renderList("avoidList", data.avoid_actions);
-
-    const planets = (data.source_transit?.today_planets || []).map(
-      (p) => `- ${p.name}: ${p.sign} ${p.degree}°`
-    ).join("\n");
-    byId("planetDump").textContent = planets || "（データなし）";
-    byId("planetDump").textContent = planets || "（データなし）";
-
-    const aspects = (data.source_transit?.aspects || []).map(
-      (a) => `- ${a.planet_a} ${a.aspect} ${a.planet_b} / orb ${a.orb}°`
-    ).join("\n");
-    byId("aspectDump").textContent = aspects || "（データなし）";
-    byId("aspectDump").textContent = aspects || "（データなし）";
+    renderList("basisList", data.astro_basis);
+    renderSocialLevels(data);
+    renderRegionalSnsLine(data);
+    renderStrongAspects(data.strong_aspects || []);
+    renderRegionalHouses(data.regional_houses || []);
+    renderTransitSource(data);
 
     byId("status").textContent = "生成完了";
   } catch (err) {

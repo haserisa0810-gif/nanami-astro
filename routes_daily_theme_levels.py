@@ -70,42 +70,6 @@ AXIS_LABEL = {
 }
 
 
-REGION_POINTS = [
-    {"key": "east", "label": "東日本", "city": "東京", "lat": 35.6762, "lng": 139.6503},
-    {"key": "west", "label": "西日本", "city": "福岡", "lat": 33.5902, "lng": 130.4017},
-]
-
-HOUSE_THEME_LABELS = {
-    1: "自分の出し方",
-    2: "お金・価値観",
-    3: "連絡・学び",
-    4: "居場所・土台",
-    5: "創造・恋愛",
-    6: "仕事・整えること",
-    7: "対人・パートナー",
-    8: "深い共有・境界線",
-    9: "遠くを見ること",
-    10: "仕事・社会面",
-    11: "仲間・広がり",
-    12: "休息・内面整理",
-}
-
-SIGN_JA_SHORT = {
-    "Ari": "牡羊座",
-    "Tau": "牡牛座",
-    "Gem": "双子座",
-    "Can": "蟹座",
-    "Leo": "獅子座",
-    "Vir": "乙女座",
-    "Lib": "天秤座",
-    "Sco": "蠍座",
-    "Sag": "射手座",
-    "Cap": "山羊座",
-    "Aqu": "水瓶座",
-    "Pis": "魚座",
-}
-
-
 def _calc_helpers():
     from services.transit_calc import calc_global_transit_snapshot
     return calc_global_transit_snapshot
@@ -446,158 +410,6 @@ def _build_social_levels(*, target_date: str, summary: str, axis: str, astro_bas
         "standard": _truncate_text(_pick_by_date(standard_candidates, target_date + "std"), 170),
         "pro": _truncate_text(_pick_by_date(pro_candidates, target_date + "pro"), 190),
     }
-
-
-def _jst_noon_utc(target_date_str: str) -> datetime:
-    from datetime import timedelta
-    jst = timezone(timedelta(hours=9))
-    local_dt = datetime.strptime(target_date_str, "%Y-%m-%d").replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=jst)
-    return local_dt.astimezone(timezone.utc)
-
-
-def _format_lon_as_sign_degree(lon: float | None) -> str:
-    if lon is None:
-        return "—"
-    try:
-        from services.western_calc import sign_of
-        sign_short, deg = sign_of(float(lon))
-        sign = SIGN_JA_SHORT.get(sign_short, sign_short)
-        return f"{sign} {float(deg):.2f}°"
-    except Exception:
-        return "—"
-
-
-def _house_focus_summary(axis: str, planet_house_map: dict[str, int | None]) -> str:
-    axis_value = str(axis or "").strip().lower()
-    focus_candidates = []
-    if axis_value == "love":
-        focus_candidates = [("Venus", "恋愛"), ("Moon", "感情"), ("Mars", "温度差")]
-    elif axis_value == "work":
-        focus_candidates = [("Mars", "動き方"), ("Mercury", "判断"), ("Saturn", "責任")]
-    elif axis_value == "relationship":
-        focus_candidates = [("Venus", "対人"), ("Moon", "反応"), ("Mercury", "言葉")]
-    else:
-        focus_candidates = [("Moon", "感情"), ("Mercury", "言葉"), ("Mars", "行動")]
-
-    bits = []
-    for planet_name, _ in focus_candidates:
-        house_no = planet_house_map.get(planet_name)
-        if isinstance(house_no, int):
-            theme = HOUSE_THEME_LABELS.get(house_no, f"{house_no}ハウス")
-            bits.append(theme)
-    if not bits:
-        return "今日は地域差が大きく出にくい配置です。"
-
-    seen = []
-    for b in bits:
-        if b not in seen:
-            seen.append(b)
-    joined = " / ".join(seen[:2])
-    return f"{joined}のテーマとして出やすい流れ。"
-
-
-
-def _build_regional_sns_line(regional_houses: list[dict[str, Any]]) -> str:
-    if not regional_houses or len(regional_houses) < 2:
-        return ""
-    east = regional_houses[0]
-    west = regional_houses[1]
-    east_text = str(east.get("focus_summary") or "").strip()
-    west_text = str(west.get("focus_summary") or "").strip()
-
-    def _shorten(text: str) -> str:
-        return (
-            text.replace("のテーマとして出やすい流れ。", "")
-            .replace("今日は地域差が大きく出にくい配置です。", "大きな地域差は出にくい")
-            .strip()
-        )
-
-    east_short = _shorten(east_text)
-    west_short = _shorten(west_text)
-
-    if east_short == west_short:
-        return "地域差で見ると、東日本と西日本で大きな出方の違いは出にくい日です。"
-
-    return f"地域差で見ると、東日本は{east_short}、西日本は{west_short}として出やすい日です。"
-
-
-def _build_regional_houses(target_date_str: str, axis: str) -> list[dict[str, Any]]:
-    try:
-        import swisseph as swe
-        from services.western_calc import PLANETS, configure_ephemeris, sign_of, house_of
-    except Exception:
-        return []
-
-    utc_dt = _jst_noon_utc(target_date_str)
-    ut = utc_dt.hour + utc_dt.minute / 60 + utc_dt.second / 3600
-    jd = swe.julday(utc_dt.year, utc_dt.month, utc_dt.day, ut)
-
-    engine_flag = configure_ephemeris()
-    flags = engine_flag | swe.FLG_SPEED
-    body_ids = {name: body_id for name, body_id in PLANETS}
-
-    output: list[dict[str, Any]] = []
-    for region in REGION_POINTS:
-        try:
-            cusps_raw, ascmc = swe.houses(jd, region["lat"], region["lng"], b"P")
-            cusps = list(cusps_raw)[:12]
-            asc = float(ascmc[0]) if ascmc else None
-            mc = float(ascmc[1]) if ascmc else None
-        except Exception:
-            continue
-
-        houses = []
-        for idx, cusp in enumerate(cusps, start=1):
-            try:
-                sign_short, deg = sign_of(float(cusp))
-                sign = SIGN_JA_SHORT.get(sign_short, sign_short)
-                houses.append({
-                    "house": idx,
-                    "sign": sign,
-                    "degree": round(float(deg), 2),
-                    "label": HOUSE_THEME_LABELS.get(idx, f"{idx}ハウス"),
-                })
-            except Exception:
-                houses.append({
-                    "house": idx,
-                    "sign": "",
-                    "degree": 0.0,
-                    "label": HOUSE_THEME_LABELS.get(idx, f"{idx}ハウス"),
-                })
-
-        planet_house_map: dict[str, int | None] = {}
-        focus_planets = ["Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
-        focus_items = []
-        for planet_name in focus_planets:
-            body_id = body_ids.get(planet_name)
-            if body_id is None:
-                continue
-            try:
-                xx, _ = swe.calc_ut(jd, body_id, flags)
-                lon = float(xx[0])
-                house_no = house_of(lon, cusps)
-                planet_house_map[planet_name] = house_no
-                if house_no is not None:
-                    focus_items.append({
-                        "planet": PLANET_JA.get(planet_name, planet_name),
-                        "house": int(house_no),
-                        "theme": HOUSE_THEME_LABELS.get(int(house_no), f"{house_no}ハウス"),
-                    })
-            except Exception:
-                planet_house_map[planet_name] = None
-
-        output.append({
-            "key": region["key"],
-            "label": region["label"],
-            "city": region["city"],
-            "asc": _format_lon_as_sign_degree(asc),
-            "mc": _format_lon_as_sign_degree(mc),
-            "focus_summary": _house_focus_summary(axis, planet_house_map),
-            "focus_planets": focus_items[:4],
-            "houses": houses,
-        })
-
-    return output
 
 
 def _deterministic_theme_from_snapshot(
@@ -1003,23 +815,12 @@ async def daily_theme_generate(request: Request):
             },
         )
 
-        regional_houses = _build_regional_houses(transit_date, axis)
-
         fallback = _deterministic_theme_from_snapshot(
             snapshot=snapshot,
             target_date=transit_date,
             period=period,
             axis=axis,
         )
-        regional_sns_line = _build_regional_sns_line(regional_houses)
-        if regional_sns_line:
-            fallback_social_levels = dict(fallback.get("social_levels") or {})
-            for key in ("light", "standard", "pro"):
-                base_line = str(fallback_social_levels.get(key) or "").strip()
-                if base_line and regional_sns_line not in base_line:
-                    fallback_social_levels[key] = f"{base_line} {regional_sns_line}"
-            fallback["social_levels"] = fallback_social_levels
-            fallback["social_post"] = fallback_social_levels.get("standard") or fallback.get("social_post")
 
         raw = _call_llm_json(prompt, max_output_tokens=1100)
         parsed = _parse_jsonish_response(raw, fallback) if raw else fallback
@@ -1043,17 +844,6 @@ async def daily_theme_generate(request: Request):
             "planet_summary": planet_summary,
             "aspect_summary": aspect_summary,
         }
-        result_payload["regional_houses"] = regional_houses
-        if regional_sns_line:
-            result_payload["regional_sns_line"] = regional_sns_line
-            social_levels = result_payload.get("social_levels") or {}
-            if isinstance(social_levels, dict):
-                for key in ("light", "standard", "pro"):
-                    text = str(social_levels.get(key) or "").strip()
-                    if text and regional_sns_line not in text:
-                        social_levels[key] = f"{text} {regional_sns_line}"
-                result_payload["social_levels"] = social_levels
-                result_payload["social_post"] = social_levels.get("standard") or result_payload.get("social_post")
         return JSONResponse(content=result_payload)
 
     except HTTPException:
