@@ -9,8 +9,6 @@ import imaplib
 import json
 import os
 import re
-import smtplib
-from email.mime.text import MIMEText
 from typing import Any
 from urllib.parse import urlencode
 
@@ -24,8 +22,10 @@ from db import get_db
 from models import Menu, Order, OrderInputSnapshot
 from services.draft_service import create_or_update_draft_from_order_inputs, promote_draft_to_order
 from services.free_reading_service import FREE_RESULT_FOOTER, ensure_unique_free_reading_code, process_free_reading
+from services.notification_service import notify_new_order, send_mail
 from services.order_service import create_order, get_or_create_customer
 from services.location import PREFECTURE_OPTIONS, resolve_birth_location
+
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -56,8 +56,20 @@ CREATE TABLE IF NOT EXISTS stores_payments (
 """
 STORES_PAYMENT_INDEX_SQL = "CREATE INDEX IF NOT EXISTS ix_stores_payments_buyer_email ON stores_payments (buyer_email)"
 STORES_FROM_DEFAULT = "hello@stores.jp"
-STORES_OWNER_NOTICE_PATTERN = re.compile(r"アイテムが購入されました|初売上おめでとうございます", re.I)
+STORES_OWNER_NOTICE_PATTERN = re.compile(
+    r"アイテムが購入されました|注文がありました|初売上おめでとうございます",
+    re.I,
+)
 STORES_ORDER_NO_PATTERN = re.compile(r"^\d{10}$")
+STORES_SUBJECT_ORDER_NO_PATTERN = re.compile(
+    r"[（(]\s*(?:オーダー番号|注文番号)\s*[：:]\s*([0-9]{10})\s*[)）]"
+)
+STORES_PAID_HINT_PATTERN = re.compile(
+    r"アイテムが購入されました|ご注文ありがとうございました|購入完了|"
+    r"お支払いが完了|支払い完了|入金完了|PayPay|PayPay残高|クレジットカード|"
+    r"コンビニ決済|銀行振込",
+    re.I,
+)
 
 COURSE_SLUG_PRICE_MAP = {
     "light": 3000,
@@ -223,59 +235,117 @@ def _parse_mail_datetime(raw: str | None) -> datetime | None:
 def _parse_stores_mail(subject: str, body: str, message_id: str | None, received_at: datetime | None) -> dict[str, Any] | None:
     merged = f"{subject}\n{body}"
     lowered = merged.lower()
-    if "stores" not in lowered and "ストアーズ" not in merged and "オーダー番号" not in merged and "注文番号" not in merged:
+
+    if (
+        "stores" not in lowered
+        and "ストアーズ" not in merged
+        and "オーダー番号" not in merged
+        and "注文番号" not in merged
+        and "アイテムが購入されました" not in merged
+    ):
         return None
 
-    order_no = _normalize_order_no(_extract_first([
-        r"オーダー番号[：:]\s*([0-9A-Z\-]+)",
-        r"注文番号[：:]\s*([0-9A-Z\-]+)",
-        r"注文ID[：:]\s*([0-9A-Z\-]+)",
-        r"オーダー番号[：:\s]*([0-9A-Z\-]{6,})",
-    ], merged))
+    subject_order_no = None
+    subject_match = STORES_SUBJECT_ORDER_NO_PATTERN.search(subject or "")
+    if subject_match:
+        subject_order_no = subject_match.group(1).strip()
+
+    order_no = _normalize_order_no(
+        subject_order_no
+        or _extract_first(
+            [
+                r"オーダー番号[：:]\s*([0-9A-Z\-]+)",
+                r"注文番号[：:]\s*([0-9A-Z\-]+)",
+                r"注文ID[：:]\s*([0-9A-Z\-]+)",
+                r"オーダー番号[：:\s]*([0-9A-Z\-]{6,})",
+                r"[（(]\s*(?:オーダー番号|注文番号)\s*[：:]\s*([0-9A-Z\-]+)\s*[)）]",
+            ],
+            merged,
+        )
+    )
     if not order_no:
         return None
 
-    buyer_email = _normalize_email(_extract_first([
-        r"メールアドレス\s*[：:]\s*([^\n]+)",
-        r"購入者メールアドレス\s*[：:]\s*([^\n]+)",
-        r"連絡先\s*[：:]\s*([^\n]+)",
-    ], merged))
+    buyer_email = _normalize_email(
+        _extract_first(
+            [
+                r"メールアドレス\s*[：:]\s*([^\n]+)",
+                r"購入者メールアドレス\s*[：:]\s*([^\n]+)",
+                r"連絡先\s*[：:]\s*([^\n]+)",
+            ],
+            merged,
+        )
+    )
 
-    buyer_name = _extract_first([
-        r"(?:購入者名|お名前|氏名)\s*[：:]\s*([^\n]+)",
-    ], merged)
+    buyer_name = _extract_first(
+        [
+            r"(?:購入者名|お名前|氏名)\s*[：:]\s*([^\n]+)",
+        ],
+        merged,
+    )
     if buyer_name:
         buyer_name = re.sub(r"\s+", " ", buyer_name).strip()
 
-    item_name = _extract_first([
-        r"(?:商品名|購入商品|商品)\s*[：:]\s*([^\n]+)",
-        r"^([^\n\t]+)\t",
-    ], merged)
-    payment_method = _extract_first([
-        r"(?:支払い方法|決済方法)\s*[：:]\s*([^\n]+)",
-    ], merged)
+    item_name = _extract_first(
+        [
+            r"(?:商品名|購入商品|商品)\s*[：:]\s*([^\n]+)",
+            r"^([^\n\t]+)\t",
+            r"\n([^\n]+?鑑定[^\n]+)\n",
+        ],
+        merged,
+    )
+    if item_name:
+        item_name = re.sub(r"\s+", " ", item_name).strip()
+
+    payment_method = _extract_first(
+        [
+            r"(?:支払い方法|決済方法|購入方法)\s*[：:]\s*([^\n]+)",
+        ],
+        merged,
+    )
+    if payment_method:
+        payment_method = re.sub(r"\s+", " ", payment_method).strip()
+
     amount = _extract_amount(merged)
 
     is_owner_notice = bool(STORES_OWNER_NOTICE_PATTERN.search(merged))
+    has_paid_hint = bool(STORES_PAID_HINT_PATTERN.search(merged))
+
     mail_kind = "purchase_completed"
     payment_status = "ordered"
 
-    if "入金完了" in merged or "お支払いが完了" in merged or "支払い完了" in merged:
-        mail_kind = "payment_completed"
-        payment_status = "paid"
-    elif is_owner_notice or "購入完了" in merged or "注文を受け付けました" in merged or "注文がありました" in merged:
-        mail_kind = "owner_notice" if is_owner_notice else "purchase_completed"
-        payment_status = "paid" if is_owner_notice else "ordered"
-    elif "キャンセル" in merged:
+    if "キャンセル" in merged:
         mail_kind = "cancelled"
         payment_status = "cancelled"
+    elif "入金完了" in merged or "お支払いが完了" in merged or "支払い完了" in merged:
+        mail_kind = "payment_completed"
+        payment_status = "paid"
+    elif is_owner_notice:
+        mail_kind = "owner_notice"
+        payment_status = "paid"
+    elif "購入完了" in merged or "注文を受け付けました" in merged or "注文がありました" in merged:
+        mail_kind = "purchase_completed"
+        payment_status = "ordered"
+    elif has_paid_hint:
+        mail_kind = "purchase_completed"
+        payment_status = "paid"
 
-    ordered_at = _parse_mail_datetime(_extract_first([
-        r"(?:注文日時|ご注文日時|購入日時)\s*[：:]\s*([^\n]+)",
-    ], merged))
-    paid_at = _parse_mail_datetime(_extract_first([
-        r"(?:入金日時|支払日時|お支払い日時)\s*[：:]\s*([^\n]+)",
-    ], merged))
+    ordered_at = _parse_mail_datetime(
+        _extract_first(
+            [
+                r"(?:注文日時|ご注文日時|購入日時)\s*[：:]\s*([^\n]+)",
+            ],
+            merged,
+        )
+    )
+    paid_at = _parse_mail_datetime(
+        _extract_first(
+            [
+                r"(?:入金日時|支払日時|お支払い日時)\s*[：:]\s*([^\n]+)",
+            ],
+            merged,
+        )
+    )
 
     if payment_status == "paid" and paid_at is None:
         paid_at = received_at
@@ -397,65 +467,123 @@ def _upsert_stores_payment(db: Session, parsed: dict[str, Any]) -> None:
     })
 
 
-def sync_stores_order_emails(db: Session, *, limit: int = 30) -> dict[str, int]:
+def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]:
     _ensure_stores_payment_table(db)
 
     host = os.getenv("STORES_MAIL_IMAP_HOST", "imap.gmail.com")
     port = int(os.getenv("STORES_MAIL_IMAP_PORT", "993"))
-    username = os.getenv("STORES_MAIL_USERNAME")
-    password = os.getenv("STORES_MAIL_PASSWORD")
-    from_filter = os.getenv("STORES_MAIL_FROM_FILTER", STORES_FROM_DEFAULT)
+    username = (os.getenv("STORES_MAIL_USERNAME") or "").strip()
+    password = (os.getenv("STORES_MAIL_PASSWORD") or "").strip()
+    from_filter = (os.getenv("STORES_MAIL_FROM_FILTER", STORES_FROM_DEFAULT) or "").strip()
 
     if not username or not password:
-        return {"fetched": 0, "parsed": 0, "upserted": 0, "skipped": 0, "errors": 0}
+        return {
+            "ok": False,
+            "fetched": 0,
+            "parsed": 0,
+            "upserted": 0,
+            "skipped": 0,
+            "errors": 1,
+            "message": "STORES_MAIL_USERNAME または STORES_MAIL_PASSWORD が未設定です。",
+        }
 
-    fetched = parsed_count = upserted = skipped = errors = 0
+    fetched = 0
+    parsed_count = 0
+    upserted = 0
+    skipped = 0
+    errors = 0
     conn = None
+
     try:
         conn = imaplib.IMAP4_SSL(host, port)
         conn.login(username, password)
         conn.select("INBOX")
-        status, data = conn.search(None, "ALL")
-        if status != "OK":
-            return {"fetched": 0, "parsed": 0, "upserted": 0, "skipped": 0, "errors": 1}
+
+        search_status, data = conn.search(None, 'FROM', f'"{from_filter}"')
+        if search_status != "OK" or not data or not data[0]:
+            search_status, data = conn.search(None, "ALL")
+
+        if search_status != "OK":
+            return {
+                "ok": False,
+                "fetched": 0,
+                "parsed": 0,
+                "upserted": 0,
+                "skipped": 0,
+                "errors": 1,
+                "message": "IMAP検索に失敗しました。",
+            }
 
         ids = data[0].split()
         recent_ids = list(reversed(ids[-limit:]))
+
         for msg_id in recent_ids:
             status, payload = conn.fetch(msg_id, "(RFC822)")
             if status != "OK" or not payload or not payload[0]:
                 errors += 1
                 continue
+
             fetched += 1
             raw_email = payload[0][1]
             msg = email.message_from_bytes(raw_email)
+
             from_value = _decode_header_value(msg.get("From"))
             subject = _decode_header_value(msg.get("Subject"))
-            if from_filter and from_filter.lower() not in from_value.lower() and "stores" not in from_value.lower() and "stores" not in subject.lower():
-                skipped += 1
-                continue
             body = _extract_message_text(msg)
             received_at = _parse_mail_datetime(msg.get("Date"))
             message_id_value = _decode_header_value(msg.get("Message-Id") or msg.get("Message-ID")) or None
+
+            searchable = f"{from_value}\n{subject}\n{body}"
+            searchable_lower = searchable.lower()
+            if (
+                from_filter.lower() not in searchable_lower
+                and "stores" not in searchable_lower
+                and "ストアーズ" not in searchable
+                and "アイテムが購入されました" not in searchable
+                and "オーダー番号" not in searchable
+                and "注文番号" not in searchable
+            ):
+                skipped += 1
+                continue
+
             parsed = _parse_stores_mail(subject, body, message_id_value, received_at)
             if not parsed:
                 skipped += 1
                 continue
+
             parsed_count += 1
             _upsert_stores_payment(db, parsed)
             upserted += 1
+
         db.commit()
-    except Exception:
+
+        return {
+            "ok": True,
+            "fetched": fetched,
+            "parsed": parsed_count,
+            "upserted": upserted,
+            "skipped": skipped,
+            "errors": errors,
+            "message": "",
+        }
+
+    except Exception as e:
         db.rollback()
-        raise
+        return {
+            "ok": False,
+            "fetched": fetched,
+            "parsed": parsed_count,
+            "upserted": upserted,
+            "skipped": skipped,
+            "errors": errors + 1,
+            "message": str(e),
+        }
     finally:
         if conn is not None:
             try:
                 conn.logout()
             except Exception:
                 pass
-
-    return {"fetched": fetched, "parsed": parsed_count, "upserted": upserted, "skipped": skipped, "errors": errors}
 
 
 def _get_stores_payment_row(db: Session, order_no: str):
@@ -489,36 +617,6 @@ def _verify_stores_payment(db: Session, *, stores_order_no: str, payment_email: 
     return "needs_review", dict(row)
 
 
-def _smtp_send(*, to_email: str, subject: str, body: str) -> bool:
-    host = (os.getenv("SMTP_HOST") or "smtp.gmail.com").strip()
-    port = int((os.getenv("SMTP_PORT") or "587").strip())
-    username = (os.getenv("SMTP_USERNAME") or os.getenv("MAIL_USERNAME") or "").strip()
-    password = (os.getenv("SMTP_PASSWORD") or os.getenv("MAIL_PASSWORD") or "").strip()
-    from_email = (os.getenv("SMTP_FROM_EMAIL") or username or "").strip()
-    from_name = (os.getenv("SMTP_FROM_NAME") or "星月七海の星読み").strip()
-
-    if not host or not from_email or not to_email:
-        return False
-
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = f"{from_name} <{from_email}>"
-    msg["To"] = to_email
-
-    try:
-        with smtplib.SMTP(host, port, timeout=20) as server:
-            server.ehlo()
-            if port in (587, 25):
-                server.starttls()
-                server.ehlo()
-            if username and password:
-                server.login(username, password)
-            server.sendmail(from_email, [to_email], msg.as_string())
-        return True
-    except Exception:
-        return False
-
-
 def _build_absolute_base_url(request: Request) -> str:
     explicit = (os.getenv("PUBLIC_ORDER_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL") or "").strip().rstrip("/")
     if explicit:
@@ -540,37 +638,15 @@ def _build_intake_url(request: Request, *, course: str | None = None, line_user_
     return f"{base}{path}{query}"
 
 
-def _notify_admin_new_paid_order(
+def _send_user_form_link_email(
     request: Request,
     *,
-    order: Order,
-    payment_row: dict[str, Any] | None,
-    event_label: str = "新規受付",
-) -> None:
-    admin_to = (os.getenv("ADMIN_NOTIFY_EMAIL") or os.getenv("ALERT_EMAIL") or "").strip()
-    if not admin_to:
-        return
-    staff_url = f"{_build_absolute_base_url(request)}/staff/orders/{order.order_code}"
-    subject = f"【nanami-astro】{event_label} {order.order_code}"
-    body = "\n".join([
-        f"{event_label}がありました。",
-        "",
-        f"受付番号: {order.order_code}",
-        f"お名前: {order.user_name}",
-        f"メニュー: {order.menu.name if order.menu else '-'}",
-        f"連絡先: {order.user_contact or '-'}",
-        f"申込み経路: {order.source or '-'}",
-        f"外部決済: {order.external_platform or '-'}",
-        f"STORES注文番号: {order.external_order_ref or '-'}",
-        f"LINE連携: {'あり' if getattr(order.customer, 'line_user_id', None) else 'なし'}",
-        f"決済照合: {'owner通知ベース' if payment_row and not payment_row.get('buyer_email') else '通常'}",
-        "",
-        f"管理画面: {staff_url}",
-    ])
-    _smtp_send(to_email=admin_to, subject=subject, body=body)
-
-
-def _send_user_form_link_email(request: Request, *, to_email: str, course: str | None, line_user_id: str | None, line_name: str | None, payment_order_ref: str | None = None) -> bool:
+    to_email: str,
+    course: str | None,
+    line_user_id: str | None,
+    line_name: str | None,
+    payment_order_ref: str | None = None,
+) -> bool:
     intake_url = _build_intake_url(request, course=course, line_user_id=line_user_id, line_name=line_name)
     if payment_order_ref:
         sep = '&' if '?' in intake_url else '?'
@@ -586,7 +662,7 @@ def _send_user_form_link_email(request: Request, *, to_email: str, course: str |
         "",
         "※ LINEからご案内が届いている場合は、LINE内のフォームをご利用ください。",
     ])
-    return _smtp_send(to_email=to_email, subject=subject, body=body)
+    return send_mail(subject, body, [to_email])
 
 
 @router.post("/internal/stores/mail-sync")
@@ -791,10 +867,15 @@ def create_order_page(
         return render_form_error("生年月日の形式が正しくありません。")
 
     if os.getenv("STORES_MAIL_SYNC_ON_SUBMIT", "1") == "1":
-        try:
-            sync_stores_order_emails(db, limit=int(os.getenv("STORES_MAIL_SYNC_SUBMIT_LIMIT", "20")))
-        except Exception:
-            db.rollback()
+        sync_result = sync_stores_order_emails(
+            db,
+            limit=int(os.getenv("STORES_MAIL_SYNC_SUBMIT_LIMIT", "100")),
+        )
+        if not sync_result.get("ok"):
+            return render_form_error(
+                "STORES購入メールの確認処理に失敗しました。"
+                f" 管理側設定をご確認ください。詳細: {sync_result.get('message')}"
+            )
 
     verification_status, payment_row = _verify_stores_payment(
         db,
@@ -902,9 +983,9 @@ def create_order_page(
         db.commit()
 
         try:
-            _notify_admin_new_paid_order(request, order=existing_order, payment_row=payment_row, event_label="申込み更新")
-        except Exception:
-            pass
+            notify_new_order(existing_order)
+        except Exception as e:
+            print("通知失敗:", str(e))
 
         return RedirectResponse(url=f"/order/confirm?order_code={existing_order.order_code}&updated=1", status_code=303)
 
@@ -978,9 +1059,9 @@ def create_order_page(
     db.commit()
 
     try:
-        _notify_admin_new_paid_order(request, order=order, payment_row=payment_row, event_label="申込み受付")
-    except Exception:
-        pass
+        notify_new_order(order)
+    except Exception as e:
+        print("通知失敗:", str(e))
 
     return RedirectResponse(url=f"/order/confirm?order_code={order.order_code}", status_code=303)
 

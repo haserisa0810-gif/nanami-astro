@@ -6,7 +6,7 @@ import json
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -287,6 +287,33 @@ def staff_dashboard(request: Request, staff: dict = Depends(get_current_staff), 
     )
 
 
+@router.post("/staff/stores/mail-sync")
+def staff_stores_mail_sync(staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    from routes_public_orders import sync_stores_order_emails
+    try:
+        result = sync_stores_order_emails(
+            db,
+            limit=int(os.getenv("STORES_MAIL_SYNC_MANUAL_LIMIT", "200")),
+        )
+        print(f"Manual mail sync by staff: {result}")
+        msg = (
+            f"メール取込完了: "
+            f"取得{result.get('fetched',0)}件 / "
+            f"解析{result.get('parsed',0)}件 / "
+            f"登録{result.get('upserted',0)}件 / "
+            f"スキップ{result.get('skipped',0)}件 / "
+            f"エラー{result.get('errors',0)}件"
+        )
+        if result.get("message"):
+            msg += f" / 詳細: {result.get('message')}"
+    except Exception as e:
+        msg = f"メール取込エラー: {e}"
+        print(f"Manual mail sync error: {e}")
+    from fastapi.responses import RedirectResponse
+    from urllib.parse import quote
+    return RedirectResponse(url=f"/dashboard?sync_msg={quote(msg)}", status_code=303)
+
+
 @router.get("/staff/orders", response_class=HTMLResponse)
 def staff_orders(request: Request, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
     orders = db.scalars(
@@ -475,15 +502,18 @@ def staff_save_delivery(
 
     has_line_contact = bool(_customer_line_id(order))
 
+    is_free_order = (order.order_kind == "free")
+
     if action == "resend_notify":
-        if not has_report_html:
+        if not is_free_order and not has_report_html:
             print(f"Customer delivery notification skipped: report_html missing for order {order.order_code}")
             return _redirect(f"/staff/orders/{order_code}")
         db.commit()
-        _queue_customer_delivery_notification(order, mode="delivery_with_report", has_line_contact=has_line_contact)
+        notify_mode = "delivery_text_only" if is_free_order else "delivery_with_report"
+        _queue_customer_delivery_notification(order, mode=notify_mode, has_line_contact=has_line_contact)
         return _redirect(f"/staff/orders/{order_code}")
 
-    if action == "deliver" and not has_report_html:
+    if action == "deliver" and not is_free_order and not has_report_html:
         print(f"Delivery blocked: report_html missing for order {order.order_code}")
         return _redirect(f"/staff/orders/{order_code}")
 
@@ -521,7 +551,9 @@ def staff_save_delivery(
     db.commit()
 
     if action == "deliver":
-        if has_report_html:
+        if is_free_order:
+            _queue_customer_delivery_notification(order, mode="delivery_text_only", has_line_contact=has_line_contact)
+        elif has_report_html:
             _queue_customer_delivery_notification(order, mode="delivery_with_report", has_line_contact=has_line_contact)
         else:
             print(f"Customer delivery notification skipped after deliver: report_html missing for order {order.order_code}")
@@ -721,7 +753,8 @@ def staff_astrologer_result(order_code: str, request: Request, staff: dict = Dep
             "handoff_yaml_full":  handoff_yaml_full,
             "handoff_json_delta": "",
             "handoff_yaml_delta": "",
-            "from_order_code": None,  # 案件保存UIは非表示にする
+            "from_order_code": order_code,
+            "order_code": order_code,  # 管理画面へ戻るリンク用
         },
     )
 
@@ -750,6 +783,30 @@ def staff_auto_generate(
     birth_lon: str = Form(""),
     gender: str = Form("female"),
     consultation_text: str = Form(""),
+    analysis_type: str = Form("single"),
+    astrology_system: str = Form("western"),
+    reading_style: str = Form("general"),
+    theme: str = Form("overall"),
+    generate_ai: str = Form("true"),
+    yaml_only: str = Form(""),
+    include_reader: str = Form(""),
+    include_transit: str = Form(""),
+    day_change_at_23: str = Form(""),
+    house_system: str = Form("P"),
+    node_mode: str = Form("true"),
+    lilith_mode: str = Form("mean"),
+    include_chiron: str = Form("true"),
+    include_lilith: str = Form(""),
+    include_vertex: str = Form(""),
+    include_asteroids: str = Form(""),
+    name_b: str = Form(""),
+    birth_date_b: str = Form(""),
+    birth_time_b: str = Form(""),
+    gender_b: str = Form("female"),
+    birth_place_b: str = Form(""),
+    prefecture_b: str = Form(""),
+    lat_b: str = Form(""),
+    lon_b: str = Form(""),
     staff: dict = Depends(get_current_staff),
     db: Session = Depends(get_db),
 ):
@@ -799,10 +856,72 @@ def staff_auto_generate(
     elif not delivery:
         db.add(OrderDelivery(order_id=order.id, reader_id=reader.id, delivery_text='', is_draft=True))
 
+    def _is_on(v: str) -> bool:
+        return str(v or '').lower() in {'1', 'true', 'on', 'yes'}
+
+    analysis_options = {
+        'analysis_type': (analysis_type or 'single').strip(),
+        'astrology_system': (astrology_system or 'western').strip(),
+        'reading_style': (reading_style or 'general').strip(),
+        'theme': (theme or 'overall').strip(),
+        'ai_provider': 'claude',
+        'generate_ai': _is_on(generate_ai) if generate_ai != '' else True,
+        'yaml_only': _is_on(yaml_only),
+        'include_reader': _is_on(include_reader),
+        'include_transit': _is_on(include_transit),
+        'day_change_at_23': _is_on(day_change_at_23),
+        'house_system': (house_system or 'P').strip(),
+        'node_mode': (node_mode or 'true').strip(),
+        'lilith_mode': (lilith_mode or 'mean').strip(),
+        'include_chiron': _is_on(include_chiron) if include_chiron != '' else True,
+        'include_lilith': _is_on(include_lilith),
+        'include_vertex': _is_on(include_vertex),
+        'include_asteroids': _is_on(include_asteroids),
+        'name_b': (name_b or '').strip() or None,
+        'birth_date_b': (birth_date_b or '').strip() or None,
+        'birth_time_b': (birth_time_b or '').strip() or None,
+        'gender_b': (gender_b or 'female').strip(),
+        'birth_place_b': (birth_place_b or '').strip() or None,
+        'prefecture_b': (prefecture_b or '').strip() or None,
+        'lat_b': (lat_b or '').strip() or None,
+        'lon_b': (lon_b or '').strip() or None,
+    }
+
     order.ai_status = 'queued'
     db.commit()
-    background_tasks.add_task(process_order_auto_reading, order.id)
+    background_tasks.add_task(process_order_auto_reading, order.id, analysis_options)
     return _redirect(f'/staff/orders/{order_code}')
+
+
+@router.get("/staff/orders/{order_code}/auto-status")
+def staff_order_auto_status(
+    order_code: str,
+    staff: dict = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    order = db.scalar(
+        select(Order)
+        .options(selectinload(Order.result_views))
+        .where(Order.order_code == order_code)
+    )
+    if not order:
+        return JSONResponse({"status": "not_found", "has_result": False}, status_code=404)
+
+    try:
+        result_views = list(getattr(order, 'result_views', []) or [])
+    except Exception:
+        result_views = []
+    latest_view = next(iter(sorted(result_views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
+    has_result = bool(latest_view and (getattr(latest_view, 'result_html', None) or getattr(latest_view, 'result_payload_json', None)))
+
+    current_ai_status = order.ai_status or "idle"
+    return JSONResponse({
+        "status": current_ai_status,
+        "ai_status": current_ai_status,
+        "has_result": has_result,
+        "auto_ai_ready": bool((current_ai_status == "completed") and not has_result),
+        "order_code": order.order_code,
+    })
 
 
 @router.get("/staff/orders/{order_code}/analyze")

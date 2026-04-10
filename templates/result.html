@@ -893,8 +893,14 @@
 
       </div><!-- /pg_data -->
 
-      <div style="margin-top: 24px; position:relative; z-index:1;">
+      <div style="margin-top: 24px; position:relative; z-index:1; display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
         <a href="/">← 入力画面に戻る</a>
+        {% set _back_code = order_code or from_order_code %}
+        {% if _back_code %}
+          <a href="/staff/orders/{{ _back_code }}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:#2c2c2c;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">
+            ⚙️ 管理画面へ戻る
+          </a>
+        {% endif %}
       </div>
     </div>
   </div>

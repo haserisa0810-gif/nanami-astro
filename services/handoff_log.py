@@ -108,6 +108,49 @@ def _slim_structure_summary(ss: Any) -> Any:
     return s
 
 
+def _extract_shichu_summary(ss: Any) -> dict[str, Any]:
+    ss = _extract_json_obj(ss)
+    if not isinstance(ss, dict):
+        return {
+            "status": "missing",
+            "available": False,
+            "reason": "structure_summary_not_dict",
+            "day_master": "",
+            "pillars": {},
+            "has_five_elements": False,
+            "has_ten_gods": False,
+        }
+
+    raw = ss.get("shichusuimei")
+    if not isinstance(raw, dict):
+        return {
+            "status": "missing",
+            "available": False,
+            "reason": "shichu_payload_not_found",
+            "day_master": "",
+            "pillars": {},
+            "has_five_elements": False,
+            "has_ten_gods": False,
+        }
+
+    pillars = raw.get("pillars") if isinstance(raw.get("pillars"), dict) else {}
+    features = raw.get("features") if isinstance(raw.get("features"), dict) else {}
+    five = features.get("five_elements") if isinstance(features.get("five_elements"), dict) else {}
+    ten = features.get("ten_gods") if isinstance(features.get("ten_gods"), dict) else {}
+    day_master = raw.get("day_master") or raw.get("day_stem") or (raw.get("normalized_data") or {}).get("day_master") or ""
+
+    status = "ok" if (day_master or pillars or five or ten) else "partial"
+    return {
+        "status": status,
+        "available": bool(day_master or pillars or five or ten),
+        "reason": "",
+        "day_master": day_master,
+        "pillars": pillars,
+        "has_five_elements": bool(five),
+        "has_ten_gods": bool(ten),
+    }
+
+
 def _slim_transit(transit: Any) -> Any:
     """
     miniモード用: transit から past を除去し、today_planets と
@@ -159,7 +202,9 @@ def build_handoff(
     }
 
     if mode == "full":
-        base["structure_summary"] = _augment_structure_summary(structure_summary)
+        summary_aug = _augment_structure_summary(structure_summary)
+        base["structure_summary"] = summary_aug
+        base["shichu"] = _extract_shichu_summary(summary_aug)
         base["reports"] = reports
         if transit is not None:
             base["transit"] = transit  # full は生データそのまま
@@ -181,6 +226,7 @@ def build_handoff(
     # mini (default) — 肥大化防止のため structure_summary をスリム化
     summary_aug = _augment_structure_summary(structure_summary)
     base["structure_summary"] = _slim_structure_summary(summary_aug)
+    base["shichu"] = _extract_shichu_summary(summary_aug)
 
     # risk_flags top 3-5
     top_risks: list[Any] = []

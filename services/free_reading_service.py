@@ -7,7 +7,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from analyze_engine import build_base_meta, build_handoff_logs, build_payload_a, format_reports, run_single
+from services.analyze_engine import build_base_meta, build_handoff_logs, build_payload_a, format_reports, run_single
 from db import db_session
 from models import Menu, Order, OrderResultView, YamlLog
 from services.order_service import update_order_status
@@ -122,6 +122,7 @@ def process_free_reading(order_id: int) -> None:
                 gender=order.gender or '4',
                 gender_b='4',
             )
+            base_meta["is_free_reading"] = True  # Gemini + free_reading_web.txt を使用する
             astro_result, payload_view, report_web, report_line, report_raw, report_reader, guard_meta = run_single(
                 'western', payload_a, base_meta, order.consultation_text, False, False
             )

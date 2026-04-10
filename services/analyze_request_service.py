@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 
 def _analyze_helpers():
-    from analyze_engine import (
+    from services.analyze_engine import (
         build_base_meta,
         build_handoff_logs,
         build_payload_a,

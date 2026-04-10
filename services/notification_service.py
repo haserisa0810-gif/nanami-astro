@@ -1,384 +1,255 @@
-from __future__ import annotations
-
 import os
 import smtplib
-from email.message import EmailMessage
-from typing import Any, Iterable
-from urllib.parse import urljoin
-import json
+from email.mime.text import MIMEText
+from email.utils import formatdate
+from typing import Any
 
 import httpx
 
-from models import Order
+
+def get_notify_emails() -> list[str]:
+    emails = [
+        x.strip()
+        for x in (os.getenv("ADMIN_NOTIFY_EMAILS") or "").split(",")
+        if x.strip()
+    ]
+    if not emails:
+        single = (
+            os.getenv("ADMIN_NOTIFY_EMAIL")
+            or os.getenv("ALERT_EMAIL")
+            or ""
+        ).strip()
+        if single:
+            emails = [single]
+    return emails
 
 
+def _smtp_config() -> tuple[str, int, str, str, str, str]:
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = (os.getenv("SMTP_USERNAME") or os.getenv("MAIL_USERNAME") or "").strip()
+    smtp_pass = (os.getenv("SMTP_PASSWORD") or os.getenv("MAIL_PASSWORD") or "").strip()
+    from_email = (os.getenv("SMTP_FROM_EMAIL") or smtp_user or "").strip()
+    from_name = (os.getenv("SMTP_FROM_NAME") or "星月七海の星読み").strip()
+    return smtp_host, smtp_port, smtp_user, smtp_pass, from_email, from_name
 
 
-def _base_url() -> str:
-    return (os.getenv("BASE_URL") or "").strip().rstrip("/")
+def send_mail(subject: str, body: str, to_emails: list[str]) -> bool:
+    if not to_emails:
+        return False
 
+    smtp_host, smtp_port, smtp_user, smtp_pass, from_email, from_name = _smtp_config()
+    if not smtp_user or not smtp_pass or not from_email:
+        print("SMTP設定不足のためメール送信スキップ")
+        return False
 
-def _absolute_url(url: str | None) -> str:
-    raw = (url or "").strip()
-    if not raw:
-        return ""
-    if raw.startswith("http://") or raw.startswith("https://"):
-        return raw
-    base = _base_url()
-    if not base:
-        return raw
-    return urljoin(base + "/", raw.lstrip("/"))
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = f"{from_name} <{from_email}>"
+    msg["To"] = ", ".join(to_emails)
+    msg["Date"] = formatdate(localtime=True)
 
-
-def build_order_result_url(order: Order) -> str:
-    base = _base_url()
-    if not base:
-        return f"/report/{order.order_code}"
-    return f"{base}/report/{order.order_code}"
-
-
-def _extract_result_payload(order: Order) -> dict[str, Any]:
-    raw_payload = getattr(order, "result_payload_json", None) or ""
-    if not raw_payload and getattr(order, "result_views", None):
-        latest = next(iter(sorted(order.result_views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
-        raw_payload = getattr(latest, "result_payload_json", None) or ""
-    if not raw_payload:
-        return {}
     try:
-        data = json.loads(raw_payload)
-        return data if isinstance(data, dict) else {}
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            server.ehlo()
+            if smtp_port in (587, 25):
+                server.starttls()
+                server.ehlo()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.sendmail(from_email, to_emails, msg.as_string())
+        return True
+    except Exception as e:
+        print("メール送信エラー:", repr(e))
+        return False
+
+
+def _safe_get(obj: Any, name: str, default: Any = "-") -> Any:
+    try:
+        value = getattr(obj, name, default)
     except Exception:
-        return {}
+        value = default
+    return default if value in (None, "") else value
 
 
-def _latest_delivery_text(order: Order) -> str:
-    deliveries = getattr(order, "deliveries", None) or []
-    if not deliveries:
-        return ""
-    latest = next(iter(sorted(deliveries, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
-    return ((getattr(latest, "delivery_text", None) or "").strip()) if latest else ""
+def _join_lines(lines: list[str]) -> str:
+    return "\n".join(lines)
 
 
-def _planet_digest(payload: dict[str, Any]) -> str:
-    items = []
-    for p in (payload.get("planet_list") or [])[:6]:
-        if not isinstance(p, dict):
-            continue
-        name = (p.get("name") or "").strip()
-        sign = (p.get("sign") or "").strip()
-        house = (p.get("house") or "").strip()
-        if name:
-            tail = " / ".join([x for x in [sign, house] if x])
-            items.append(f"・{name}{(' : ' + tail) if tail else ''}")
-    return "\n".join(items)
+def _order_summary_lines(order: Any) -> list[str]:
+    return [
+        "■受付番号",
+        str(_safe_get(order, "order_code")),
+        "",
+        "■STORES注文番号",
+        str(_safe_get(order, "external_order_ref")),
+        "",
+        "■お名前",
+        str(_safe_get(order, "user_name")),
+        "",
+        "■メニュー",
+        str(_safe_get(order, "menu_id")),
+        "",
+        "■生年月日",
+        str(_safe_get(order, "birth_date")),
+        "",
+        "■出生時間",
+        str(_safe_get(order, "birth_time")),
+        "",
+        "■出生地",
+        str(_safe_get(order, "birth_place")),
+        "",
+        "■連絡先",
+        str(_safe_get(order, "user_contact")),
+        "",
+        "■相談内容",
+        str(_safe_get(order, "consultation_text")),
+        "",
+        "■管理画面",
+        f"https://pay.nanami-astro.com/admin/orders/{_safe_get(order, 'id', '')}",
+    ]
 
 
-def _sections_digest(payload: dict[str, Any]) -> str:
-    rows = []
-    for sec in (payload.get("sections") or [])[:3]:
-        if not isinstance(sec, dict):
-            continue
-        heading = (sec.get("heading") or "本文").strip()
-        body = (sec.get("body") or "").strip()
-        if body:
-            rows.append(f"【{heading}】\n{body[:700]}")
-    return "\n\n".join(rows)
+def notify_new_order(order: Any) -> bool:
+    emails = get_notify_emails()
+    if not emails:
+        return False
+
+    subject = "【nanami-astro】鑑定依頼が届きました"
+    body = _join_lines(["新しい鑑定依頼が届きました。", ""] + _order_summary_lines(order))
+    return send_mail(subject, body, emails)
 
 
-def build_delivery_completed_user_message(order: Order, *, mode: str = "delivery") -> str:
-    payload = _extract_result_payload(order)
-    delivery_text = _latest_delivery_text(order)
-    result_url = build_order_result_url(order)
-    is_free_order = (getattr(order, "order_kind", "") or "").strip() == "free"
-    free_reading_code = (getattr(order, "free_reading_code", None) or "").strip()
+async def notify_line_order_correction(order: Any, correction_text: str | None = None) -> bool:
+    emails = get_notify_emails()
+    if not emails:
+        return False
 
-    # mode の解釈:
-    #   "delivery"     → 本文テキストのみ送る（URLなし）
-    #   "report_only"  → URLのみ送る（本文テキストなし）
-    #   "delivery_with_report" → 本文テキスト＋URL両方送る
-    #   "auto"         → 自動鑑定用（本文＋URL両方送る）
-    include_text = mode in ("delivery", "delivery_with_report", "auto")
-    include_url  = mode in ("report_only", "delivery_with_report", "auto")
-
-    if mode == "auto":
-        main_body = _sections_digest(payload) or delivery_text or (getattr(order, "free_result_text", None) or "").strip()
-        opening = "鑑定結果をお送りします。"
-    elif mode == "report_only":
-        main_body = ""
-        opening = "お待たせしました。鑑定書をお届けします。"
-    else:
-        main_body = delivery_text or _sections_digest(payload) or (getattr(order, "free_result_text", None) or "").strip()
-        opening = "お待たせしました。鑑定が仕上がりました。心を込めてお届けします。"
-
-    if include_text and not main_body:
-        main_body = "鑑定結果ページをご確認ください。"
-
-    planet_text = _planet_digest(payload) if include_text else ""
-    extra_lines = []
-    if planet_text:
-        extra_lines.append("【主要な星配置】\n" + planet_text)
-    if include_url:
-        extra_lines.append("【ホロスコープ図・ハウス解説・鑑定書】\n" + result_url)
-    if is_free_order and free_reading_code:
-        extra_lines.append(
-            "【無料鑑定ID】\n"
-            f"{free_reading_code}\n\n"
-            "有料鑑定をご希望の場合は、LINEのお申込み時にこの無料鑑定IDをそのまま送ってください。\n"
-            "今回の内容を引き継いでご案内しやすくなります。"
-        )
-
-    parts = [f"{opening}\n予約番号【{order.order_code}】"]
-    if include_text and main_body:
-        parts.append(main_body.strip())
-    if extra_lines:
-        parts.append("\n\n".join(extra_lines))
-
-    return "\n\n".join(parts).strip()
+    subject = f"【nanami-astro】LINE注文修正 {_safe_get(order, 'order_code')}"
+    body_lines = [
+        "LINE経由で注文修正がありました。",
+        "",
+        *_order_summary_lines(order),
+    ]
+    if correction_text:
+        body_lines += ["", "■修正内容", str(correction_text)]
+    return send_mail(subject, _join_lines(body_lines), emails)
 
 
-def build_delivery_chart_url(order: Order) -> str:
-    payload = _extract_result_payload(order)
-    return _absolute_url(payload.get("horoscope_image_url") or "")
+async def notify_new_line_reservation(order: Any) -> bool:
+    emails = get_notify_emails()
+    if not emails:
+        return False
+
+    subject = f"【nanami-astro】LINE予約が入りました {_safe_get(order, 'order_code')}"
+    body = _join_lines(["LINE経由の新規予約がありました。", ""] + _order_summary_lines(order))
+    return send_mail(subject, body, emails)
 
 
-def _chunk_text(text: str, limit: int = 4900) -> list[str]:
+def _customer_line_id(order: Any) -> str:
+    customer = getattr(order, "customer", None)
+    customer_line_id = (getattr(customer, "line_user_id", None) or "").strip() if customer else ""
+    if customer_line_id:
+        return customer_line_id
+    user_contact = (getattr(order, "user_contact", None) or "").strip()
+    if user_contact.startswith("U"):
+        return user_contact
+    return ""
+
+
+def _report_url(order: Any) -> str:
+    return f"https://pay.nanami-astro.com/report/{_safe_get(order, 'order_code', '')}"
+
+
+def _trim_text(text: str, limit: int = 4000) -> str:
     body = (text or "").strip()
-    if not body:
-        return []
-    chunks = []
-    while body:
-        if len(body) <= limit:
-            chunks.append(body)
-            break
-        cut = body.rfind("\n", 0, limit)
-        if cut < int(limit * 0.6):
-            cut = limit
-        chunks.append(body[:cut].strip())
-        body = body[cut:].lstrip()
-    return [c for c in chunks if c]
-
-def _split_env_list(value: str | None) -> list[str]:
-    if not value:
-        return []
-    return [item.strip() for item in value.replace("\n", ",").split(",") if item.strip()]
+    if len(body) <= limit:
+        return body
+    return body[: limit - 10].rstrip() + "\n\n（以下省略）"
 
 
-def _gender_label(value: str | None) -> str:
-    mapping = {
-        "1": "女性",
-        "2": "男性",
-        "3": "その他",
-        "4": "回答しない",
-        "female": "女性",
-        "male": "男性",
-        "other": "その他",
-        "prefer_not_to_say": "回答しない",
-    }
-    return mapping.get((value or "").strip(), (value or "未指定"))
+async def _line_push(user_id: str | None, text: str) -> bool:
+    if not user_id:
+        print("NO userId for push")
+        return False
 
-
-def build_reservation_summary(order: Order) -> str:
-    return (
-        "LINEから新しい占い予約が入りました。\n\n"
-        f"予約番号: {order.order_code}\n"
-        f"メニュー: {order.menu.name if order.menu else '-'}\n"
-        f"名前: {order.user_name or '-'}\n"
-        f"生年月日: {order.birth_date.isoformat() if order.birth_date else '-'}\n"
-        f"出生時刻: {order.birth_time or '不明'}\n"
-        f"出生地: {order.birth_place or '不明'}\n"
-        f"性別: {_gender_label(order.gender)}\n"
-        f"LINE userId: {order.user_contact or '-'}\n"
-        f"状態: {order.status}\n"
-        f"受付日時: {order.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-    )
-
-
-def build_payment_completed_summary(order: Order) -> str:
-    return (
-        "LINE予約の決済が完了しました。\n\n"
-        f"予約番号: {order.order_code}\n"
-        f"メニュー: {order.menu.name if order.menu else '-'}\n"
-        f"名前: {order.user_name or '-'}\n"
-        f"生年月日: {order.birth_date.isoformat() if order.birth_date else '-'}\n"
-        f"出生時刻: {order.birth_time or '不明'}\n"
-        f"出生地: {order.birth_place or '不明'}\n"
-        f"性別: {_gender_label(order.gender)}\n"
-        f"LINE userId: {order.user_contact or '-'}\n"
-        f"決済日時: {(order.paid_at.strftime('%Y-%m-%d %H:%M:%S') + ' UTC') if order.paid_at else '-'}\n"
-    )
-
-
-def build_payment_completed_user_message(order: Order) -> str:
-    return (
-        'ご決済ありがとうございます。\n'
-        f'予約番号【{order.order_code}】のお支払いを確認しました。\n\n'
-        'ご予約内容は受け付け済みです。\n'
-        '入力内容に修正がある場合のみ、このままLINEに返信してください。\n'
-        '順次確認のうえ、ご案内します。'
-    )
-
-
-async def _push_line_messages(user_ids: Iterable[str], messages: list[dict[str, Any]]) -> None:
-    user_ids = [x for x in user_ids if x]
-    messages = [m for m in (messages or []) if isinstance(m, dict) and m.get("type")]
-    if not user_ids or not messages:
-        return
     token = (os.getenv("LINE_CHANNEL_ACCESS_TOKEN") or "").strip()
     if not token:
-        print("LINE notify skipped: LINE_CHANNEL_ACCESS_TOKEN missing")
-        return
+        print("LINE_CHANNEL_ACCESS_TOKEN is missing")
+        return False
+
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    async with httpx.AsyncClient(timeout=20) as client:
-        for user_id in user_ids:
-            payload = {"to": user_id, "messages": messages[:5]}
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-                print("LINE notify status:", user_id, response.status_code, (response.text or "")[:200])
-            except Exception as exc:
-                print("LINE notify exception:", user_id, repr(exc))
+    payload = {"to": user_id, "messages": [{"type": "text", "text": (text or "")[:4900]}]}
 
-
-async def _push_line_message(user_ids: Iterable[str], text: str) -> None:
-    messages = [{"type": "text", "text": chunk} for chunk in _chunk_text(text)]
-    await _push_line_messages(user_ids, messages)
-
-
-def _send_email_message(recipients: list[str], subject: str, body: str, *, thread_id: str | None = None) -> None:
-    if not recipients:
-        return
-    host = (os.getenv("SMTP_HOST") or "").strip()
-    username = (os.getenv("SMTP_USERNAME") or "").strip()
-    password = os.getenv("SMTP_PASSWORD") or ""
-    from_email = (os.getenv("SMTP_FROM_EMAIL") or username or "").strip()
-    if not host or not from_email:
-        print("Email notify skipped: SMTP_HOST or SMTP_FROM_EMAIL missing")
-        return
-    port = int((os.getenv("SMTP_PORT") or "587").strip())
-    use_ssl = (os.getenv("SMTP_USE_SSL") or "false").strip().lower() == "true"
-    use_starttls = (os.getenv("SMTP_USE_STARTTLS") or "true").strip().lower() == "true"
-
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = from_email
-    message["To"] = ", ".join(recipients)
-    message.set_content(body)
-
-    # スレッド化: 予約番号ごとに固定のMessage-IDを使いIn-Reply-Toで紐づける
-    if thread_id:
-        domain = (from_email.split("@")[-1]) if "@" in from_email else "nanami-astro.com"
-        base_msg_id = f"<{thread_id}@{domain}>"
-        message["Message-ID"] = f"<{thread_id}.{subject[:10].encode('ascii','ignore').decode()}@{domain}>"
-        message["In-Reply-To"] = base_msg_id
-        message["References"] = base_msg_id
-
-    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
-    with smtp_cls(host, port, timeout=20) as smtp:
-        smtp.ehlo()
-        if use_starttls and not use_ssl:
-            smtp.starttls()
-            smtp.ehlo()
-        if username:
-            smtp.login(username, password)
-        smtp.send_message(message)
-        print("Email notify sent to", recipients)
-
-
-async def notify_new_line_reservation(order: Order) -> None:
-    body = build_reservation_summary(order)
-    admin_line_ids = _split_env_list(os.getenv("ADMIN_NOTIFY_LINE_USER_IDS"))
-    reader_line_ids = _split_env_list(os.getenv("READER_NOTIFY_LINE_USER_IDS"))
-    admin_emails = _split_env_list(os.getenv("ADMIN_NOTIFY_EMAILS"))
-    reader_emails = _split_env_list(os.getenv("READER_NOTIFY_EMAILS"))
-
-    await _push_line_message(admin_line_ids + reader_line_ids, body)
     try:
-        _send_email_message(admin_emails + reader_emails, f"LINE予約受付 【{order.order_code}】", body, thread_id=order.order_code)
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            print("LINE push status:", response.status_code, "body:", (response.text or "")[:300])
+            return response.status_code < 400
     except Exception as exc:
-        print("Email notify exception:", repr(exc))
-
-
-async def notify_paid_line_order(order: Order) -> None:
-    body = build_payment_completed_summary(order)
-    user_message = build_payment_completed_user_message(order)
-    admin_line_ids = _split_env_list(os.getenv("ADMIN_NOTIFY_LINE_USER_IDS"))
-    reader_line_ids = _split_env_list(os.getenv("READER_NOTIFY_LINE_USER_IDS"))
-    admin_emails = _split_env_list(os.getenv("ADMIN_NOTIFY_EMAILS"))
-    reader_emails = _split_env_list(os.getenv("READER_NOTIFY_EMAILS"))
-    customer_line_id = getattr(order.customer, 'line_user_id', None) or (order.user_contact if (order.user_contact or '').startswith('U') else None)
-
-    await _push_line_message(admin_line_ids + reader_line_ids, body)
-    if customer_line_id:
-        await _push_line_message([customer_line_id], user_message)
-    try:
-        _send_email_message(admin_emails + reader_emails, f"決済完了 【{order.order_code}】", body, thread_id=order.order_code)
-    except Exception as exc:
-        print("Email notify exception:", repr(exc))
-
-
-def build_correction_summary(order: Order, message_text: str) -> str:
-    return (
-        "LINE予約の修正連絡が届きました。\n\n"
-        f"予約番号: {order.order_code}\n"
-        f"名前: {order.user_name or '-'}\n"
-        f"LINE userId: {order.user_contact or '-'}\n\n"
-        "【修正内容】\n"
-        f"{(message_text or '').strip() or '-'}\n"
-    )
-
-
-async def notify_line_order_correction(order: Order, message_text: str) -> None:
-    body = build_correction_summary(order, message_text)
-    admin_line_ids = _split_env_list(os.getenv("ADMIN_NOTIFY_LINE_USER_IDS"))
-    reader_line_ids = _split_env_list(os.getenv("READER_NOTIFY_LINE_USER_IDS"))
-    admin_emails = _split_env_list(os.getenv("ADMIN_NOTIFY_EMAILS"))
-    reader_emails = _split_env_list(os.getenv("READER_NOTIFY_EMAILS"))
-
-    await _push_line_message(admin_line_ids + reader_line_ids, body)
-    try:
-        _send_email_message(admin_emails + reader_emails, f"LINE予約修正 【{order.order_code}】", body, thread_id=order.order_code)
-    except Exception as exc:
-        print("Email notify exception:", repr(exc))
-
-
-async def notify_line_delivery(order: Order, *, mode: str = "delivery") -> bool:
-    customer_line_id = getattr(order.customer, 'line_user_id', None) or (order.user_contact if (order.user_contact or '').startswith('U') else None)
-    if not customer_line_id:
-        print("LINE delivery notify skipped: customer line id missing", order.order_code)
+        print("LINE push exception:", repr(exc))
         return False
 
-    text = build_delivery_completed_user_message(order, mode=mode)
-    chart_url = build_delivery_chart_url(order)
 
-    messages: list[dict[str, Any]] = []
-    for chunk in _chunk_text(text):
-        messages.append({"type": "text", "text": chunk})
-    if chart_url.startswith("http://") or chart_url.startswith("https://"):
-        messages.append({"type": "image", "originalContentUrl": chart_url, "previewImageUrl": chart_url})
+def _latest_delivery_text(order: Any) -> str:
+    deliveries = getattr(order, "deliveries", None) or []
+    if deliveries:
+        latest = sorted(
+            deliveries,
+            key=lambda d: getattr(d, "updated_at", None) or getattr(d, "created_at", None),
+            reverse=True,
+        )[0]
+        text = (getattr(latest, "delivery_text", None) or "").strip()
+        if text:
+            return text
+    return (getattr(order, "result_html", None) or "").strip()
 
-    await _push_line_messages([customer_line_id], messages[:5])
-    return True
 
-
-async def notify_delivery_email(order: Order, *, mode: str = "delivery") -> bool:
-    recipient = (getattr(order, "user_contact", None) or "").strip()
-    customer_email = (getattr(getattr(order, "customer", None), "email", None) or "").strip()
-
-    email = ""
-    if recipient and "@" in recipient and not recipient.startswith("U"):
-        email = recipient
-    elif customer_email:
-        email = customer_email
-
-    if not email:
-        print("Delivery email skipped: recipient email missing", order.order_code)
+async def notify_line_delivery(order: Any, mode: str | None = None) -> bool:
+    user_id = _customer_line_id(order)
+    if not user_id:
+        print(f"LINE delivery skipped: no line_user_id for order {_safe_get(order, 'order_code')}")
         return False
 
-    subject = f"鑑定結果のお知らせ【{order.order_code}】"
-    body = build_delivery_completed_user_message(order, mode=mode)
-    try:
-        _send_email_message([email], subject, body, thread_id=order.order_code)
-        return True
-    except Exception as exc:
-        print("Delivery email exception:", repr(exc))
+    report_url = _report_url(order)
+    delivery = _latest_delivery_text(order)
+    body_lines = [
+        f"{_safe_get(order, 'user_name', 'お客様')} 様",
+        "",
+        "鑑定が完了しました。",
+        f"受付番号: {_safe_get(order, 'order_code')}",
+        "",
+        "▼鑑定書はこちら",
+        report_url,
+    ]
+    if delivery:
+        body_lines += ["", "▼鑑定本文", _trim_text(delivery, 3200)]
+    message = _join_lines(body_lines)
+    return await _line_push(user_id, message)
+
+
+async def notify_delivery_email(order: Any, mode: str | None = None) -> bool:
+    user_contact = str(_safe_get(order, "user_contact", "") or "").strip()
+    customer = getattr(order, "customer", None)
+    customer_email = (getattr(customer, "email", None) or "").strip() if customer else ""
+    to_email = user_contact if "@" in user_contact and not user_contact.startswith("U") else customer_email
+    if not to_email:
         return False
+
+    subject = "【星月七海の星読み】鑑定結果のご案内"
+    report_url = _report_url(order)
+    delivery = _latest_delivery_text(order)
+    body_lines = [
+        f"{_safe_get(order, 'user_name', 'お客様')} 様",
+        "",
+        "鑑定が完了しました。",
+        f"受付番号: {_safe_get(order, 'order_code')}",
+        f"通知種別: {mode or 'delivery'}",
+        "",
+        "▼鑑定書はこちら",
+        report_url,
+    ]
+    if delivery:
+        body_lines += ["", "▼鑑定本文", _trim_text(delivery, 12000)]
+    return send_mail(subject, _join_lines(body_lines), [to_email])

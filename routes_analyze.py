@@ -10,7 +10,7 @@ from routes_shared import templates
 
 router = APIRouter()
 
-AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3"]
+AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3", "integrated_w_shichu"]
 AnalysisType = Literal["single", "compatibility"]
 
 
@@ -19,7 +19,7 @@ FALSE_VALUES = {"0", "false", "off", "no", "n", ""}
 
 
 def _analyze_helpers():
-    from analyze_engine import (
+    from services.analyze_engine import (
         build_base_meta,
         build_handoff_logs,
         build_payload_a,

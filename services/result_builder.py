@@ -564,15 +564,16 @@ def _template_name(payload: dict[str, Any]) -> str:
     if _is_compatibility_raw(raw):
         return 'report_compatibility.html'
     systems = payload.get('systems') or {}
-    if systems.get('western') and systems.get('vedic') and systems.get('shichu'):
-        return 'report-integrated.html'
-    if systems.get('western') and systems.get('vedic'):
-        return 'report-western-vedic.html'
-    if systems.get('western') and systems.get('shichu'):
-        return 'report-western-shicyu.html'
-    if systems.get('vedic') and systems.get('shichu'):
-        return 'report-vedic-shicyu.html'
-    return 'report_template_source.html'
+    chart_count = sum([
+        bool(systems.get('western')),
+        bool(systems.get('vedic')),
+        bool(systems.get('shichu')),
+    ])
+    if chart_count >= 3:
+        return 'report-triple.html'
+    if chart_count == 2:
+        return 'report-double.html'
+    return 'report-single.html'
 
 
 def _replace_chart_block(tpl: str, placeholder_note: str, inner_html: str) -> str:
@@ -788,22 +789,8 @@ def render_report_html(order: Order, payload: dict[str, Any]) -> str:
 
         reading_text = _nl2br(sections[0].get('body') if sections else '')
 
-        # --- 西洋+インドテンプレ専用 ---
-        if template_name == 'report-western-vedic.html':
-            tpl = tpl.replace('{{REPORT_DATE}}', html.escape(report_date))
-            tpl = tpl.replace('〇〇 さま', html.escape(_safe_text(order.user_name)) + ' さま', 1)
-            tpl = tpl.replace('{{REPORT_SUBTITLE}}', '西洋占星術 ✦ インド占星術')
-            tpl = tpl.replace('{{BIRTH_INFO}}', html.escape(birth_label))
-            tpl = tpl.replace('{{BIRTH_PLACE}}', html.escape(place_label))
-            tpl = tpl.replace('{{ASC_LABEL}}', html.escape(asc_sign))
-            tpl = tpl.replace('{{WESTERN_CHART_BLOCK}}', western_chart)
-            tpl = tpl.replace('{{VEDIC_CHART_BLOCK}}', vedic_chart)
-            tpl = tpl.replace('{{WESTERN_CAPTION}}', f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}')
-            tpl = tpl.replace('{{VEDIC_CAPTION}}', f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}')
-            tpl = tpl.replace('{{INTEGRATED_READING}}', reading_text)
-            tpl = tpl.replace('{{WESTERN_ROWS}}', _render_planet_rows(planets))
-            tpl = tpl.replace('{{VEDIC_ROWS}}', _render_planet_rows(vedic_planets))
-            return tpl
+        # --- 新テンプレート（single/double/triple）共通処理 ---
+        # 旧テンプレートが来ても同じ処理でカバー
 
 
         # --- 相性鑑定テンプレ専用 ---
@@ -852,22 +839,66 @@ def render_report_html(order: Order, payload: dict[str, Any]) -> str:
             (f'<div class="chart-caption shichu-summary">{shichu_summary_html}</div>' if shichu_summary_html else '')
         ) if shichu.get('exists') else '<div class="chart-img-wrap wide"><div class="chart-placeholder-label">SHICHU DATA</div><div class="chart-placeholder-note">四柱推命データをここに</div></div>'
 
+        # 図の割り当て: western→I, vedic→II(or I if no western), shichu→II or III
+        systems = payload.get('systems') or {}
+        charts = []
+        chart_captions = []
+        data_sections = []
+        if systems.get('western'):
+            charts.append(western_chart)
+            chart_captions.append(f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}')
+            data_sections.append(_render_planet_rows(planets))
+        if systems.get('vedic'):
+            charts.append(vedic_chart)
+            chart_captions.append(f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}')
+            data_sections.append(_render_planet_rows(vedic_planets))
+        if systems.get('shichu'):
+            charts.append(shichu_chart_block)
+            chart_captions.append('')
+            data_sections.append(shichu_table_html + (shichu_summary_html if shichu_summary_html else ''))
+        # 不足分は空文字で埋める
+        while len(charts) < 3:
+            charts.append('')
+            chart_captions.append('')
+            data_sections.append('')
+
+        # データセクションII・IIIをHTML化（ラベル付き）
+        vedic_data_section = (
+            '<div class="system-heading"><span class="system-heading-label">II</span>'
+            '<div class="system-heading-line"></div></div>'
+            f'<table class="planet-table"><tbody>{data_sections[1]}</tbody></table>'
+        ) if data_sections[1] else ''
+
         placeholders = {
             '{{REPORT_DATE}}': html.escape(report_date),
             '{{USER_NAME}}': html.escape(_safe_text(order.user_name)),
+            '{{PERSON_A_NAME}}': html.escape(_safe_text(order.user_name)),
             '{{BIRTH_LABEL}}': html.escape(birth_label),
+            '{{BIRTH_INFO}}': html.escape(birth_label),
             '{{PLACE_LABEL}}': html.escape(place_label),
+            '{{BIRTH_PLACE}}': html.escape(place_label),
             '{{ASC_SIGN}}': html.escape(asc_sign),
-            '{{WESTERN_CHART_BLOCK}}': western_chart,
-            '{{VEDIC_CHART_BLOCK}}': vedic_chart,
-            '{{WESTERN_CAPTION}}': f'ASC {html.escape(asc_sign)} ／ 太陽 {html.escape(sun_sign)} ／ 月 {html.escape(moon_sign)}',
-            '{{VEDIC_CAPTION}}': f'ラグナ {html.escape(lagna)} ／ 月 {html.escape(vedic_moon)}',
-            '{{SHICHU_CHART_BLOCK}}': shichu_chart_block,
-            '{{SHICHU_DATA_TABLE}}': shichu_table_html + (shichu_summary_html if shichu_summary_html else ''),
-            '{{WESTERN_ROWS}}': _render_planet_rows(planets),
-            '{{VEDIC_ROWS}}': _render_planet_rows(vedic_planets),
+            '{{ASC_LABEL}}': html.escape(asc_sign),
+            '{{REPORT_SUBTITLE}}': '',
+            '{{CHART_BLOCK_1}}': charts[0],
+            '{{CHART_BLOCK_2}}': charts[1],
+            '{{CHART_BLOCK_3}}': charts[2],
+            '{{CHART_CAPTION_1}}': html.escape(chart_captions[0]) if chart_captions[0] else '',
+            '{{CHART_CAPTION_2}}': html.escape(chart_captions[1]) if chart_captions[1] else '',
+            '{{CHART_CAPTION_3}}': '',
+            '{{PLANET_ROWS}}': data_sections[0],
+            '{{WESTERN_ROWS}}': data_sections[0],
+            '{{VEDIC_DATA_SECTION}}': vedic_data_section,
+            '{{VEDIC_ROWS}}': data_sections[1],
+            '{{SHICHU_DATA_TABLE}}': data_sections[2] if len(data_sections) > 2 else '',
             '{{READING_TEXT}}': reading_text,
             '{{INTEGRATED_READING}}': reading_text,
+            # 旧テンプレート互換
+            '{{WESTERN_CHART_BLOCK}}': charts[0],
+            '{{VEDIC_CHART_BLOCK}}': charts[1] if len(charts) > 1 else '',
+            '{{WESTERN_CAPTION}}': html.escape(chart_captions[0]) if chart_captions else '',
+            '{{VEDIC_CAPTION}}': html.escape(chart_captions[1]) if len(chart_captions) > 1 else '',
+            '{{SHICHU_CHART_BLOCK}}': charts[2] if len(charts) > 2 else '',
         }
         for key, val in placeholders.items():
             if key in tpl:

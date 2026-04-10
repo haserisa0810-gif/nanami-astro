@@ -61,7 +61,7 @@
       </div>
 
       <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-        <span class="pill {% if auto_ai_ready %}danger{% elif result_status == 'draft' %}warning{% elif result_status == 'completed' %}success{% else %}secondary{% endif %}">{{ result_status_label }}</span>
+        <span id="result-status-pill" class="pill {% if auto_ai_ready %}danger{% elif result_status == 'draft' %}warning{% elif result_status == 'completed' %}success{% else %}secondary{% endif %}">{{ result_status_label }}</span>
         {% if order.ai_status == 'running' %}
           <span class="muted">自動鑑定を処理中です。完了後は手動で再読込してください。</span>
         {% elif auto_ai_ready %}
@@ -117,10 +117,15 @@
           <p style="margin:0 0 12px;font-size:13px;font-weight:700;color:#9a6f00">⚠️ 以下の操作はユーザーに通知が送信されます</p>
           <div style="display:grid;gap:10px;margin-bottom:12px">
             <div style="font-size:13px;line-height:1.6;padding:10px 12px;border:1px solid #eadfb5;border-radius:10px;background:#fff">
-              <strong style="display:block">納品時は本文と鑑定書URLを必ず送信します</strong>
-              <span class="muted" style="font-size:12px">LINEがあればLINEへ、メールがあればメールへ送信します。両方あれば両方へ送信します。</span>
+              {% if order.order_kind == 'free' %}
+                <strong style="display:block">納品時は本文を送信します（無料鑑定）</strong>
+                <span class="muted" style="font-size:12px">鑑定書は不要です。LINEがあればLINEへ、メールがあればメールへ送信します。</span>
+              {% else %}
+                <strong style="display:block">納品時は本文と鑑定書URLを必ず送信します</strong>
+                <span class="muted" style="font-size:12px">LINEがあればLINEへ、メールがあればメールへ送信します。両方あれば両方へ送信します。</span>
+              {% endif %}
             </div>
-            {% if not (result_view and result_view.report_html) %}
+            {% if order.order_kind != 'free' and not (result_view and result_view.report_html) %}
               <p class="muted" style="margin:0;font-size:12px;padding-left:2px;color:#c0392b;font-weight:700;">
                 鑑定書がまだ作成されていないため、納品完了も通知再送もできません。先に「鑑定書を作成」を押してください。
               </p>
@@ -136,10 +141,12 @@
             {% endif %}
           </div>
           <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
-            <button type="button" onclick="confirmDeliver()" {% if not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>納品完了にする</button>
-            <button type="button" class="secondary" onclick="confirmResend()" {% if not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>通知を再送</button>
+            <button type="button" onclick="confirmDeliver()" {% if order.order_kind != 'free' and not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>納品完了にする</button>
+            <button type="button" class="secondary" onclick="confirmResend()" {% if order.order_kind != 'free' and not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>通知を再送</button>
           </div>
-          <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6">「通知を再送」は案件内容を変更せず、本文と鑑定書URLを利用可能な連絡先すべてへ再送します。</p>
+          <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6">
+            「通知を再送」は案件内容を変更せず、{% if order.order_kind == 'free' %}本文のみ{% else %}本文と鑑定書URL{% endif %}を利用可能な連絡先すべてへ再送します。
+          </p>
         </div>
       </form>
     </div>
@@ -147,8 +154,25 @@
 
   <div style="display:grid;gap:18px">
     <div class="card">
-      <h2>2. ユーザー情報入力</h2>
-      <p class="muted">必要項目を整えて、そのまま自動鑑定を開始します。</p>
+      <h2>2. 自動鑑定設定</h2>
+      <p class="muted">案件詳細から自動鑑定を開始します。受付番号に紐づけて保存される前提です。</p>
+
+      <div id="auto-ai-status-box" style="margin-top:12px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:12px;background:#fafafa">
+        {% if order.ai_status in ['queued', 'running'] %}
+          <div style="font-weight:700;color:#9a6700">⏳ 自動鑑定を処理中です</div>
+          <div class="muted" style="margin-top:6px">完了すると「結果画面を開く」ボタンが赤に変わります。5秒ごとに自動更新します。</div>
+        {% elif auto_ai_ready %}
+          <div style="font-weight:700;color:#b42318">✅ 自動鑑定の下書きができています</div>
+          <div class="muted" style="margin-top:6px">内容を確認してから「結果画面を開く」で案件に反映してください。</div>
+        {% elif order.ai_status == 'failed' %}
+          <div style="font-weight:700;color:#b42318">⚠️ 自動鑑定でエラーが発生しました</div>
+          <div class="muted" style="margin-top:6px">必要ならもう一度開始するか、通常鑑定を開いて手動で進めてください。</div>
+        {% else %}
+          <div style="font-weight:700;color:#344054">未実行</div>
+          <div class="muted" style="margin-top:6px">開始後はこの欄と「結果画面を開く」ボタンの色で進行状況を確認できます。</div>
+        {% endif %}
+      </div>
+
       <form method="post" action="/staff/orders/{{ order.order_code }}/auto-generate" style="margin-top:14px" id="auto-generate-form">
         <div class="grid">
           <div><label>氏名</label><input name="user_name" value="{{ order.user_name or '' }}"></div>
@@ -161,13 +185,115 @@
           <div><label>緯度（任意）</label><input name="birth_lat" value="{{ order.birth_lat if order.birth_lat is not none else '' }}" placeholder="35.689500"></div>
           <div><label>経度（任意）</label><input name="birth_lon" value="{{ order.birth_lon if order.birth_lon is not none else '' }}" placeholder="139.691700"></div>
           <div style="grid-column:1 / -1"><label>相談内容</label><textarea name="consultation_text" style="min-height:120px">{{ order.consultation_text or '' }}</textarea></div>
+
+          <div style="grid-column:1 / -1">
+            <p class="muted" style="margin:0">プリセットは廃止しました。下の設定内容そのままで実行します。AIは Claude 固定で、モデルは設定内容に応じて内部で自動選択します。</p>
+          </div>
+
+          <div style="grid-column:1 / -1">
+            <details id="advanced-analysis-options">
+              <summary><strong>詳細オプションを開く</strong></summary>
+              <div class="grid" style="margin-top:14px">
+                <div>
+                  <label>分析タイプ</label>
+                  <select name="analysis_type" id="analysis_type">
+                    <option value="single" selected>通常鑑定（自己理解）</option>
+                    <option value="compatibility">相性分析（2名）</option>
+                  </select>
+                </div>
+                <div>
+                  <label>占星術タイプ</label>
+                  <select name="astrology_system" id="astrology_system">
+                    <option value="western" selected>西洋（tropical）</option>
+                    <option value="vedic">インド（sidereal / Lahiri）</option>
+                    <option value="integrated">統合（西洋＋インド）</option>
+                    <option value="shichusuimei">四柱推命（β：日柱＋時柱）</option>
+                    <option value="integrated3">統合（西洋＋インド＋四柱）</option>
+                    <option value="integrated_w_shichu">統合（西洋＋四柱）</option>
+                  </select>
+                </div>
+                <div>
+                  <label>鑑定スタイル</label>
+                  <select name="reading_style" id="reading_style">
+                    <option value="general" selected>総合鑑定</option>
+                    <option value="love">恋愛・パートナーシップ</option>
+                    <option value="work">仕事・キャリア</option>
+                    <option value="relationship">人間関係</option>
+                    <option value="timing">今の時期・流れ</option>
+                  </select>
+                </div>
+                <div>
+                  <label>出力テーマ</label>
+                  <input type="text" name="theme" id="theme" value="overall" readonly>
+                </div>
+
+                <div style="grid-column:1 / -1;display:grid;gap:8px">
+                  <label><input type="checkbox" name="generate_ai" id="generate_ai" value="true" checked> AI本文も生成する</label>
+                  <label><input type="checkbox" name="yaml_only" id="yaml_only" value="true"> YAMLログのみ作成（本文なし）</label>
+                  <label><input type="checkbox" name="include_reader" id="include_reader" value="true"> 占い師向けメモを生成する</label>
+                  <label><input type="checkbox" name="include_transit" id="include_transit" value="true"> トランジットを鑑定に含める</label>
+                  <label><input type="checkbox" name="day_change_at_23" id="day_change_at_23" value="true"> 四柱推命で子刻後半を前日扱い</label>
+                  <label><input type="checkbox" name="include_chiron" id="include_chiron" value="true" checked> Chiron を含める</label>
+                  <label><input type="checkbox" name="include_lilith" id="include_lilith" value="true"> Lilith を含める</label>
+                  <label><input type="checkbox" name="include_vertex" id="include_vertex" value="true"> Vertex を含める</label>
+                  <label><input type="checkbox" name="include_asteroids" id="include_asteroids" value="true"> 小惑星を含める</label>
+                </div>
+
+                <div>
+                  <label>ハウスシステム</label>
+                  <select name="house_system" id="house_system">
+                    <option value="P" selected>Placidus</option>
+                    <option value="K">Koch</option>
+                  </select>
+                </div>
+                <div>
+                  <label>ノード</label>
+                  <select name="node_mode" id="node_mode">
+                    <option value="true" selected>True Node</option>
+                    <option value="mean">Mean Node</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Lilith</label>
+                  <select name="lilith_mode" id="lilith_mode">
+                    <option value="mean" selected>Mean Lilith</option>
+                    <option value="true">True Lilith</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div id="compatibility-fields" style="grid-column:1 / -1;display:none">
+            <div style="margin-top:8px;padding:14px;border:1px solid #eee;border-radius:12px;background:#faf8f5">
+              <div style="font-weight:700;margin-bottom:10px">相手（Person B）</div>
+              <div class="grid">
+                <div><label>相手の氏名</label><input name="name_b" placeholder="例）Aさん"></div>
+                <div><label>相手の生年月日</label><input type="date" name="birth_date_b"></div>
+                <div><label>相手の出生時刻</label><input name="birth_time_b" placeholder="12:30"></div>
+                <div>
+                  <label>相手の性別</label>
+                  <select name="gender_b">
+                    <option value="female" selected>女性</option>
+                    <option value="male">男性</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+                <div><label>相手の出生地</label><input name="birth_place_b" placeholder="新宿区 / 福岡市 など"></div>
+                <div><label>相手の都道府県</label><input name="prefecture_b" placeholder="東京都"></div>
+                <div><label>相手の緯度</label><input name="lat_b" placeholder="35.689500"></div>
+                <div><label>相手の経度</label><input name="lon_b" placeholder="139.691700"></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="row" style="margin-top:12px;flex-wrap:wrap">
+
+        <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:10px">
           <button id="auto-generate-button" type="submit">自動鑑定を開始</button>
-          <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/analyze">通常鑑定を開く</a>
+          <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/analyze">この案件に上書きする通常鑑定を開く</a>
         </div>
         <p class="muted" style="margin-top:10px">現在の座標情報: {{ location_summary }}</p>
-        <label>自動鑑定は西洋占星術のみ。他の鑑定やオプションONの場合は通常鑑定から鑑定してください</label>
+        <p class="muted" style="margin-top:8px">通常鑑定を開くボタンは、受付番号 {{ order.order_code }} を付けて開きます。解析結果はこの案件へ戻す前提です。</p>
       </form>
     </div>
 
@@ -213,6 +339,10 @@
 <script>
 const AUTO_AI_STATUS = {{ (order.ai_status or '') | tojson }};
 const AUTO_AI_ACTIVE = ['queued', 'running'].includes(AUTO_AI_STATUS);
+const AUTO_AI_READY = {{ 'true' if auto_ai_ready else 'false' }} === 'true';
+const AUTO_AI_ORDER_CODE = {{ order.order_code | tojson }};
+const AUTO_STATUS_URL = {{ ('/staff/orders/' ~ order.order_code ~ '/auto-status') | tojson }};
+const AUTO_AI_PENDING_KEY = 'auto_ai_pending_order_code';
 
 function copyYamlText() {
   const el = document.getElementById('yaml-copy-source');
@@ -259,7 +389,11 @@ function copyYamlFromDetails() { copyYamlText(); }
 function confirmDeliver() {
   const userName = {{ order.user_name | tojson }};
   const orderCode = {{ order.order_code | tojson }};
-  const msg = `【納品完了】本当に実行しますか？\n\n顧客: ${userName}（${orderCode}）\n\n本文と鑑定書URLを利用可能な連絡先へ送信します。`;
+  const isFree = {{ 'true' if order.order_kind == 'free' else 'false' }};
+  const deliverNote = isFree
+    ? '本文のみ送信します（鑑定書URLは送りません）。'
+    : '本文と鑑定書URLを利用可能な連絡先へ送信します。';
+  const msg = `【納品完了】本当に実行しますか？\n\n顧客: ${userName}（${orderCode}）\n\n${deliverNote}`;
   if (confirm(msg)) {
     const form = document.getElementById('delivery-form');
     const input = document.createElement('input');
@@ -286,30 +420,243 @@ function confirmResend() {
   }
 }
 
-function startAutoAiPolling() {
-  if (!AUTO_AI_ACTIVE) return;
+const STYLE_THEME_MAP = {
+  general: 'overall',
+  love: 'love',
+  work: 'work',
+  relationship: 'relationship',
+  timing: 'timing'
+};
 
+function getPendingAutoAiOrderCode() {
+  try {
+    return sessionStorage.getItem(AUTO_AI_PENDING_KEY) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function setPendingAutoAiOrderCode(value) {
+  try {
+    if (value) {
+      sessionStorage.setItem(AUTO_AI_PENDING_KEY, value);
+    } else {
+      sessionStorage.removeItem(AUTO_AI_PENDING_KEY);
+    }
+  } catch (e) {}
+}
+
+function hasPendingAutoAiFlag() {
+  return getPendingAutoAiOrderCode() === AUTO_AI_ORDER_CODE;
+}
+
+function syncThemeFromStyleStaff() {
+  const readingStyle = document.getElementById('reading_style');
+  const theme = document.getElementById('theme');
+  if (!readingStyle || !theme) return;
+  theme.value = STYLE_THEME_MAP[readingStyle.value] || 'overall';
+}
+
+function toggleCompatibilityFields() {
+  const analysisType = document.getElementById('analysis_type');
+  const compatBlock = document.getElementById('compatibility-fields');
+  if (!analysisType || !compatBlock) return;
+  compatBlock.style.display = analysisType.value === 'compatibility' ? 'block' : 'none';
+}
+
+function syncYamlOnlyStateStaff() {
+  const yamlOnly = document.getElementById('yaml_only');
+  const generateAi = document.getElementById('generate_ai');
+  if (!yamlOnly || !generateAi) return;
+  if (yamlOnly.checked) {
+    generateAi.checked = false;
+    generateAi.disabled = true;
+  } else {
+    generateAi.disabled = false;
+  }
+}
+
+function setAutoAiStatusBox(mode) {
+  const box = document.getElementById('auto-ai-status-box');
+  if (!box) return;
+  if (mode === 'running') {
+    box.style.borderColor = '#f5c542';
+    box.style.background = '#fffaf0';
+    box.innerHTML = '<div style="font-weight:700;color:#9a6700">⏳ 自動鑑定を処理中です</div><div class="muted" style="margin-top:6px">完了すると「結果画面を開く」ボタンが赤に変わります。5秒ごとに自動更新します。</div>';
+  } else if (mode === 'ready') {
+    box.style.borderColor = '#f04438';
+    box.style.background = '#fff5f5';
+    box.innerHTML = '<div style="font-weight:700;color:#b42318">✅ 自動鑑定の下書きができています</div><div class="muted" style="margin-top:6px">内容を確認してから「結果画面を開く」で案件に反映してください。</div>';
+  } else if (mode === 'failed') {
+    box.style.borderColor = '#f04438';
+    box.style.background = '#fff5f5';
+    box.innerHTML = '<div style="font-weight:700;color:#b42318">⚠️ 自動鑑定でエラーが発生しました</div><div class="muted" style="margin-top:6px">必要ならもう一度開始するか、通常鑑定を開いて手動で進めてください。</div>';
+  } else {
+    box.style.borderColor = '#e5e7eb';
+    box.style.background = '#fafafa';
+    box.innerHTML = '<div style="font-weight:700;color:#344054">未実行</div><div class="muted" style="margin-top:6px">開始後はこの欄と「結果画面を開く」ボタンの色で進行状況を確認できます。</div>';
+  }
+}
+
+function applyPublishButtonState() {
   const publishButton = document.getElementById('publish-result-button');
+  const activePill = document.getElementById('result-status-pill');
+  const pending = hasPendingAutoAiFlag();
+  const running = AUTO_AI_ACTIVE || pending;
+  const ready = AUTO_AI_READY;
+
   if (publishButton) {
-    publishButton.classList.remove('danger');
+    publishButton.classList.remove('danger', 'warning', 'secondary');
+    publishButton.disabled = false;
+    publishButton.removeAttribute('aria-busy');
+
+    if (running) {
+      publishButton.textContent = '鑑定中…';
+      publishButton.classList.add('warning');
+      publishButton.disabled = true;
+      publishButton.setAttribute('aria-busy', 'true');
+      publishButton.style.opacity = '1';
+      publishButton.style.cursor = 'progress';
+    } else if (ready) {
+      publishButton.textContent = '結果画面を開く';
+      publishButton.classList.add('danger');
+      publishButton.style.opacity = '1';
+      publishButton.style.cursor = 'pointer';
+    } else {
+      publishButton.textContent = '結果画面を開く';
+      publishButton.style.opacity = '1';
+      publishButton.style.cursor = 'pointer';
+    }
   }
 
-  window.setTimeout(() => {
-    window.location.reload();
-  }, 5000);
+  if (activePill && running) {
+    activePill.textContent = '鑑定中';
+    activePill.classList.remove('danger', 'success', 'secondary');
+    activePill.classList.add('warning');
+  }
+
+  if (running) {
+    setAutoAiStatusBox('running');
+  } else if (ready) {
+    setAutoAiStatusBox('ready');
+    setPendingAutoAiOrderCode('');
+  } else if (AUTO_AI_STATUS === 'failed') {
+    setAutoAiStatusBox('failed');
+    setPendingAutoAiOrderCode('');
+  } else {
+    setAutoAiStatusBox('idle');
+    if (!pending) setPendingAutoAiOrderCode('');
+  }
+}
+
+function startAutoAiPolling() {
+  if (!(AUTO_AI_ACTIVE || hasPendingAutoAiFlag())) return;
+
+  let attempts = 0;
+  const maxAttempts = 48; // about 4 minutes
+  let stopped = false;
+
+  async function tick() {
+    if (stopped) return;
+    attempts += 1;
+    if (attempts > maxAttempts) {
+      stopped = true;
+      setAutoAiStatusBox('running');
+      return;
+    }
+
+    try {
+      const res = await fetch(AUTO_STATUS_URL, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        cache: 'no-store'
+      });
+
+      if (res.redirected || (res.url && res.url.indexOf('/login') !== -1)) {
+        stopped = true;
+        return;
+      }
+      if (!res.ok) {
+        return;
+      }
+
+      const data = await res.json();
+      const aiStatus = String((data && (data.ai_status || data.status)) || '');
+      const ready = !!(data && data.auto_ai_ready);
+
+      if (ready || aiStatus === 'completed') {
+        setPendingAutoAiOrderCode('');
+        stopped = true;
+        window.location.reload();
+        return;
+      }
+
+      if (aiStatus === 'failed') {
+        setPendingAutoAiOrderCode('');
+        stopped = true;
+        const publishButton = document.getElementById('publish-result-button');
+        if (publishButton) {
+          publishButton.disabled = false;
+          publishButton.textContent = '結果画面を開く';
+          publishButton.classList.remove('warning', 'secondary');
+        }
+        setAutoAiStatusBox('failed');
+        return;
+      }
+
+      if (aiStatus === 'queued' || aiStatus === 'running') {
+        applyPublishButtonState();
+        setAutoAiStatusBox('running');
+      }
+    } catch (err) {
+      console.error('auto status polling failed', err);
+    }
+  }
+
+  tick();
+  const timer = window.setInterval(() => { if (stopped) { window.clearInterval(timer); return; } tick(); }, 5000);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   const autoGenerateForm = document.getElementById('auto-generate-form');
   const autoGenerateButton = document.getElementById('auto-generate-button');
+  const readingStyle = document.getElementById('reading_style');
+  const analysisType = document.getElementById('analysis_type');
+  const yamlOnly = document.getElementById('yaml_only');
+  const generateAi = document.getElementById('generate_ai');
+
+  if (readingStyle) {
+    readingStyle.addEventListener('change', syncThemeFromStyleStaff);
+    syncThemeFromStyleStaff();
+  }
+  if (analysisType) {
+    analysisType.addEventListener('change', toggleCompatibilityFields);
+    toggleCompatibilityFields();
+  }
+  if (yamlOnly && generateAi) {
+    yamlOnly.addEventListener('change', syncYamlOnlyStateStaff);
+    generateAi.addEventListener('change', function () {
+      if (generateAi.checked) yamlOnly.checked = false;
+      syncYamlOnlyStateStaff();
+    });
+    syncYamlOnlyStateStaff();
+  }
 
   if (autoGenerateForm && autoGenerateButton) {
     autoGenerateForm.addEventListener('submit', () => {
+      setPendingAutoAiOrderCode(AUTO_AI_ORDER_CODE);
       autoGenerateButton.disabled = true;
       autoGenerateButton.textContent = '自動鑑定を開始中…';
+      applyPublishButtonState();
+      setAutoAiStatusBox('running');
     });
   }
 
+  applyPublishButtonState();
   startAutoAiPolling();
 });
 

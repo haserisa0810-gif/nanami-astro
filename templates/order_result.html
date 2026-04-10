@@ -9,10 +9,6 @@
       <h1>鑑定結果</h1>
       <p class="muted">受付番号 <span class="code">{{ order.order_code }}</span></p>
     </div>
-    <div class="row">
-      <a class="btn secondary" href="/dashboard">管理画面に戻る</a>
-      <a class="btn secondary" href="/staff/orders/{{ order.order_code }}">案件詳細へ戻る</a>
-    </div>
   </div>
   <div class="stats" style="margin-top:14px">
     <div class="stat"><div class="muted">商品</div><div style="margin-top:8px">{{ order.menu.name if order.menu else '-' }}</div></div>
@@ -91,15 +87,7 @@
 <div class="card"><h2>納品本文</h2>{% if delivery %}<div style="white-space:pre-wrap;line-height:1.85">{{ delivery.delivery_text }}</div>{% else %}<p class="muted">まだ納品されていません。</p>{% endif %}</div>
 {% endif %}
 
-<div class="card">
-  <h2>操作</h2>
-  <div class="row">
-    <a class="btn secondary" href="/dashboard">管理画面に戻る</a>
-    <a class="btn secondary" href="/staff/orders/{{ order.order_code }}">案件詳細へ戻る</a>
-  </div>
-</div>
-
-<details class="card"><summary><strong>内部データ（YAML）</strong> <span class="muted">必要な時だけコピーします</span></summary>
+{% if false %}<details class="card"><summary><strong>内部データ（YAML）</strong> <span class="muted">必要な時だけコピーします</span></summary>
   <div style="margin-top:12px">
   {% if yaml_log %}
     <div class="row" style="margin-bottom:10px;justify-content:flex-end"><button type="button" class="secondary" onclick="navigator.clipboard.writeText(document.getElementById('yaml-result-copy').innerText)">YAMLをコピー</button></div>
@@ -109,4 +97,5 @@
 </details>
 
 {% if result_view and result_view.report_html %}<div class="card"><h2>鑑定書プレビュー</h2><iframe srcdoc='{{ result_view.report_html | e }}' style="width:100%;min-height:700px;border:1px solid #ddd;border-radius:8px"></iframe></div>{% endif %}
+{% endif %}
 {% endblock %}

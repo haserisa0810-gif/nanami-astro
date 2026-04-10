@@ -597,6 +597,19 @@
       </div>
     </div>
 
+    <div class="card" id="overwrite_notice" style="display:none;margin-bottom:16px;border:1px solid #d8d2ca;background:linear-gradient(180deg, rgba(255,255,255,.92), rgba(250,247,242,.9));">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap">
+        <div>
+          <h2 style="margin:0 0 6px">案件へ上書きするモード</h2>
+          <p class="lead" id="overwrite_notice_text" style="margin:0">案件の出生データを引き継いでいます。解析するとこの案件に結果を戻します。</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <span class="pill" id="overwrite_notice_code" style="margin-left:0;">受付番号: -</span>
+          <a href="/staff/orders" class="nav-btn">案件一覧へ戻る</a>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <form method="post" action="/analyze" class="form-grid">
         <input type="hidden" name="from_order_code" id="from_order_code" value="">
@@ -617,6 +630,7 @@
             <option value="integrated">統合（西洋＋インド）</option>
             <option value="shichusuimei">四柱推命（β：日柱＋時柱）</option>
             <option value="integrated3">統合（西洋＋インド＋四柱）</option>
+            <option value="integrated_w_shichu">統合（西洋＋四柱）</option>
           </select>
         </div>
 
@@ -893,7 +907,7 @@
         </div>
 
         <div class="actions">
-          <button type="submit">解析する</button>
+          <button type="submit" id="analyze_submit_button">解析する</button>
         </div>
       </form>
     </div>
@@ -994,7 +1008,7 @@
       if (!d.astroSystem || !d.shichusuimeiOpts) return;
 
       const v = d.astroSystem.value;
-      const show = (v === "shichusuimei" || v === "integrated3");
+      const show = (v === "shichusuimei" || v === "integrated3" || v === "integrated_w_shichu");
       d.shichusuimeiOpts.style.display = show ? "grid" : "none";
     }
 
@@ -1003,7 +1017,7 @@
       if (!d.astroSystem || !d.westernOpts) return;
 
       const v = d.astroSystem.value;
-      const show = (v === "western" || v === "integrated" || v === "integrated3");
+      const show = (v === "western" || v === "integrated" || v === "integrated3" || v === "integrated_w_shichu");
       d.westernOpts.style.display = show ? "grid" : "none";
     }
 
@@ -1340,10 +1354,18 @@
       if (fromOrderCode) {
         const lead = document.querySelector('.lead');
         const hidden = document.getElementById('from_order_code');
+        const overwriteNotice = document.getElementById('overwrite_notice');
+        const overwriteNoticeText = document.getElementById('overwrite_notice_text');
+        const overwriteNoticeCode = document.getElementById('overwrite_notice_code');
+        const submitButton = document.getElementById('analyze_submit_button');
         if (hidden) hidden.value = fromOrderCode;
         if (lead && lead.textContent.indexOf('案件') === -1) {
           lead.textContent = '案件 ' + fromOrderCode + ' の出生データを引き継いでいます。必要な箇所だけ修正して鑑定できます。';
         }
+        if (overwriteNotice) overwriteNotice.style.display = '';
+        if (overwriteNoticeText) overwriteNoticeText.textContent = '受付番号 ' + fromOrderCode + ' の案件へ上書き保存するモードです。解析結果はこの案件に戻す前提で扱います。';
+        if (overwriteNoticeCode) overwriteNoticeCode.textContent = '受付番号: ' + fromOrderCode;
+        if (submitButton) submitButton.textContent = 'この案件へ上書きして解析する';
       }
     }
 

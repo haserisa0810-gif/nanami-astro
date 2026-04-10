@@ -165,6 +165,7 @@ def _extract_house_cusps(astro_data: dict[str, Any]) -> list[float] | None:
 
 def _build_structure_summary(astro_data: Any) -> str:
     try:
+        _debug_structure_summary_input("_build_structure_summary", astro_data)
         if not isinstance(astro_data, dict):
             return ""
         derived: dict[str, Any] = {}
@@ -197,6 +198,22 @@ def _build_structure_summary(astro_data: Any) -> str:
         return json.dumps(picked, ensure_ascii=False)
     except Exception:
         return ""
+
+
+def _debug_structure_summary_input(label: str, astro_data: Any) -> None:
+    try:
+        data = astro_data if isinstance(astro_data, dict) else {}
+        shichu = data.get("shichusuimei")
+        print("[ai_report][structure_input]", {
+            "label": label,
+            "top_keys": list(data.keys())[:30],
+            "has_shichusuimei": isinstance(shichu, dict),
+            "shichu_keys": list(shichu.keys())[:20] if isinstance(shichu, dict) else [],
+            "has_day_master": bool((shichu or {}).get("day_master")) if isinstance(shichu, dict) else False,
+            "has_pillars": bool((shichu or {}).get("pillars")) if isinstance(shichu, dict) else False,
+        })
+    except Exception:
+        pass
 
 
 def _make_continue_prompt(*, previous_text: str) -> str:
@@ -271,6 +288,8 @@ def _choose_auto_model(meta2: dict[str, Any], astrology_system: str) -> tuple[st
         if has_heavy_options:
             return PRO_MODEL, "auto:integrated+options"
         return FLASH_LITE_MODEL, "auto:integrated"
+    if sys_name == "integrated_w_shichu":
+        return FLASH_LITE_MODEL, "auto:integrated_w_shichu"
     return FLASH_LITE_MODEL, f"auto:{sys_name or 'western'}"
 
 
@@ -302,7 +321,7 @@ def _should_use_claude(meta2: dict[str, Any], astrology_system: str) -> bool:
         return False
 
     sys_name = (astrology_system or "western").strip().lower()
-    return sys_name in {"western", "integrated", "integrated3", "integrated_3"}
+    return sys_name in {"western", "integrated", "integrated3", "integrated_3", "integrated_w_shichu"}
 
 
 def _resolve_claude_model_name(meta2: dict[str, Any], astrology_system: str = "western") -> tuple[str, str]:
@@ -343,9 +362,23 @@ def _select_prompt_files(astrology_system: str, rt: str, output_style: str, them
             "relationship": "single_web_claude_relationship.txt",
             "timing":       "single_web_claude_timing.txt",
         }
-        single_web_name = _style_map.get(reading_style, "single_web_claude.txt")
+        if sys_name == "integrated_w_shichu":
+            _w_shichu_style_map = {
+                "love":         "single_web_claude_w_shichu_love.txt",
+                "work":         "single_web_claude_w_shichu_work.txt",
+                "relationship": "single_web_claude_w_shichu_relationship.txt",
+                "timing":       "single_web_claude_w_shichu_timing.txt",
+            }
+            single_web_name = _w_shichu_style_map.get(reading_style, "single_web_claude_w_shichu.txt")
+        else:
+            single_web_name = _style_map.get(reading_style, "single_web_claude.txt")
     else:
-        single_web_name = "single_web_timing.txt" if theme == "timing" else "single_web.txt"
+        if theme == "free_reading":
+            single_web_name = "free_reading_web.txt"
+        elif theme == "timing":
+            single_web_name = "single_web_timing.txt"
+        else:
+            single_web_name = "single_web.txt"
     single_web_reader_name = "single_web_reader.txt"
     if not use_claude and use_legacy_integrated:
         single_web_name = "single_web_legacy_integrated.txt"
@@ -423,6 +456,15 @@ def generate_report(
     user_name = meta2.get("user_name", "あなた")
 
     structure_summary = _build_structure_summary(astro_data)
+    try:
+        ss_obj = json.loads(structure_summary) if isinstance(structure_summary, str) and structure_summary.strip().startswith("{") else {}
+        print("[ai_report][structure_summary]", {
+            "has_shichusuimei": isinstance((ss_obj or {}).get("shichusuimei"), dict),
+            "has_pillars": isinstance((ss_obj or {}).get("pillars"), dict),
+            "keys": list((ss_obj or {}).keys())[:30] if isinstance(ss_obj, dict) else [],
+        })
+    except Exception:
+        pass
 
     ctx: dict[str, Any] = {
         "astro_data": astro_data,
@@ -438,6 +480,10 @@ def generate_report(
         "detail_level": detail_level,
         "user_name": user_name,
     }
+    # 四柱推命データを明示的に取り出してプロンプトに渡す
+    _shichu_raw = astro_data.get("shichusuimei") or astro_data.get("pillars")
+    ctx["shichu_data"] = json.dumps(_shichu_raw, ensure_ascii=False) if _shichu_raw else ""
+
     common_rules_tpl = _read_prompt_file("common_rules.txt")
     ctx["common_rules"] = _render_prompt(common_rules_tpl, ctx)
 
