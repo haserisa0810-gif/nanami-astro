@@ -137,6 +137,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
     observations_text = form_data.get("observations_text")
     output_style = form_data.get("output_style", "normal")
     detail_level = form_data.get("detail_level", "standard")
+    ai_provider = form_data.get("ai_provider")
     ai_model = form_data.get("ai_model")
     house_system = form_data.get("house_system", "P")
     node_mode = form_data.get("node_mode", "true")
@@ -189,6 +190,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
         observations_text=observations_text,
         analysis_type=analysis_type,
         astrology_system=astrology_system,
+        ai_provider=ai_provider,
         ai_model=ai_model,
         day_change_at_23=day_change_at_23,
         name=name,
@@ -214,6 +216,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
         gender_b=gender_b,
         output_style=output_style,
         detail_level=detail_level,
+        ai_provider=ai_provider,
         ai_model=ai_model,
         house_system=house_system,
         node_mode=node_mode,

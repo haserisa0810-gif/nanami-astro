@@ -227,6 +227,7 @@ def build_base_meta(
     observations_text: str | None,
     analysis_type: str,
     astrology_system: str,
+    ai_provider: str | None,
     ai_model: str | None,
     day_change_at_23: bool,
     name: str | None,
@@ -254,7 +255,9 @@ def build_base_meta(
         "observations_text": (observations_text or "").strip(),
         "analysis_type": analysis_type,
         "astrology_system": astrology_system,
+        "ai_provider": ai_provider,
         "ai_model": ai_model,
+        "allow_manual_ai_model": bool(ai_provider or ai_model),
         "shichusuimei": {
             "tz_name": "Asia/Tokyo",
             "day_change_at_23": day_change_at_23,

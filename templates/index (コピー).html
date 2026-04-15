@@ -800,17 +800,20 @@
         </div>
 
         <div class="row" id="ai_provider_row">
-          <label>AI選択</label>
+          <label>AIプロバイダー</label>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <select name="ai_provider" id="ai_provider" style="width:auto;">
+            <!--<select name="ai_provider" id="ai_provider" style="width:auto;">
               <option value="claude" selected>Claude</option>
               <option value="gemini">Gemini</option>
+            </select>-->
+            <select name="ai_model" id="ai_model">
+              <option value="claude_haiku" selected>Claude Haiku（軽量・高速）</option>
+              <option value="claude_sonnet">Claude Sonnet（高品質）</option>
+              <option value="gemini_flash">Gemini Flash（高速）</option>
+              <option value="gemini_flash_light">Gemini Flash-Light</option>
+              <option value="gemini_pro">Gemini Pro（高精度）</option>
             </select>
-            <select name="ai_model" id="ai_model" style="width:auto;">
-              <option value="haiku" selected>Claude Haiku（軽量・高速）</option>
-              <option value="sonnet">Claude Sonnet（高品質）</option>
-            </select>
-            <span class="hint" id="ai_model_hint" style="margin:0;">Claude: Haiku=高速, Sonnet=高品質</span>
+            <span class="hint" id="ai_model_hint" style="margin:0;">Haiku=高速, Sonnet=高品質</span>
           </div>
         </div>
 
@@ -1514,31 +1517,27 @@
 
   const MODEL_OPTIONS = {
     claude: [
-      { value: "haiku", label: "Claude Haiku（軽量・高速）" },
-      { value: "sonnet", label: "Claude Sonnet（高品質）" },
+      { value: "haiku", label: "Haiku（速い・安い）" },
+      { value: "sonnet", label: "Sonnet（高品質）" },
     ],
     gemini: [
-      { value: "flash-lite", label: "Gemini Flash-Light" },
-      { value: "flash", label: "Gemini Flash（高速）" },
-      { value: "pro", label: "Gemini Pro（高精度）" },
+      { value: "flash-lite", label: "Flash Lite（速い・安い）" },
+      { value: "flash",      label: "Flash（標準）" },
+      { value: "pro",        label: "Pro（高品質）" },
     ],
   };
   const MODEL_HINTS = {
     claude: "Claude: Haiku=高速, Sonnet=高品質",
-    gemini: "Gemini: Flash-Light=軽量, Flash=高速, Pro=高精度",
+    gemini: "Gemini: Flash Lite=高速, Flash=標準, Pro=高品質",
   };
 
   function syncAiProviderUI() {
     if (!aiProviderSelect || !aiModelSelect) return;
     const provider = aiProviderSelect.value;
     const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.claude;
-    const currentValue = aiModelSelect.value;
-    aiModelSelect.innerHTML = options.map((o) =>
-      `<option value="${o.value}"${o.value === currentValue ? " selected" : ""}>${o.label}</option>`
+    aiModelSelect.innerHTML = options.map((o, i) =>
+      `<option value="${o.value}"${i === 0 ? " selected" : ""}>${o.label}</option>`
     ).join("");
-    if (!aiModelSelect.value && options.length) {
-      aiModelSelect.value = options[0].value;
-    }
     if (aiModelHint) aiModelHint.textContent = MODEL_HINTS[provider] || "";
   }
 
