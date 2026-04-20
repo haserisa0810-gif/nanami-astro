@@ -194,33 +194,20 @@
             <details id="advanced-analysis-options">
               <summary><strong>詳細オプションを開く</strong></summary>
               <div class="grid" style="margin-top:14px">
+                <input type="hidden" name="analysis_type" id="analysis_type" value="single">
+                <input type="hidden" name="astrology_system" id="astrology_system" value="western">
+                <input type="hidden" name="reading_style" id="reading_style" value="general">
                 <div>
                   <label>分析タイプ</label>
-                  <select name="analysis_type" id="analysis_type">
-                    <option value="single" selected>通常鑑定（自己理解）</option>
-                    <option value="compatibility">相性分析（2名）</option>
-                  </select>
+                  <input type="text" value="通常鑑定（自己理解）" readonly>
                 </div>
                 <div>
-                  <label>占星術タイプ</label>
-                  <select name="astrology_system" id="astrology_system">
-                    <option value="western" selected>西洋（tropical）</option>
-                    <option value="vedic">インド（sidereal / Lahiri）</option>
-                    <option value="integrated">統合（西洋＋インド）</option>
-                    <option value="shichusuimei">四柱推命（β：日柱＋時柱）</option>
-                    <option value="integrated3">統合（西洋＋インド＋四柱）</option>
-                    <option value="integrated_w_shichu">統合（西洋＋四柱）</option>
-                  </select>
+                  <label>占術構成</label>
+                  <input type="text" id="auto_astrology_system_label" value="自動判定待ち" readonly>
                 </div>
                 <div>
                   <label>鑑定スタイル</label>
-                  <select name="reading_style" id="reading_style">
-                    <option value="general" selected>総合鑑定</option>
-                    <option value="love">恋愛・パートナーシップ</option>
-                    <option value="work">仕事・キャリア</option>
-                    <option value="relationship">人間関係</option>
-                    <option value="timing">今の時期・流れ</option>
-                  </select>
+                  <input type="text" id="auto_reading_style_label" value="自動判定待ち" readonly>
                 </div>
                 <div>
                   <label>出力テーマ</label>
@@ -233,10 +220,15 @@
                   <label><input type="checkbox" name="include_reader" id="include_reader" value="true"> 占い師向けメモを生成する</label>
                   <label><input type="checkbox" name="include_transit" id="include_transit" value="true"> トランジットを鑑定に含める</label>
                   <label><input type="checkbox" name="day_change_at_23" id="day_change_at_23" value="true"> 四柱推命で子刻後半を前日扱い</label>
-                  <label><input type="checkbox" name="include_chiron" id="include_chiron" value="true" checked> Chiron を含める</label>
-                  <label><input type="checkbox" name="include_lilith" id="include_lilith" value="true"> Lilith を含める</label>
-                  <label><input type="checkbox" name="include_vertex" id="include_vertex" value="true"> Vertex を含める</label>
-                  <label><input type="checkbox" name="include_asteroids" id="include_asteroids" value="true"> 小惑星を含める</label>
+                  <input type="hidden" name="auto_option_mode" id="auto_option_mode" value="true">
+                  <div class="muted" style="margin-left:0">案件詳細では自動判定のみ使用します。占術構成・読解モード・西洋オプションは入力内容から自動反映されます。</div>
+                  <div id="option_recommendation_status" class="muted" style="margin-left:24px">{% if option_recommendation %}自動設定済み: {{ option_recommendation.dominant_label or 'バランス型' }} / {{ '構造読解（自動判定メニュー）' if option_recommendation.mode == 'structured' else '総合鑑定（自動判定メニュー）' }} / 配合 W{{ option_recommendation.distribution.western if option_recommendation.distribution else '-' }} : S{{ option_recommendation.distribution.shichu if option_recommendation.distribution else '-' }} / システム {{ option_recommendation.suggested_astrology_system or '-' }}{% else %}生年月日と出生地から、自動判定メニューとして配合判定・読解モード判定・インド発火判定を行います{% endif %}</div>
+                  <label><input type="checkbox" name="include_chiron" id="include_chiron" value="true" {% if option_recommendation and option_recommendation.options.include_chiron %}checked{% elif not option_recommendation %}checked{% endif %}> Chiron を含める</label>
+                  <label><input type="checkbox" name="include_lilith" id="include_lilith" value="true" {% if option_recommendation and option_recommendation.options.include_lilith %}checked{% endif %}> Lilith を含める</label>
+                  <label><input type="checkbox" name="include_vertex" id="include_vertex" value="true" {% if option_recommendation and option_recommendation.options.include_vertex %}checked{% endif %}> Vertex を含める</label>
+                  <label><input type="checkbox" name="include_asteroids" id="include_asteroids" value="true" {% if option_recommendation and option_recommendation.options.include_asteroids %}checked{% endif %}> 小惑星を含める</label>
+                  <div id="option_recommendation_reasons" class="muted" style="margin-left:24px;white-space:pre-line">{% if option_recommendation %}{% for key, arr in option_recommendation.reasons.items() %}{% if arr %}・{{ key }}: {{ arr|join(' / ') }}
+{% endif %}{% endfor %}{% endif %}</div>
                 </div>
 
                 <div>
@@ -476,6 +468,190 @@ function syncYamlOnlyStateStaff() {
   }
 }
 
+const STAFF_OPTION_INPUTS = ['birth_date','birth_time','birth_place','consultation_text','house_system','node_mode','lilith_mode','theme','birth_prefecture','birth_lat','birth_lon'].map((name) => document.querySelector(`[name="${name}"]`)).filter(Boolean);
+const staffAutoOptionMode = document.getElementById('auto_option_mode');
+const staffOptionStatus = document.getElementById('option_recommendation_status');
+const staffOptionReasons = document.getElementById('option_recommendation_reasons');
+const staffOptionCheckboxes = ['include_chiron','include_lilith','include_vertex','include_asteroids'].map((id) => document.getElementById(id)).filter(Boolean);
+let staffRecommendTimer = null;
+let staffOptionRecommendationInFlight = false;
+
+function formatStaffReadingStyleLabel(value) {
+  return value === 'structured' ? '構造読解（自動判定メニュー）' : '総合鑑定（自動判定メニュー）';
+}
+
+function formatStaffAstrologySystemLabel(value) {
+  const map = {
+    western: '西洋（tropical）',
+    vedic: 'インド（sidereal / Lahiri）',
+    integrated: '統合（西洋＋インド）',
+    shichusuimei: '四柱推命（β：日柱＋時柱）',
+    integrated3: '統合（西洋＋インド＋四柱）',
+    integrated_w_shichu: '統合（西洋＋四柱）',
+  };
+  return map[value] || '自動判定待ち';
+}
+
+function updateStaffAutoLabels() {
+  const readingStyle = document.getElementById('reading_style')?.value || 'general';
+  const astrologySystem = document.getElementById('astrology_system')?.value || 'western';
+  const styleLabel = document.getElementById('auto_reading_style_label');
+  const systemLabel = document.getElementById('auto_astrology_system_label');
+  if (styleLabel) styleLabel.value = formatStaffReadingStyleLabel(readingStyle);
+  if (systemLabel) systemLabel.value = formatStaffAstrologySystemLabel(astrologySystem);
+}
+
+function staffSetOptionDisabled(disabled) {
+  staffOptionCheckboxes.forEach((el) => { el.disabled = !!disabled; });
+}
+
+function staffSetOptionText(status, reasons) {
+  if (staffOptionStatus) staffOptionStatus.textContent = status || '';
+  if (staffOptionReasons) staffOptionReasons.textContent = reasons || '';
+}
+
+
+async function refreshStaffOptionRecommendation() {
+  if (!staffAutoOptionMode || String(staffAutoOptionMode.value || "").toLowerCase() !== "true") {
+    staffSetOptionDisabled(false);
+    staffSetOptionText('自動反映はOFFです。手動で変更できます。', '');
+    return;
+  }
+  const birthDate = document.querySelector('[name="birth_date"]')?.value || '';
+  const pref = document.querySelector('[name="birth_prefecture"]')?.value || '';
+  const lat = document.querySelector('[name="birth_lat"]')?.value || '';
+  const lon = document.querySelector('[name="birth_lon"]')?.value || '';
+  if (!birthDate || (!pref && !(lat && lon))) {
+    staffSetOptionDisabled(true);
+    staffSetOptionText('生年月日と出生地がそろうと自動判定します。', '');
+    return;
+  }
+  staffSetOptionDisabled(true);
+  staffOptionRecommendationInFlight = true;
+  staffSetOptionText('オプションを算出中…', '');
+  const fd = new FormData();
+  fd.append('birth_date', birthDate);
+  fd.append('birth_time', document.querySelector('[name="birth_time"]')?.value || '');
+  fd.append('birth_place', document.querySelector('[name="birth_place"]')?.value || '');
+  fd.append('prefecture', pref);
+  fd.append('lat', lat);
+  fd.append('lon', lon);
+  fd.append('gender', document.querySelector('[name="gender"]')?.value || 'female');
+  fd.append('house_system', document.getElementById('house_system')?.value || 'P');
+  fd.append('node_mode', document.getElementById('node_mode')?.value || 'true');
+  fd.append('lilith_mode', document.getElementById('lilith_mode')?.value || 'mean');
+  fd.append('consultation_text', document.querySelector('[name="consultation_text"]')?.value || '');
+  fd.append('theme', document.getElementById('theme')?.value || 'overall');
+  try {
+    const res = await fetch('/analyze/recommend-options', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'option recommendation failed');
+    const opts = data.options || {};
+    staffOptionCheckboxes.forEach((el) => { el.checked = !!opts[el.name]; });
+    const suggestedStyle = data.suggested_reading_style || '';
+    const suggestedSystem = data.suggested_astrology_system || '';
+    const staffReadingStyle = document.getElementById('reading_style');
+    const staffAstrologySystem = document.getElementById('astrology_system');
+    if (staffReadingStyle && suggestedStyle && ['general', 'structured'].includes(suggestedStyle)) staffReadingStyle.value = suggestedStyle;
+    if (staffAstrologySystem && suggestedSystem && ['western', 'vedic', 'integrated', 'integrated_w_shichu', 'integrated3', 'shichusuimei'].includes(suggestedSystem)) staffAstrologySystem.value = suggestedSystem;
+    const modeLabel = formatStaffReadingStyleLabel(data.mode === 'structured' ? 'structured' : 'general');
+    const reasonText = Object.entries(data.reasons || {})
+      .filter(([, arr]) => Array.isArray(arr) && arr.length)
+      .map(([key, arr]) => `・${key.replace('include_','')}: ${arr.join(' / ')}`)
+      .join('\n');
+    const vedicLabel = data.vedic_trigger?.level ? ` / インド発火 ${data.vedic_trigger.level}` : '';
+    updateStaffAutoLabels();
+    staffSetOptionText(`自動設定済み: ${modeLabel}${vedicLabel} / システム ${formatStaffAstrologySystemLabel(suggestedSystem)}`, reasonText);
+  } catch (err) {
+    updateStaffAutoLabels();
+    staffSetOptionText(`自動設定に失敗: ${err.message || err}`, '');
+  } finally {
+    staffOptionRecommendationInFlight = false;
+    if (staffAutoOptionMode && String(staffAutoOptionMode.value || "").toLowerCase() === "true") {
+      staffOptionCheckboxes.forEach((el) => { el.disabled = true; });
+      updateStaffAutoLabels();
+    } else {
+      staffSetOptionDisabled(false);
+    }
+  }
+}
+
+function scheduleStaffOptionRecommendation(delay = 350) {
+  clearTimeout(staffRecommendTimer);
+  staffRecommendTimer = setTimeout(refreshStaffOptionRecommendation, delay);
+}
+
+function dispatchStaffFieldRefresh(el) {
+  if (!el) return;
+  try {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  } catch (e) {}
+}
+
+function installProgrammaticValueWatcher(el) {
+  if (!el || el.__staffAutoWatcherInstalled) return;
+  el.__staffAutoWatcherInstalled = true;
+  let currentValue = el.value;
+  try {
+    Object.defineProperty(el, 'value', {
+      get() { return currentValue; },
+      set(v) {
+        currentValue = v;
+        queueMicrotask(() => dispatchStaffFieldRefresh(el));
+      },
+      configurable: true,
+      enumerable: true,
+    });
+  } catch (e) {
+    // some browsers/elements may not allow overriding value; ignore
+  }
+}
+
+function hookMapDrivenLocationRefresh() {
+  const watched = [
+    document.querySelector('[name="birth_prefecture"]'),
+    document.querySelector('[name="birth_place"]'),
+    document.querySelector('[name="birth_lat"]'),
+    document.querySelector('[name="birth_lon"]'),
+  ].filter(Boolean);
+
+  watched.forEach((el) => {
+    installProgrammaticValueWatcher(el);
+    el.addEventListener('input', () => scheduleStaffOptionRecommendation(80));
+    el.addEventListener('change', () => scheduleStaffOptionRecommendation(80));
+    el.addEventListener('blur', () => scheduleStaffOptionRecommendation(80));
+  });
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const text = (target.textContent || '').trim();
+    const aria = (target.getAttribute('aria-label') || '').trim();
+    const id = (target.id || '').trim();
+    const cls = (target.className || '').toString();
+    const isMapAction = (
+      text === '検索' || text === 'クリア' || text === '地図を読み込む' ||
+      aria.includes('map') || aria.includes('地図') ||
+      id.includes('map') || cls.includes('map') || cls.includes('leaflet')
+    );
+    if (isMapAction) {
+      setTimeout(() => scheduleStaffOptionRecommendation(80), 50);
+      setTimeout(() => scheduleStaffOptionRecommendation(80), 250);
+      setTimeout(() => scheduleStaffOptionRecommendation(80), 600);
+    }
+  }, true);
+
+  const body = document.body;
+  if (body && !body.__staffLocationObserverInstalled) {
+    body.__staffLocationObserverInstalled = true;
+    const observer = new MutationObserver(() => {
+      scheduleStaffOptionRecommendation(120);
+    });
+    observer.observe(body, { subtree: true, childList: true, attributes: true, characterData: false });
+  }
+}
+
 function setAutoAiStatusBox(mode) {
   const box = document.getElementById('auto-ai-status-box');
   if (!box) return;
@@ -624,19 +800,16 @@ function startAutoAiPolling() {
 document.addEventListener('DOMContentLoaded', () => {
   const autoGenerateForm = document.getElementById('auto-generate-form');
   const autoGenerateButton = document.getElementById('auto-generate-button');
-  const readingStyle = document.getElementById('reading_style');
   const analysisType = document.getElementById('analysis_type');
   const yamlOnly = document.getElementById('yaml_only');
   const generateAi = document.getElementById('generate_ai');
 
-  if (readingStyle) {
-    readingStyle.addEventListener('change', syncThemeFromStyleStaff);
-    syncThemeFromStyleStaff();
-  }
+  syncThemeFromStyleStaff();
+  updateStaffAutoLabels();
   if (analysisType) {
     analysisType.addEventListener('change', toggleCompatibilityFields);
-    toggleCompatibilityFields();
   }
+  toggleCompatibilityFields();
   if (yamlOnly && generateAi) {
     yamlOnly.addEventListener('change', syncYamlOnlyStateStaff);
     generateAi.addEventListener('change', function () {
@@ -644,6 +817,17 @@ document.addEventListener('DOMContentLoaded', () => {
       syncYamlOnlyStateStaff();
     });
     syncYamlOnlyStateStaff();
+  }
+
+  if (staffAutoOptionMode) {
+    staffOptionCheckboxes.forEach((el) => { el.disabled = true; });
+    STAFF_OPTION_INPUTS.forEach((el) => {
+      el.addEventListener('input', scheduleStaffOptionRecommendation);
+      el.addEventListener('change', scheduleStaffOptionRecommendation);
+    });
+    document.querySelector('[name="gender"]')?.addEventListener('change', scheduleStaffOptionRecommendation);
+    hookMapDrivenLocationRefresh();
+    scheduleStaffOptionRecommendation();
   }
 
   if (autoGenerateForm && autoGenerateButton) {

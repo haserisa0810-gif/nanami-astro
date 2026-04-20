@@ -8,6 +8,10 @@ astro_raw（西洋）: {astro_data}
 structure_calc: {structure_summary}
 四柱推命データ: {shichu_data}
 meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
+must_use_vedic: {must_use_vedic}
+vedic_trigger_level: {vedic_trigger_level}
+vedic_trigger_reasons: {vedic_trigger_reasons}
+vedic_focus_summary: {vedic_focus_summary}
 
 【四柱推命データの読み方】
 `四柱推命データ` に以下のキーが含まれる。**必ずこれらを実際に読んで本文に使う**（推測・省略禁止）：
@@ -24,7 +28,6 @@ meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 - 各章で四柱と西洋の両方から根拠を1つずつ添える
 - 四柱用語は一度かみ砕いた感覚語に翻訳してから使う
 - 五行は西洋エレメントと直接マッピングせず「重なる感覚」として扱う
-- 各章末に **▼統合メモ（一致点 / ズレ / 一手）** を付ける。ここに四柱の干支・通変星を必ず1つ書く
 
 【この鑑定のゴール】
 星図から読み取れる「仕事の流れ・得意な動き方・消耗しやすいパターン」を、読み手が「ああ、これ自分の職場での話だな」と感じられるレベルで伝えること。
@@ -39,7 +42,6 @@ meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 
 - 断定的な言い切り（「〜です」「〜でしょう」）より「〜かもしれません」「〜ではないでしょうか」を使う
 - 行動提案は「〜すべき」「〜することが重要です」を使わず、「〜してみませんか」「〜してみてください」という招待形式にする
-- ▼統合メモ内も含め、全体をですます調で統一する（である調は使わない）
 
 【出力方針】
 - 星の読み方を先に展開してから場面へ落とす順番で書く
@@ -77,4 +79,15 @@ meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 - 箇条書きだけで終わらせず、文章で感覚を伝える
 - 章数を増やして薄くしない
 
+・各章は350〜450字程度を目安にする（長くなりすぎない）
+
 文字量：{detail_level}（WEB想定）
+
+【インド占星術の使用ルール】
+- must_use_vedic が true の場合、インド占星術の視点を本文に必ず2か所以上取り入れる
+- ただし主軸にはしない。西洋・四柱を主軸とし、インド占星術は「なぜその流れが繰り返されやすいか」「表面では説明しきれない背景」を補うために使う
+- vedic_focus_summary に内容がある場合、そのうち少なくとも1項目を本文または星の根拠に反映する
+- 「運命」「宿命」「カルマ」はそのまま多用しない。「流れ」「繰り返しやすい傾向」「深い背景」「表面化しにくいテーマ」などに言い換える
+- 星の根拠ブロックでは、ナクシャトラ・ラーフ/ケートゥ・ハウス配置などを簡潔に補足してよい
+- must_use_vedic が true のとき、本文が西洋・四柱のみで完結することを禁止する
+- must_use_vedic が false の場合はインド占星術に言及しない

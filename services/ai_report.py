@@ -26,6 +26,13 @@ except Exception:
     except Exception:
         STYLE_PROMPTS = {}  # type: ignore
 
+try:
+    from services.analysis_engine import detect_age_mode
+    from services.prompt_builder import build_role_prompt, get_age_system_prompt
+except Exception:
+    from services.analysis_engine import detect_age_mode  # type: ignore
+    from services.prompt_builder import build_role_prompt, get_age_system_prompt  # type: ignore
+
 DEFAULT_AUTO_MODEL = "gemini-2.5-flash-lite"
 PRO_MODEL = "gemini-2.5-pro"
 FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
@@ -33,7 +40,8 @@ FLASH_MODEL = "gemini-2.5-flash"
 ALLOWED_MODEL_NAMES = {"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"}
 
 CLAUDE_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-CLAUDE_ALLOWED_MODEL_NAMES = {"claude-haiku-4-5-20251001", "claude-4-5-haiku-latest", "claude-sonnet-4-5"}
+CLAUDE_SONNET_MODEL = "claude-sonnet-4-6"
+CLAUDE_ALLOWED_MODEL_NAMES = {"claude-haiku-4-5-20251001", "claude-4-5-haiku-latest", "claude-sonnet-4-5", "claude-sonnet-4-6"}
 
 _PROMPTS_DIR = (Path(__file__).resolve().parents[1] / "prompts").resolve()
 
@@ -106,6 +114,100 @@ def _merge_meta(base: dict[str, Any], extra: dict[str, Any] | None) -> dict[str,
     if isinstance(extra, dict) and extra:
         out.update(extra)
     return out
+
+
+def _build_vedic_focus_summary(astro_data: dict[str, Any], meta2: dict[str, Any]) -> str:
+    vedic = astro_data.get("vedic") if isinstance(astro_data, dict) else None
+    if not isinstance(vedic, dict):
+        return ""
+
+    parts: list[str] = []
+
+    asc = vedic.get("ascendant") or {}
+    moon_nak = vedic.get("moon_nakshatra") or {}
+    house_lords = vedic.get("house_lords_placement") or {}
+    planets = vedic.get("planets") or []
+
+    if isinstance(asc, dict):
+        asc_sign = asc.get("rashi_name") or asc.get("sign") or ""
+        asc_nak = asc.get("nakshatra_name") or ""
+        if asc_sign or asc_nak:
+            parts.append(f"ラグナは{asc_sign}、ナクシャトラは{asc_nak}。")
+
+    if isinstance(moon_nak, dict):
+        moon_nak_name = moon_nak.get("nakshatra_name") or ""
+        moon_pada = moon_nak.get("pada") or ""
+        moon_lord = moon_nak.get("lord") or ""
+        if moon_nak_name:
+            parts.append(f"月のナクシャトラは{moon_nak_name}、パーダは{moon_pada}、支配星は{moon_lord}。")
+
+    if isinstance(house_lords, dict):
+        for house_key in ("1", "12", "7", "9"):
+            info = house_lords.get(house_key) or {}
+            if isinstance(info, dict) and info:
+                parts.append(
+                    f"{house_key}室支配星は{info.get('lord', '')}で、第{info.get('placed_in_house', '?')}ハウス配置。"
+                )
+
+    if isinstance(planets, list):
+        rahu_house = None
+        ketu_house = None
+        for pp in planets:
+            if not isinstance(pp, dict):
+                continue
+            name = str(pp.get("name") or "").strip().lower()
+            if name in {"rahu", "north node"}:
+                rahu_house = pp.get("house_no")
+            elif name in {"ketu", "south node"}:
+                ketu_house = pp.get("house_no")
+        if rahu_house or ketu_house:
+            parts.append(f"ラーフは第{rahu_house or '?'}ハウス、ケートゥは第{ketu_house or '?'}ハウス。")
+
+    return " ".join([pp for pp in parts if pp]).strip()
+
+
+def _extract_shichu_status(astro_data: dict[str, Any], structure_summary_obj: dict[str, Any] | None = None) -> tuple[bool, str, str]:
+    ss = structure_summary_obj or {}
+    candidates = []
+    if isinstance(astro_data.get("shichusuimei"), dict):
+        candidates.append(astro_data.get("shichusuimei") or {})
+    if isinstance(ss.get("shichusuimei"), dict):
+        candidates.append(ss.get("shichusuimei") or {})
+    if isinstance(astro_data.get("pillars"), dict):
+        candidates.append({"pillars": astro_data.get("pillars")})
+    if isinstance(ss.get("pillars"), dict):
+        candidates.append({"pillars": ss.get("pillars")})
+
+    for c in candidates:
+        if not isinstance(c, dict):
+            continue
+        if c.get("day_master") or c.get("pillars") or (c.get("normalized_data") or {}).get("pillars"):
+            return True, "available", "四柱推命データあり"
+    return False, "missing", "四柱推命データなし"
+
+
+def _build_prompt_control_bundle(meta2: dict[str, Any], auto_recommendation: dict[str, Any] | None) -> dict[str, Any]:
+    auto_recommendation = auto_recommendation or {}
+    age_mode = str(meta2.get("age_mode") or auto_recommendation.get("age_mode") or detect_age_mode(meta2.get("birth_date"))).strip().lower()
+
+    role_distribution = auto_recommendation.get("role_distribution") or auto_recommendation.get("distribution") or meta2.get("role_distribution") or meta2.get("distribution")
+    if not isinstance(role_distribution, dict):
+        role_distribution = {"western": 45, "shichu": 45, "vedic": 10}
+
+    vedic_level = str((auto_recommendation.get("vedic_trigger") or {}).get("level") or meta2.get("vedic_level") or "off").strip().lower()
+    structured_mode = str(meta2.get("style") or meta2.get("reading_style") or auto_recommendation.get("suggested_reading_style") or "general").strip().lower()
+    if structured_mode not in {"structured", "general"}:
+        structured_mode = "general"
+
+    return {
+        "age_mode": age_mode,
+        "structured_mode": structured_mode,
+        "vedic_level": vedic_level,
+        "age_system_prompt": get_age_system_prompt(age_mode),
+        "role_prompt": build_role_prompt(role_distribution, age_mode=age_mode, structured_mode=structured_mode, vedic_level=vedic_level),
+        "role_distribution": role_distribution,
+    }
+
 
 
 def _extract_planets(astro_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -259,8 +361,8 @@ def _normalize_requested_claude_model(value: Any) -> str | None:
     raw = str(value or "").strip().lower()
     aliases = {
         "haiku": CLAUDE_DEFAULT_MODEL,
-        "sonnet": "claude-sonnet-4-5",
-        "pro": "claude-sonnet-4-5",
+        "sonnet": "claude-sonnet-4-6",
+        "pro": "claude-sonnet-4-6",
     }
     if not raw or raw == "auto":
         return None
@@ -411,12 +513,12 @@ _CLAUDE_SYSTEM_PROMPT = (
 )
 
 
-def _generate_once_claude(*, client: Any, model_name: str, prompt: str, max_tokens: int) -> str:
+def _generate_once_claude(*, client: Any, model_name: str, prompt: str, max_tokens: int, system_prompt: str | None = None) -> str:
     resp = client.messages.create(
         model=model_name,
         max_tokens=max_tokens,
         temperature=0.75,
-        system=_CLAUDE_SYSTEM_PROMPT,
+        system=(system_prompt or _CLAUDE_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": prompt}],
     )
     buf: list[str] = []
@@ -464,7 +566,26 @@ def generate_report(
             "keys": list((ss_obj or {}).keys())[:30] if isinstance(ss_obj, dict) else [],
         })
     except Exception:
-        pass
+        ss_obj = {}
+
+    auto_recommendation = meta2.get("auto_recommendation") if isinstance(meta2.get("auto_recommendation"), dict) else {}
+    prompt_controls = _build_prompt_control_bundle(meta2, auto_recommendation)
+    has_shichu, shichu_status, shichu_reason = _extract_shichu_status(astro_data, ss_obj)
+
+    auto_rec = meta2.get("auto_recommendation") or {}
+    selected_systems = auto_rec.get("selected_systems") or []
+    vedic_trigger = auto_rec.get("vedic_trigger") or {}
+    vedic_level = str(vedic_trigger.get("level") or "off").strip().lower()
+    vedic_score = int(vedic_trigger.get("score") or 0)
+    vedic_reasons = vedic_trigger.get("reasons") or []
+    manual_vedic_on = "vedic" in [str(x).lower() for x in selected_systems]
+    must_use_vedic = (
+        manual_vedic_on or (
+            astrology_system in {"integrated", "integrated3", "integrated_3", "integrated_w_shichu", "vedic"}
+            and vedic_level in {"light", "strong", "manual_on"}
+        )
+    )
+    vedic_focus_summary = _build_vedic_focus_summary(astro_data, meta2)
 
     ctx: dict[str, Any] = {
         "astro_data": astro_data,
@@ -479,22 +600,47 @@ def generate_report(
         "era_title": era_title,
         "detail_level": detail_level,
         "user_name": user_name,
+        "auto_recommendation": json.dumps(auto_rec, ensure_ascii=False),
+        "vedic_trigger_level": vedic_level,
+        "vedic_trigger_score": vedic_score,
+        "vedic_trigger_reasons": " / ".join([str(x) for x in vedic_reasons[:5]]),
+        "must_use_vedic": "true" if must_use_vedic else "false",
+        "vedic_focus_summary": vedic_focus_summary,
+        "age_mode": prompt_controls["age_mode"],
+        "has_shichu": str(bool(has_shichu)).lower(),
+        "shichu_status": shichu_status,
+        "shichu_reason": shichu_reason,
+        "role_prompt": prompt_controls["role_prompt"],
+        "age_system_prompt": prompt_controls["age_system_prompt"],
     }
     # 四柱推命データを明示的に取り出してプロンプトに渡す
-    _shichu_raw = astro_data.get("shichusuimei") or astro_data.get("pillars")
+    _shichu_raw = astro_data.get("shichusuimei") or astro_data.get("pillars") or ss_obj.get("shichusuimei") or ss_obj.get("pillars")
     ctx["shichu_data"] = json.dumps(_shichu_raw, ensure_ascii=False) if _shichu_raw else ""
+
+    if must_use_vedic and vedic_focus_summary:
+        ctx["user_message"] = (
+            f"{user_message}\n\n"
+            f"【今回の追加指示】\n"
+            f"今回はインド占星術の視点を本文に必ず取り入れてください。\n"
+            f"補助要約: {vedic_focus_summary}"
+        )
 
     common_rules_tpl = _read_prompt_file("common_rules.txt")
     ctx["common_rules"] = _render_prompt(common_rules_tpl, ctx)
 
     use_claude = _should_use_claude(meta2, astrology_system)
     prompt_files = _select_prompt_files(astrology_system, rt, output_style, theme, use_claude=use_claude, reading_style=reading_style)
-    single_web_prompt = _render_prompt(_read_prompt_file(prompt_files["single_web"]), ctx)
-    single_line_prompt = _render_prompt(_read_prompt_file(prompt_files["single_line"]), ctx)
-    single_web_reader_prompt = _render_prompt(_read_prompt_file(prompt_files["single_web_reader"]), ctx)
-    single_line_reader_prompt = _render_prompt(_read_prompt_file(prompt_files["single_line_reader"]), ctx)
-    compat_web_prompt = _render_prompt(_read_prompt_file(prompt_files["compat_web"]), ctx)
-    compat_line_prompt = _render_prompt(_read_prompt_file(prompt_files["compat_line"]), ctx)
+    prompt_prefix = (ctx.get("age_system_prompt", "") + "\n\n" + ctx.get("role_prompt", "")).strip()
+
+    def _with_prefix(body: str) -> str:
+        return (prompt_prefix + "\n\n" + body).strip() if prompt_prefix else body
+
+    single_web_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["single_web"]), ctx))
+    single_line_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["single_line"]), ctx))
+    single_web_reader_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["single_web_reader"]), ctx))
+    single_line_reader_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["single_line_reader"]), ctx))
+    compat_web_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["compat_web"]), ctx))
+    compat_line_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["compat_line"]), ctx))
 
     guard = ""
     if astrology_system == "integrated":
@@ -538,6 +684,17 @@ def generate_report(
     else:
         prompt = single_web_prompt
 
+    if must_use_vedic:
+        prompt += """
+
+【最終強制指示】
+今回はインド占星術発火ケースです。
+本文を西洋占星術のみで完結させることを禁止します。
+少なくとも2か所で、インド占星術の視点を本文に自然に統合してください。
+特に「なぜ同じ流れが続きやすいか」「表面では説明しきれない背景」を補ってください。
+可能なら vedic_focus_summary の内容を1回以上反映してください。
+"""
+
     fallback_used = False
 
     if use_claude:
@@ -555,6 +712,7 @@ def generate_report(
         max_tokens = 3000 if ("line" in rt or output_style == "line") else 8192
         model_candidates = [model_name]
         provider_name = "claude"
+        dynamic_system_prompt = (_CLAUDE_SYSTEM_PROMPT + "\n\n" + ctx.get("age_system_prompt", "") + "\n\n" + ctx.get("role_prompt", "")).strip()
     else:
         api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
         if not api_key:
@@ -579,7 +737,7 @@ def generate_report(
             try:
                 current_max_tokens = max_tokens if candidate == model_name else 4500
                 if use_claude:
-                    text1 = _generate_once_claude(client=client, model_name=candidate, prompt=prompt, max_tokens=current_max_tokens)
+                    text1 = _generate_once_claude(client=client, model_name=candidate, prompt=prompt, max_tokens=current_max_tokens, system_prompt=dynamic_system_prompt)
                 else:
                     text1 = _generate_once(client=client, model_name=candidate, prompt=prompt, max_tokens=current_max_tokens)
                 if not text1:

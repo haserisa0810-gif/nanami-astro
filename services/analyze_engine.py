@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 from datetime import date
+
+from services.analysis_engine import detect_age_mode
 from typing import Any
 
 from fastapi import HTTPException
@@ -263,9 +265,11 @@ def build_base_meta(
             "day_change_at_23": day_change_at_23,
         },
         "name": name,
+        "user_name": name,
         "name_b": name_b,
         "gender": gender,
         "gender_b": gender_b,
+        "age_mode": detect_age_mode(birth_date),
     }
 
 

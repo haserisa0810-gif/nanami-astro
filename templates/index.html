@@ -657,14 +657,14 @@
             <div class="two">
               <div>
                 <div class="hint" style="margin:0 0 6px;">ハウスシステム</div>
-                <select name="house_system">
+                <select name="house_system" id="house_system">
                   <option value="P" selected>Placidus</option>
                   <option value="K">Koch</option>
                 </select>
               </div>
               <div>
                 <div class="hint" style="margin:0 0 6px;">ノード</div>
-                <select name="node_mode">
+                <select name="node_mode" id="node_mode">
                   <option value="true" selected>True Node</option>
                   <option value="mean">Mean Node</option>
                 </select>
@@ -672,16 +672,19 @@
             </div>
             <div style="margin-top:12px;">
               <div class="hint" style="margin:0 0 6px;">Lilith</div>
-              <select name="lilith_mode">
+              <select name="lilith_mode" id="lilith_mode">
                 <option value="mean" selected>Mean Lilith</option>
                 <option value="true">True Lilith</option>
               </select>
             </div>
             <div style="margin-top:12px; display:grid; gap:10px;">
-              <label class="checkbox-line"><input type="checkbox" name="include_chiron" value="true" checked style="width:auto;" /> Chiron を含める</label>
-              <label class="checkbox-line"><input type="checkbox" name="include_lilith" value="true" checked style="width:auto;" /> Lilith を含める</label>
-              <label class="checkbox-line"><input type="checkbox" name="include_vertex" value="true" checked style="width:auto;" /> Vertex を含める</label>
-              <label class="checkbox-line"><input type="checkbox" name="include_asteroids" value="true" style="width:auto;" /> 小惑星（Ceres / Pallas / Juno / Vesta）を含める</label>
+              <label class="checkbox-line"><input type="checkbox" name="auto_option_mode" id="auto_option_mode" value="true" checked style="width:auto;" /> 出生データから西洋オプションを自動設定する</label>
+              <div id="option_recommendation_status" class="hint" style="margin:0 0 4px 24px;">生年月日と出生地が入ると、自動判定メニューとして配合判定（西洋寄り/四柱推命寄り）・読解モード判定・小惑星ON条件を自動判定します。</div>
+              <label class="checkbox-line"><input type="checkbox" name="include_chiron" id="include_chiron" value="true" checked style="width:auto;" /> Chiron を含める</label>
+              <label class="checkbox-line"><input type="checkbox" name="include_lilith" id="include_lilith" value="true" checked style="width:auto;" /> Lilith を含める</label>
+              <label class="checkbox-line"><input type="checkbox" name="include_vertex" id="include_vertex" value="true" checked style="width:auto;" /> Vertex を含める</label>
+              <label class="checkbox-line"><input type="checkbox" name="include_asteroids" id="include_asteroids" value="true" style="width:auto;" /> 小惑星（Ceres / Pallas / Juno / Vesta）を含める</label>
+              <div id="option_recommendation_reasons" class="hint" style="margin:0 0 0 24px; white-space:pre-line;"></div>
             </div>
             <div class="hint" style="margin:8px 0 0;">小惑星とキロンは Swiss Ephemeris データ（*.se1）が無いと計算をスキップします。</div>
           </div>
@@ -694,17 +697,17 @@
 
         <div class="row">
           <label>生年月日</label>
-          <input name="birth_date" type="date" required>
+          <input name="birth_date" id="birth_date" type="date" required>
         </div>
 
         <div class="row">
           <label>出生時刻（不明なら空）</label>
-          <input name="birth_time" type="time">
+          <input name="birth_time" id="birth_time" type="time">
         </div>
 
         <div class="row">
           <label>性別</label>
-          <select name="gender">
+          <select name="gender" id="gender">
             <option value="female" selected>女性</option>
             <option value="male">男性</option>
           </select>
@@ -770,19 +773,56 @@
         <div class="row">
           <label>鑑定スタイル</label>
           <select name="reading_style" id="reading_style">
-            <option value="general" selected>総合鑑定</option>
+            <option value="general" selected>総合鑑定（自動判定メニュー）</option>
+            <option value="structured">構造読解（自動判定メニュー）</option>
             <option value="love">恋愛・パートナーシップ</option>
             <option value="work">仕事・キャリア</option>
             <option value="relationship">人間関係</option>
             <option value="timing">今の時期・流れ</option>
           </select>
         </div>
+<div class="row">
+  <label for="analysis_mode">鑑定方式</label>
+  <select name="analysis_mode" id="analysis_mode">
+    <option value="auto" selected>自動（おすすめ）</option>
+    <option value="manual">手動カスタム</option>
+  </select>
+</div>
 
+<div class="row" id="auto_mode_hint_row">
+  <label>自動判定の説明</label>
+  <div class="hint-box">
+    入力内容・相談文・観測事実をもとに、使用する占術を自動判定します。<br>
+    西洋占星術を主軸に、必要に応じて四柱推命・インド占星術を補助的に使用します。
+  </div>
+</div>
+
+<div id="manual_mode_block" style="display:none;">
+  <div class="row">
+    <label>使用占術（手動）</label>
+    <div class="checkbox-group">
+      <label><input type="checkbox" name="manual_systems" value="western" checked> 西洋占星術（主軸）</label>
+      <label><input type="checkbox" name="manual_systems" value="shichu"> 四柱推命</label>
+      <label><input type="checkbox" name="manual_systems" value="vedic"> インド占星術</label>
+    </div>
+    <div class="small-note">
+      ※ 西洋占星術は主軸のため必須です。外せません。<br>
+      ※ インド占星術は補助用途です。単独主軸にはなりません。
+    </div>
+  </div>
+</div>
+
+<div class="row" id="auto_selected_systems_row">
+  <label>自動判定での想定占術</label>
+  <div id="auto_selected_systems" class="hint-box">
+    未判定
+  </div>
+</div>
         <input type="hidden" name="theme" id="theme" value="overall">
 
         <div class="row">
           <label>相談内容（任意）</label>
-          <textarea name="message" rows="4" placeholder="例）仕事相談"></textarea>
+          <textarea name="message" id="message" rows="4" placeholder="例）仕事相談"></textarea>
         </div>
 
         <div class="row">
@@ -1021,6 +1061,15 @@
       d.westernOpts.style.display = show ? "grid" : "none";
     }
 
+    function scheduleMapDrivenRefresh() {
+      notifyAutoRecommendationDependents();
+      [120, 450, 900].forEach(function (delay) {
+        window.setTimeout(function () {
+          notifyAutoRecommendationDependents();
+        }, delay);
+      });
+    }
+
     function clearSelection(target) {
       const state = mapsState[target];
       if (!state) return;
@@ -1050,6 +1099,7 @@
 
       if (target === "a") syncLock();
       if (target === "b") syncLockB();
+      scheduleMapDrivenRefresh();
     }
 
     function applyLocationResult(target, result, fitViewport) {
@@ -1102,6 +1152,7 @@
 
       if (target === "a") syncLock();
       if (target === "b") syncLockB();
+      scheduleMapDrivenRefresh();
     }
 
     function reverseGeocodeAndApply(target, latLng) {
@@ -1149,6 +1200,7 @@
 
         if (target === "a") syncLock();
         if (target === "b") syncLockB();
+        scheduleMapDrivenRefresh();
       });
     }
 
@@ -1504,6 +1556,106 @@
     syncDetailHint();
   }
 
+
+  const autoOptionModeCheckbox = document.getElementById("auto_option_mode");
+  const optionStatus = document.getElementById("option_recommendation_status");
+  const optionReasons = document.getElementById("option_recommendation_reasons");
+  const optionCheckboxes = ["include_chiron", "include_lilith", "include_vertex", "include_asteroids"].map((id) => document.getElementById(id)).filter(Boolean);
+  const manualOverrideInputs = [
+    ...optionCheckboxes,
+    document.getElementById("reading_style"),
+    document.getElementById("astrology_system"),
+  ].filter(Boolean);
+  let recommendTimer = null;
+  let optionRecommendationInFlight = false;
+
+  function setOptionRecommendationText(status, reasons) {
+    if (optionStatus) optionStatus.textContent = status || "";
+    if (optionReasons) optionReasons.textContent = reasons || "";
+  }
+
+  function setOptionCheckboxesDisabled(disabled) {
+    optionCheckboxes.forEach((el) => { el.disabled = !!disabled; });
+  }
+
+  function disableAutoOptionModeWithMessage() {
+    if (!autoOptionModeCheckbox || !autoOptionModeCheckbox.checked || optionRecommendationInFlight) return;
+    autoOptionModeCheckbox.checked = false;
+    setOptionCheckboxesDisabled(false);
+    setOptionRecommendationText("手動変更を検知したため、自動設定をOFFにしました。現在は手動設定が優先されます。", "");
+  }
+
+  async function refreshOptionRecommendation() {
+    if (!autoOptionModeCheckbox || !autoOptionModeCheckbox.checked) {
+      setOptionCheckboxesDisabled(false);
+      setOptionRecommendationText("自動設定はOFFです。手動で選べます。", "");
+      return;
+    }
+    const birthDate = document.getElementById("birth_date")?.value || "";
+    const pref = document.getElementById("prefecture")?.value || "";
+    const lat = document.getElementById("lat")?.value || "";
+    const lon = document.getElementById("lon")?.value || "";
+    if (!birthDate || (!pref && !(lat && lon))) {
+      setOptionCheckboxesDisabled(true);
+      setOptionRecommendationText("生年月日と出生地がそろうと自動設定します。", "");
+      return;
+    }
+    setOptionCheckboxesDisabled(true);
+    optionRecommendationInFlight = true;
+    setOptionRecommendationText("オプションを算出中…", "");
+    const fd = new FormData();
+    fd.append("birth_date", birthDate);
+    fd.append("birth_time", document.getElementById("birth_time")?.value || "");
+    fd.append("birth_place", document.getElementById("birth_place")?.value || "");
+    fd.append("prefecture", pref);
+    fd.append("lat", lat);
+    fd.append("lon", lon);
+    fd.append("gender", document.getElementById("gender")?.value || "female");
+    fd.append("house_system", document.getElementById("house_system")?.value || "P");
+    fd.append("node_mode", document.getElementById("node_mode")?.value || "true");
+    fd.append("lilith_mode", document.getElementById("lilith_mode")?.value || "mean");
+    fd.append("consultation_text", document.getElementById("message")?.value || "");
+    fd.append("observations_text", document.querySelector("[name=observations_text]")?.value || "");
+    fd.append("theme", document.getElementById("theme")?.value || "overall");
+    try {
+      const res = await fetch('/analyze/recommend-options', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'option recommendation failed');
+      const opts = data.options || {};
+      optionCheckboxes.forEach((el) => { el.checked = !!opts[el.name]; });
+      const suggestedStyle = data.suggested_reading_style || '';
+      const suggestedSystem = data.suggested_astrology_system || '';
+      if (readingStyleSelect && suggestedStyle && ["general", "structured"].includes(suggestedStyle)) readingStyleSelect.value = suggestedStyle;
+      const astrologySystemSelect = document.getElementById("astrology_system");
+      if (astrologySystemSelect && suggestedSystem && ["western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"].includes(suggestedSystem)) astrologySystemSelect.value = suggestedSystem;
+      const modeLabel = data.mode === 'structured' ? '構造読解（自動判定メニュー）' : '総合鑑定（自動判定メニュー）';
+      const reasonText = Object.entries(data.reasons || {})
+        .filter(([, arr]) => Array.isArray(arr) && arr.length)
+        .map(([key, arr]) => `・${key.replace('include_','')}: ${arr.join(' / ')}`)
+        .join('\n');
+      const vedicLabel = data.vedic_trigger?.level ? ` / インド発火 ${data.vedic_trigger.level}` : "";
+      setOptionRecommendationText(`自動設定済み: ${modeLabel}${vedicLabel} / システム ${suggestedSystem || "-"}`, reasonText);
+    } catch (err) {
+      setOptionRecommendationText(`自動設定に失敗: ${err.message || err}`, "");
+    } finally {
+      optionRecommendationInFlight = false;
+      setOptionCheckboxesDisabled(false);
+      if (autoOptionModeCheckbox && autoOptionModeCheckbox.checked) {
+        optionCheckboxes.forEach((el) => { el.disabled = true; });
+      }
+    }
+  }
+
+  function scheduleOptionRecommendation() {
+    clearTimeout(recommendTimer);
+    recommendTimer = setTimeout(refreshOptionRecommendation, 350);
+  }
+
+  function notifyAutoRecommendationDependents() {
+    scheduleOptionRecommendation();
+    if (typeof updateAnalysisModeUI === "function") updateAnalysisModeUI();
+  }
+
   // AIプロバイダー切り替え
   const aiProviderSelect = document.getElementById("ai_provider");
   const readingStyleSelect = document.getElementById("reading_style");
@@ -1548,6 +1700,22 @@
     aiProviderRow.style.opacity = generateAiCheckbox.checked ? "1" : "0.4";
   }
 
+  [document.getElementById("birth_date"), document.getElementById("birth_time"), document.getElementById("prefecture"), document.getElementById("birth_place"), document.getElementById("lat"), document.getElementById("lon"), document.getElementById("message"), document.querySelector('[name="observations_text"]'), document.getElementById("house_system"), document.getElementById("node_mode"), document.getElementById("lilith_mode")].filter(Boolean).forEach((el) => {
+    el.addEventListener("change", notifyAutoRecommendationDependents);
+    el.addEventListener("input", notifyAutoRecommendationDependents);
+  });
+  if (readingStyleSelect) readingStyleSelect.addEventListener("change", notifyAutoRecommendationDependents);
+  if (autoOptionModeCheckbox) {
+    autoOptionModeCheckbox.addEventListener("change", refreshOptionRecommendation);
+  }
+  manualOverrideInputs.forEach((el) => {
+    el.addEventListener("change", disableAutoOptionModeWithMessage);
+    if (el.type === "text" || el.tagName === "TEXTAREA") {
+      el.addEventListener("input", disableAutoOptionModeWithMessage);
+    }
+  });
+  scheduleOptionRecommendation();
+
   if (aiProviderSelect) {
     aiProviderSelect.addEventListener("change", syncAiProviderUI);
     syncAiProviderUI();
@@ -1576,6 +1744,76 @@
     generateAiCheckbox.addEventListener("change", syncAiProviderVisibility);
     syncAiProviderVisibility();
   }
+  function getAutoSelectedSystems() {
+    const astrologySystemSelect = document.getElementById("astrology_system");
+    const system = (astrologySystemSelect?.value || "western").trim();
+    const results = [];
+
+    if (["western", "integrated", "integrated3", "integrated_w_shichu"].includes(system)) {
+      results.push("西洋占星術（主軸）");
+    }
+    if (["shichusuimei", "integrated3", "integrated_w_shichu"].includes(system)) {
+      results.push("四柱推命（補助）");
+    }
+    if (["vedic", "integrated", "integrated3"].includes(system)) {
+      results.push("インド占星術（補助）");
+    }
+
+    return results.length ? results : ["西洋占星術（主軸）"];
+  }
+
+  function updateAnalysisModeUI() {
+    const mode = document.getElementById("analysis_mode")?.value || "auto";
+    const manualBlock = document.getElementById("manual_mode_block");
+    const autoHintRow = document.getElementById("auto_mode_hint_row");
+    const autoSystemsRow = document.getElementById("auto_selected_systems_row");
+
+    if (mode === "manual") {
+      if (manualBlock) manualBlock.style.display = "";
+      if (autoHintRow) autoHintRow.style.display = "none";
+      if (autoSystemsRow) autoSystemsRow.style.display = "none";
+    } else {
+      if (manualBlock) manualBlock.style.display = "none";
+      if (autoHintRow) autoHintRow.style.display = "";
+      if (autoSystemsRow) autoSystemsRow.style.display = "";
+
+      const box = document.getElementById("auto_selected_systems");
+      if (box) {
+        const systems = getAutoSelectedSystems();
+        box.innerHTML = systems.join("<br>");
+      }
+    }
+  }
+
+  function enforceWesternChecked() {
+    const western = document.querySelector('input[name="manual_systems"][value="western"]');
+    if (!western) return;
+
+    western.checked = true;
+    western.disabled = true;
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const analysisMode = document.getElementById("analysis_mode");
+    const messageInput = document.querySelector('[name="message"]');
+    const observationsInput = document.querySelector('[name="observations_text"]');
+
+    if (analysisMode) {
+      analysisMode.addEventListener("change", updateAnalysisModeUI);
+    }
+
+    if (messageInput) {
+      messageInput.addEventListener("input", updateAnalysisModeUI);
+    }
+
+    if (observationsInput) {
+      observationsInput.addEventListener("input", updateAnalysisModeUI);
+    }
+
+    enforceWesternChecked();
+    updateAnalysisModeUI();
+    notifyAutoRecommendationDependents();
+  });
 </script>
 </body>
 </html>

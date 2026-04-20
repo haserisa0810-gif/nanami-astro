@@ -136,6 +136,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
     message = form_data.get("message")
     observations_text = form_data.get("observations_text")
     output_style = form_data.get("output_style", "normal")
+    reading_style = form_data.get("reading_style", "general")
     detail_level = form_data.get("detail_level", "standard")
     ai_provider = form_data.get("ai_provider")
     ai_model = form_data.get("ai_model")
@@ -176,6 +177,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
     base_meta = build_base_meta(
         birth_date=birth_date,
         output_style=output_style,
+        reading_style=reading_style,
         detail_level=detail_level,
         house_system=house_system,
         node_mode=node_mode,
@@ -199,6 +201,11 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
         gender_b=gender_b,
     )
 
+    base_meta["style"] = reading_style
+
+    if form_data.get("auto_recommendation") and isinstance(form_data.get("auto_recommendation"), dict):
+        base_meta["auto_recommendation"] = form_data.get("auto_recommendation")
+
     inputs_view = build_inputs_view(
         analysis_type=analysis_type,
         astrology_system=astrology_system,
@@ -215,6 +222,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
         prefecture_b=prefecture_b,
         gender_b=gender_b,
         output_style=output_style,
+        reading_style=reading_style,
         detail_level=detail_level,
         ai_provider=ai_provider,
         ai_model=ai_model,
@@ -311,6 +319,7 @@ def run_analyze_request(*, form_data: dict[str, Any]) -> dict[str, Any]:
             report_line=report_line,
             detail_level=detail_level,
             output_style=output_style,
+        reading_style=reading_style,
             include_reader=include_reader,
         )
 

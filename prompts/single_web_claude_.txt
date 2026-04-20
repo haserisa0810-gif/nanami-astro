@@ -9,7 +9,6 @@ structure_calc: {structure_summary}
 meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 must_use_vedic: {must_use_vedic}
 vedic_trigger_level: {vedic_trigger_level}
-vedic_trigger_score: {vedic_trigger_score}
 vedic_trigger_reasons: {vedic_trigger_reasons}
 vedic_focus_summary: {vedic_focus_summary}
 
@@ -40,8 +39,7 @@ vedic_focus_summary: {vedic_focus_summary}
 ・次に、内側の違和感やズレを提示する（決めつけない）
 ・具体的な行動やシーンを出す
 ・最後は断定せず、余白を残して終える
-・章末に「▼星の根拠（気になる方へ）」ブロックを置く。1〜2行以内で簡潔にまとめる（長くしない）
-・「▼統合メモ」「▼一致点」「▼ズレ」「▼一手」という形式は使わない。禁止。
+・章末に「▼星の根拠（気になる方へ）」ブロックを置き、本文中の体験描写の裏付けとなる配置を2〜3行で簡潔にまとめる
 
 【重要ルール】
 ・最初の3行に具体的な行動や状況（例：メール、会議など）を入れない
@@ -74,7 +72,7 @@ vedic_focus_summary: {vedic_focus_summary}
 ・本文中に星の説明を入れない。天体名・ハウス・アスペクトの解説は本文から除外する
 ・どうしても触れる場合は「（天秤座の影響で）」程度の一言に留める
 ・星の根拠はすべて章末の「▼星の根拠（気になる方へ）」にまとめる
-・「▼星の根拠」ブロックは1〜2行以内。must_use_vedicがtrueの場合は西洋・インドの根拠を1行ずつ最大2行に収める
+・「▼星の根拠」ブロックは箇条書き2〜3行、専門用語には一言の日常訳を添える
 ・読み手の体験・感覚の描写が主役で、星はあくまで補足
 
 【禁止】

@@ -413,6 +413,27 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
         editor_seed_text = (linked_free_order.free_result_text or '').strip()
         editor_seed_source = "source_free_result"
 
+    option_recommendation = None
+    if order.birth_date:
+        try:
+            from services.option_recommendation import recommend_western_options
+            option_recommendation = recommend_western_options(
+                birth_date=order.birth_date.isoformat(),
+                birth_time=order.birth_time,
+                birth_place=order.birth_place,
+                prefecture=order.birth_prefecture,
+                lat=order.birth_lat,
+                lon=order.birth_lon,
+                gender=order.gender or 'female',
+                house_system='P',
+                node_mode='true',
+                lilith_mode='mean',
+                consultation_text=order.consultation_text,
+                theme='overall',
+            )
+        except Exception:
+            option_recommendation = None
+
     return templates.TemplateResponse(
         request=request,
         name="staff_order_detail.html",
@@ -439,6 +460,7 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
             "customer_line_id": _customer_line_id(order),
             "customer_email": _customer_email(order),
             "default_reader_id": default_reader_id,
+            "option_recommendation": option_recommendation,
         },
     )
 
@@ -799,6 +821,7 @@ def staff_auto_generate(
     include_lilith: str = Form(""),
     include_vertex: str = Form(""),
     include_asteroids: str = Form(""),
+    auto_option_mode: str = Form(""),
     name_b: str = Form(""),
     birth_date_b: str = Form(""),
     birth_time_b: str = Form(""),
@@ -859,6 +882,40 @@ def staff_auto_generate(
     def _is_on(v: str) -> bool:
         return str(v or '').lower() in {'1', 'true', 'on', 'yes'}
 
+    auto_option_mode_flag = True
+    if auto_option_mode_flag:
+        try:
+            from services.option_recommendation import recommend_western_options
+            rec = recommend_western_options(
+                birth_date=order.birth_date.isoformat(),
+                birth_time=order.birth_time,
+                birth_place=order.birth_place,
+                prefecture=order.birth_prefecture,
+                lat=order.birth_lat,
+                lon=order.birth_lon,
+                gender=order.gender or 'female',
+                house_system=(house_system or 'P').strip(),
+                node_mode=(node_mode or 'true').strip(),
+                lilith_mode=(lilith_mode or 'mean').strip(),
+                consultation_text=order.consultation_text,
+                observations_text=getattr(order, "observation_text", None),
+                theme=(theme or 'overall').strip(),
+            )
+            rec_opts = rec.get('options') if isinstance(rec, dict) else {}
+            if isinstance(rec_opts, dict):
+                include_chiron = 'true' if rec_opts.get('include_chiron') else ''
+                include_lilith = 'true' if rec_opts.get('include_lilith') else ''
+                include_vertex = 'true' if rec_opts.get('include_vertex') else ''
+                include_asteroids = 'true' if rec_opts.get('include_asteroids') else ''
+            suggested_style = str((rec or {}).get('suggested_reading_style') or '').strip().lower()
+            if (reading_style or 'general').strip().lower() in {'general', 'structured', ''} and suggested_style in {'general', 'structured'}:
+                reading_style = suggested_style
+            suggested_system = str((rec or {}).get('suggested_astrology_system') or '').strip().lower()
+            if (astrology_system or 'western').strip().lower() in {'western', 'vedic', 'integrated', 'integrated_w_shichu', 'integrated3', 'shichusuimei'} and suggested_system in {'western', 'vedic', 'integrated', 'integrated_w_shichu', 'integrated3', 'shichusuimei'}:
+                astrology_system = suggested_system
+        except Exception:
+            pass
+
     analysis_options = {
         'analysis_type': (analysis_type or 'single').strip(),
         'astrology_system': (astrology_system or 'western').strip(),
@@ -877,6 +934,7 @@ def staff_auto_generate(
         'include_lilith': _is_on(include_lilith),
         'include_vertex': _is_on(include_vertex),
         'include_asteroids': _is_on(include_asteroids),
+        'auto_option_mode': auto_option_mode_flag,
         'name_b': (name_b or '').strip() or None,
         'birth_date_b': (birth_date_b or '').strip() or None,
         'birth_time_b': (birth_time_b or '').strip() or None,
