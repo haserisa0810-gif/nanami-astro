@@ -19,6 +19,8 @@ from routes_reader import router as reader_router
 from routes_staff import router as staff_router
 from routes_shared import startup_platform_safe
 from routes_transit import router as transit_router
+from routes_external_orders import router as external_orders_router
+from routes_products import router as products_router
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -43,5 +45,7 @@ app.include_router(public_orders_router)
 app.include_router(reader_router)
 app.include_router(admin_router)
 app.include_router(staff_router)
+app.include_router(external_orders_router)
 app.include_router(daily_theme_router)
 app.include_router(daily_card_router)
+app.include_router(products_router)

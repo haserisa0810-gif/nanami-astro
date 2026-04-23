@@ -387,3 +387,81 @@ class AuditLog(Base):
     before_json: Mapped[Optional[str]] = mapped_column(Text)
     after_json: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ExternalOrder(TimestampMixin, Base):
+    __tablename__ = "external_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="coconala", index=True)
+    customer_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    customer_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date)
+    birth_time: Mapped[Optional[str]] = mapped_column(String(10))
+    gender: Mapped[Optional[str]] = mapped_column(String(20))
+    prefecture: Mapped[Optional[str]] = mapped_column(String(100))
+    birth_place: Mapped[Optional[str]] = mapped_column(String(255))
+    consultation_text: Mapped[Optional[str]] = mapped_column(Text)
+    menu_name: Mapped[Optional[str]] = mapped_column(String(255))
+    price: Mapped[Optional[int]] = mapped_column(Integer)
+    staff_name: Mapped[Optional[str]] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
+    yaml_log_text: Mapped[Optional[str]] = mapped_column(Text)
+    html_storage_path: Mapped[Optional[str]] = mapped_column(Text)
+    html_original_name: Mapped[Optional[str]] = mapped_column(String(255))
+    html_uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    public_token: Mapped[Optional[str]] = mapped_column(String(128), unique=True, index=True)
+    public_url: Mapped[Optional[str]] = mapped_column(Text)
+    url_issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    mail_subject: Mapped[Optional[str]] = mapped_column(Text)
+    mail_body: Mapped[Optional[str]] = mapped_column(Text)
+    mail_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class TransitHubRequest(TimestampMixin, Base):
+    __tablename__ = "transit_hub_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False, default="manual", index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
+
+    customer_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    customer_email: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date)
+    birth_time: Mapped[Optional[str]] = mapped_column(String(20))
+    gender: Mapped[Optional[str]] = mapped_column(String(20))
+    prefecture: Mapped[Optional[str]] = mapped_column(String(100))
+    birth_place: Mapped[Optional[str]] = mapped_column(String(255))
+
+    period_label: Mapped[str] = mapped_column(String(50), nullable=False, default="3ヶ月")
+    period_start: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    period_end: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    template_name: Mapped[str] = mapped_column(String(100), nullable=False, default="standard_3month")
+
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    generated_summary: Mapped[Optional[str]] = mapped_column(Text)
+    generated_html: Mapped[Optional[str]] = mapped_column(Text)
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+    jobs: Mapped[list["TransitHubJob"]] = relationship(back_populates="request", cascade="all, delete-orphan")
+
+
+class TransitHubJob(TimestampMixin, Base):
+    __tablename__ = "transit_hub_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("transit_hub_requests.id"), nullable=False, index=True)
+    job_type: Mapped[str] = mapped_column(String(30), nullable=False, default="generate")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    log_text: Mapped[Optional[str]] = mapped_column(Text)
+
+    request: Mapped[TransitHubRequest] = relationship(back_populates="jobs")

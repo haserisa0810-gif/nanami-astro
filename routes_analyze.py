@@ -72,6 +72,44 @@ def _build_inputs_view(**kwargs: Any) -> dict[str, Any]:
     return dict(kwargs)
 
 
+def _normalize_manual_systems(manual_systems: list[str] | None, astrology_system: str) -> list[str]:
+    systems = [str(s).strip().lower() for s in (manual_systems or []) if str(s).strip()]
+    selected = set(systems)
+
+    system_value = (astrology_system or "western").strip().lower()
+    if system_value in {"western", "integrated", "integrated3", "integrated_w_shichu"}:
+        selected.add("western")
+    if system_value in {"vedic", "integrated", "integrated3"}:
+        selected.add("vedic")
+    if system_value in {"shichusuimei", "integrated3", "integrated_w_shichu"}:
+        selected.add("shichu")
+
+    if not selected:
+        selected.add("western")
+
+    ordered = [name for name in ["western", "shichu", "vedic"] if name in selected]
+    return ordered
+
+
+def _manual_systems_to_astrology_system(manual_systems: list[str] | None) -> str:
+    selected = set(str(s).strip().lower() for s in (manual_systems or []) if str(s).strip())
+    use_western = "western" in selected
+    use_shichu = "shichu" in selected
+    use_vedic = "vedic" in selected
+
+    if use_western and use_shichu and use_vedic:
+        return "integrated3"
+    if use_western and use_shichu:
+        return "integrated_w_shichu"
+    if use_western and use_vedic:
+        return "integrated"
+    if use_shichu and not use_western and not use_vedic:
+        return "shichusuimei"
+    if use_vedic and not use_western and not use_shichu:
+        return "vedic"
+    return "western"
+
+
 def _recommend_helpers():
     from services.option_recommendation import recommend_western_options
 
@@ -180,9 +218,14 @@ def analyze(
     include_transit_flag = _parse_checkbox(include_transit, default=False)
 
     analysis_mode = (analysis_mode or "auto").strip().lower()
-    manual_systems = [str(s).strip().lower() for s in (manual_systems or []) if str(s).strip()]
-    if "western" not in manual_systems:
-        manual_systems = ["western", *manual_systems]
+
+    if analysis_mode == "manual":
+        # 手動モード：astrology_system selectの値をそのまま使う。
+        # manual_systemsはUIから来ない場合があるため、astrology_systemから導出する。
+        manual_systems = _normalize_manual_systems(None, astrology_system)
+        # astrology_systemは変更しない（フォームの値をそのまま使う）
+    else:
+        manual_systems = _normalize_manual_systems(manual_systems, astrology_system)
 
     # Important: AI本文はUIでチェックが消えたり name がズレたときでも、
     # 既定では ON 扱いにする。
@@ -195,82 +238,74 @@ def analyze(
 
     recommendation: dict[str, Any] = {}
 
-    if analysis_mode == "manual":
-        selected = set(manual_systems or ["western"])
+    recommend_western_options = _recommend_helpers()
+    try:
+        recommendation = recommend_western_options(
+            birth_date=birth_date,
+            birth_time=birth_time,
+            birth_place=birth_place,
+            prefecture=prefecture,
+            lat=lat,
+            lon=lon,
+            gender=gender,
+            house_system=house_system,
+            node_mode=node_mode,
+            lilith_mode=lilith_mode,
+            consultation_text=message,
+            observations_text=observations_text,
+            theme=theme,
+        )
+        rec_opts = recommendation.get("options") if isinstance(recommendation, dict) else {}
+        suggested_style = str((recommendation or {}).get("suggested_reading_style") or "").strip().lower()
+        suggested_system = str((recommendation or {}).get("suggested_astrology_system") or "").strip().lower()
 
-        use_western = "western" in selected
-        use_shichu = "shichu" in selected
-        use_vedic = "vedic" in selected
-
-        if not use_western:
-            use_western = True
-            selected.add("western")
-
-        if use_western and use_shichu and use_vedic:
-            astrology_system = "integrated3"  # type: ignore[assignment]
-        elif use_western and use_shichu:
-            astrology_system = "integrated_w_shichu"  # type: ignore[assignment]
-        elif use_western and use_vedic:
-            astrology_system = "integrated"  # type: ignore[assignment]
-        elif use_western:
-            astrology_system = "western"  # type: ignore[assignment]
-        elif use_shichu:
-            astrology_system = "shichusuimei"  # type: ignore[assignment]
-        elif use_vedic:
-            astrology_system = "vedic"  # type: ignore[assignment]
-        else:
-            astrology_system = "western"  # type: ignore[assignment]
-
-        recommendation = {
-            "mode": "manual",
-            "selected_systems": sorted(selected),
-            "suggested_astrology_system": astrology_system,
-            "suggested_reading_style": reading_style,
-            "options": {
-                "include_asteroids": include_asteroids_flag,
-                "include_chiron": include_chiron_flag,
-                "include_lilith": include_lilith_flag,
-                "include_vertex": include_vertex_flag,
-            },
-            "vedic_trigger": {
-                "level": "manual_on" if use_vedic else "off",
-                "score": 999 if use_vedic else 0,
-                "reasons": ["manual_selection"] if use_vedic else [],
-            },
-        }
-
-    elif auto_option_mode_flag:
-        recommend_western_options = _recommend_helpers()
-        try:
-            recommendation = recommend_western_options(
-                birth_date=birth_date,
-                birth_time=birth_time,
-                birth_place=birth_place,
-                prefecture=prefecture,
-                lat=lat,
-                lon=lon,
-                gender=gender,
-                house_system=house_system,
-                node_mode=node_mode,
-                lilith_mode=lilith_mode,
-                consultation_text=message,
-                observations_text=observations_text,
-                theme=theme,
-            )
-            rec_opts = recommendation.get("options") if isinstance(recommendation, dict) else {}
-            if isinstance(rec_opts, dict):
+        if analysis_mode != "manual":
+            if auto_option_mode_flag and isinstance(rec_opts, dict):
                 include_chiron_flag = bool(rec_opts.get("include_chiron", include_chiron_flag))
                 include_lilith_flag = bool(rec_opts.get("include_lilith", include_lilith_flag))
                 include_vertex_flag = bool(rec_opts.get("include_vertex", include_vertex_flag))
                 include_asteroids_flag = bool(rec_opts.get("include_asteroids", include_asteroids_flag))
-            suggested_style = str((recommendation or {}).get("suggested_reading_style") or "").strip().lower()
+
             if reading_style in {"general", "structured", ""} and suggested_style in {"general", "structured"}:
                 reading_style = suggested_style
-            suggested_system = str((recommendation or {}).get("suggested_astrology_system") or "").strip().lower()
             if astrology_system in {"western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"} and suggested_system in {"western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"}:
                 astrology_system = suggested_system  # type: ignore[assignment]
-        except Exception:
-            pass
+        else:
+            recommendation = dict(recommendation or {})
+            recommendation["mode"] = "manual"
+            recommendation["selected_systems"] = list(manual_systems)
+            recommendation["suggested_astrology_system"] = astrology_system
+            recommendation["suggested_reading_style"] = reading_style
+            recommendation["options"] = {
+                "include_asteroids": include_asteroids_flag,
+                "include_chiron": include_chiron_flag,
+                "include_lilith": include_lilith_flag,
+                "include_vertex": include_vertex_flag,
+            }
+            recommendation["vedic_trigger"] = {
+                "level": "manual_on" if "vedic" in manual_systems else "off",
+                "score": 999 if "vedic" in manual_systems else 0,
+                "reasons": ["manual_selection"] if "vedic" in manual_systems else [],
+            }
+    except Exception:
+        if analysis_mode == "manual":
+            recommendation = {
+                "mode": "manual",
+                "selected_systems": list(manual_systems),
+                "suggested_astrology_system": astrology_system,
+                "suggested_reading_style": reading_style,
+                "options": {
+                    "include_asteroids": include_asteroids_flag,
+                    "include_chiron": include_chiron_flag,
+                    "include_lilith": include_lilith_flag,
+                    "include_vertex": include_vertex_flag,
+                },
+                "vedic_trigger": {
+                    "level": "manual_on" if "vedic" in manual_systems else "off",
+                    "score": 999 if "vedic" in manual_systems else 0,
+                    "reasons": ["manual_selection"] if "vedic" in manual_systems else [],
+                },
+            }
 
     payload_a = build_payload_a(
         birth_date=birth_date,

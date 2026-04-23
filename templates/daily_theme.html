@@ -1,5 +1,7 @@
-{% extends "platform_base.html" %}
+{% extends "platform_hub_base.html" %}
 {% set title = "今日の空気ジェネレーター" %}
+{% set active_main_nav = "products" %}
+{% set active_sub_nav = "products_daily" %}
 {% block content %}
 
 <style>
@@ -30,14 +32,7 @@
 }
 </style>
 
-<div class="topnav">
-  <a class="btn secondary" href="/dashboard">管理画面</a>
-  <a class="btn secondary" href="/staff/orders">案件一覧</a>
-  <a class="btn secondary" href="/free-reading/start">無料鑑定</a>
-  <a class="btn secondary" href="/">通常鑑定</a>
-  <a class="btn" href="/daily-theme">今日の空気</a>
-  <a class="btn secondary" href="/guide">ガイド</a>
-</div>
+
 
 <div class="card">
   <h1>今日の空気ジェネレーター</h1>

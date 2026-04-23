@@ -1,0 +1,50 @@
+{% extends "platform_hub_base.html" %}{% set title = "外部受注" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_external" %}{% block content %}
+
+<div class="card">
+<div class="section-head">
+  <div>
+    <h1>外部鑑定一覧</h1>
+    <p class="muted">ココナラや手動受付のHTML納品案件を管理します。</p>
+  </div>
+  <div class="row">
+    <a href="/staff/external-orders/new" class="btn">外部受注登録</a>
+    <span class="result-count">{{ orders|length }}件</span>
+  </div>
+</div>  {% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {{ success }}</p>{% endif %}
+  {% if error %}<div class="error">{% if error == 'no_html' %}HTML未登録です。{% elif error == 'mail_failed' %}メール送信に失敗しました。SMTP設定を確認してください。{% else %}{{ error }}{% endif %}</div>{% endif %}
+  <form method="get" class="filter-form">
+    <div class="filter-grid filter-grid-4">
+      <div><label>キーワード</label><input type="text" name="q" value="{{ filters.q }}" placeholder="受付番号・顧客名・メール"></div>
+      <div><label>状態</label><select name="status"><option value="">すべて</option>{% for status, label in status_labels.items() %}<option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div><label>販路</label><select name="source_type"><option value="">すべて</option>{% for source in source_options %}<option value="{{ source }}" {% if filters.source_type == source %}selected{% endif %}>{{ source }}</option>{% endfor %}</select></div>
+      <div><label>担当</label><select name="staff_name"><option value="">すべて</option>{% for name in staff_names %}<option value="{{ name }}" {% if filters.staff_name == name %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+      <div><label>作成日 from</label><input type="date" name="created_from" value="{{ filters.created_from }}"></div>
+      <div><label>作成日 to</label><input type="date" name="created_to" value="{{ filters.created_to }}"></div>
+    </div>
+    <div class="filter-actions"><button type="submit">絞り込む</button><a class="btn secondary" href="/staff/external-orders">リセット</a></div>
+  </form>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>受付番号</th><th>顧客</th><th>メール</th><th>販路</th><th>メニュー</th><th>状態</th><th>HTML</th><th>URL</th><th>メール送信</th><th>作成日時</th></tr></thead>
+      <tbody>
+      {% for order in orders %}
+        <tr>
+          <td><a href="/staff/external-orders/{{ order.id }}">{{ order.order_code }}</a></td>
+          <td>{{ order.customer_name }}</td>
+          <td>{{ order.customer_email }}</td>
+          <td>{{ order.source_type }}</td>
+          <td>{{ order.menu_name or '-' }}</td>
+          <td>{{ status_labels.get(order.status, order.status) }}</td>
+          <td>{% if order.html_storage_path %}あり{% else %}-{% endif %}</td>
+          <td>{% if order.public_url %}発行済み{% else %}-{% endif %}</td>
+          <td>{{ order.mail_sent_at or '-' }}</td>
+          <td>{{ order.created_at }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="muted">外部鑑定案件はまだありません。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

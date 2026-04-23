@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from auth import clear_admin_login, get_current_admin, hash_password, set_admin_login, verify_password
 from db import get_db
-from models import AdminUser, Astrologer, AuditLog, Customer, Order, Payout, YamlLog
+from models import AdminUser, Astrologer, AuditLog, Customer, Menu, Order, Payout, YamlLog
 from services.app_settings import get_line_bot_settings, set_setting
 from services.notification_service import notify_line_delivery
 from services.order_service import update_order_status
@@ -20,6 +20,81 @@ from services.order_service import update_order_status
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 VALID_STATUSES = ["draft", "received", "pending_payment", "paid", "assigned", "in_progress", "delivered", "completed", "cancelled", "refund_requested", "refunded", "payment_failed", "expired"]
+
+
+def _parse_date_param(value: str | None) -> date | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _order_filters_from_request(request: Request) -> dict[str, str]:
+    params = request.query_params
+    return {
+        "q": (params.get("q") or "").strip(),
+        "status": (params.get("status") or "").strip(),
+        "reader_id": (params.get("reader_id") or "").strip(),
+        "menu_id": (params.get("menu_id") or "").strip(),
+        "order_kind": (params.get("order_kind") or "").strip(),
+        "source": (params.get("source") or "").strip(),
+        "ai_status": (params.get("ai_status") or "").strip(),
+        "created_from": (params.get("created_from") or "").strip(),
+        "created_to": (params.get("created_to") or "").strip(),
+    }
+
+
+def _apply_order_filters(stmt, filters: dict[str, str]):
+    q = filters.get("q") or ""
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            Order.order_code.ilike(like)
+            | Order.user_name.ilike(like)
+            | Order.user_contact.ilike(like)
+            | Order.free_reading_code.ilike(like)
+            | Order.external_order_ref.ilike(like)
+        )
+
+    status = filters.get("status") or ""
+    if status:
+        stmt = stmt.where(Order.status == status)
+
+    reader_id = filters.get("reader_id") or ""
+    if reader_id.isdigit():
+        stmt = stmt.where(Order.assigned_reader_id == int(reader_id))
+
+    menu_id = filters.get("menu_id") or ""
+    if menu_id.isdigit():
+        stmt = stmt.where(Order.menu_id == int(menu_id))
+
+    order_kind = filters.get("order_kind") or ""
+    if order_kind in {"free", "paid"}:
+        stmt = stmt.where(Order.order_kind == order_kind)
+
+    source = (filters.get("source") or "").lower()
+    if source:
+        stmt = stmt.where(func.lower(Order.source) == source)
+
+    ai_status = filters.get("ai_status") or ""
+    if ai_status:
+        if ai_status == "(blank)":
+            stmt = stmt.where((Order.ai_status.is_(None)) | (Order.ai_status == ""))
+        else:
+            stmt = stmt.where(Order.ai_status == ai_status)
+
+    created_from = _parse_date_param(filters.get("created_from"))
+    if created_from:
+        stmt = stmt.where(Order.created_at >= datetime.combine(created_from, time.min))
+
+    created_to = _parse_date_param(filters.get("created_to"))
+    if created_to:
+        stmt = stmt.where(Order.created_at < datetime.combine(created_to + timedelta(days=1), time.min))
+
+    return stmt
 STATUS_LABELS = {
     "draft": "下書き",
     "received": "受付済み",
@@ -165,8 +240,26 @@ def admin_line_settings_update(
 
 @router.get("/admin/orders", response_class=HTMLResponse)
 def admin_orders(request: Request, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
-    orders = db.scalars(select(Order).options(selectinload(Order.menu), selectinload(Order.assigned_reader), selectinload(Order.customer), selectinload(Order.source_free_order)).order_by(Order.created_at.desc())).all()
-    return templates.TemplateResponse(request=request, name="admin_orders.html", context={"request": request, "admin": admin, "orders": orders, "status_labels": STATUS_LABELS})
+    filters = _order_filters_from_request(request)
+    stmt = select(Order).options(selectinload(Order.menu), selectinload(Order.assigned_reader), selectinload(Order.customer), selectinload(Order.source_free_order)).order_by(Order.created_at.desc())
+    stmt = _apply_order_filters(stmt, filters)
+    orders = db.scalars(stmt).all()
+    readers = db.scalars(select(Astrologer).order_by(Astrologer.display_name.asc())).all()
+    menus = db.scalars(select(Menu).order_by(Menu.price.asc(), Menu.id.asc())).all()
+    source_rows = db.scalars(select(Order.source).distinct().order_by(Order.source.asc())).all()
+    ai_rows = db.scalars(select(Order.ai_status).distinct().order_by(Order.ai_status.asc())).all()
+    return templates.TemplateResponse(request=request, name="admin_orders.html", context={
+        "request": request,
+        "admin": admin,
+        "orders": orders,
+        "status_labels": STATUS_LABELS,
+        "filters": filters,
+        "filter_readers": readers,
+        "filter_menus": menus,
+        "filter_sources": [src for src in source_rows if src],
+        "filter_ai_statuses": [status for status in ai_rows if status],
+        "order_count": len(orders),
+    })
 
 
 @router.get("/admin/orders/{order_code}", response_class=HTMLResponse)

@@ -1,0 +1,82 @@
+{% extends "platform_hub_base.html" %}{% set title = "外部受注詳細" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_external" %}{% block content %}
+
+{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {{ success }}</p>{% endif %}
+{% if error %}<div class="error">{% if error == 'no_html' %}HTML未登録です。{% elif error == 'no_public_url' %}先に公開URLを発行してください。{% elif error == 'mail_failed' %}メール送信に失敗しました。SMTP設定を確認してください。{% else %}{{ error }}{% endif %}</div>{% endif %}
+<div class="card">
+  <div class="section-head">
+    <div><h1>外部鑑定詳細</h1><p class="muted">{{ order.order_code }} / {{ status_labels.get(order.status, order.status) }}</p></div>
+    <div class="row">
+      <form method="post" action="/staff/external-orders/{{ order.id }}/mark-delivered"><button type="submit" class="secondary">納品済みにする</button></form>
+      {% if has_html %}<a class="btn secondary" href="/staff/external-orders/{{ order.id }}/preview" target="_blank">HTMLプレビュー</a>{% endif %}
+      {% if order.public_url %}<a class="btn" href="{{ order.public_url }}" target="_blank">公開URLを開く</a>{% endif %}
+    </div>
+  </div>
+</div>
+<div class="card">
+  <h2>基本情報・YAML・メール文面</h2>
+  <form method="post" action="/staff/external-orders/{{ order.id }}/update">
+    <div class="grid">
+      <div><label>受付番号</label><input type="text" value="{{ order.order_code }}" readonly></div>
+      <div><label>状態</label><input type="text" value="{{ status_labels.get(order.status, order.status) }}" readonly></div>
+      <div><label>顧客名</label><input type="text" name="customer_name" value="{{ order.customer_name }}" required></div>
+      <div><label>メールアドレス</label><input type="email" name="customer_email" value="{{ order.customer_email }}" required></div>
+      <div><label>生年月日</label><input type="date" name="birth_date" value="{{ order.birth_date if order.birth_date else '' }}"></div>
+      <div><label>出生時刻</label><input type="text" name="birth_time" value="{{ order.birth_time or '' }}"></div>
+      <div><label>性別</label><select name="gender"><option value="">未選択</option>{% for v in gender_options %}<option value="{{ v }}" {% if order.gender == v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+      <div><label>都道府県</label><input type="text" name="prefecture" value="{{ order.prefecture or '' }}"></div>
+      <div><label>出生地</label><input type="text" name="birth_place" value="{{ order.birth_place or '' }}"></div>
+      <div><label>販路</label><select name="source_type">{% for source in source_options %}<option value="{{ source }}" {% if order.source_type == source %}selected{% endif %}>{{ source }}</option>{% endfor %}</select></div>
+      <div><label>メニュー名</label><input type="text" name="menu_name" value="{{ order.menu_name or '' }}"></div>
+      <div><label>金額</label><input type="number" name="price" min="0" step="1" value="{{ order.price if order.price is not none else '' }}"></div>
+      <div><label>担当者</label><input type="text" name="staff_name" value="{{ order.staff_name or '' }}"></div>
+      <div><label>有効期限</label><input type="datetime-local" name="expires_at" value="{{ order.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if order.expires_at else '' }}"></div>
+    </div>
+    <div style="margin-top:14px"><label>相談内容</label><textarea name="consultation_text">{{ order.consultation_text or '' }}</textarea></div>
+    <div style="margin-top:14px"><label>YAMLログ</label><textarea name="yaml_log_text" style="min-height:240px;font-family:ui-monospace,SFMono-Regular,monospace">{{ order.yaml_log_text or '' }}</textarea></div>
+    <div style="margin-top:14px"><label>メール件名</label><input type="text" name="mail_subject" value="{{ order.mail_subject or '' }}"></div>
+    <div style="margin-top:14px"><label>メール本文</label><textarea name="mail_body" style="min-height:180px">{{ order.mail_body or '' }}</textarea></div>
+    <div class="filter-actions" style="margin-top:18px"><button type="submit">保存</button></div>
+  </form>
+</div>
+<div class="grid">
+  <div class="card">
+    <h2>HTML管理</h2>
+    <p class="muted">現在のファイル: {{ order.html_original_name or '-' }}</p>
+    <p class="muted">アップロード日時: {{ order.html_uploaded_at or '-' }}</p>
+    <form method="post" action="/staff/external-orders/{{ order.id }}/upload-html" enctype="multipart/form-data">
+      <input type="file" name="html_file" accept=".html,text/html" required>
+      <div class="filter-actions" style="margin-top:14px"><button type="submit">HTML差し替え</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>公開URL</h2>
+    <p class="muted">発行日時: {{ order.url_issued_at or '-' }}</p>
+    <p class="muted" style="word-break:break-all">{{ order.public_url or '未発行' }}</p>
+    <div class="row">
+      <form method="post" action="/staff/external-orders/{{ order.id }}/issue-url"><button type="submit">URL発行</button></form>
+      <form method="post" action="/staff/external-orders/{{ order.id }}/reissue-url"><button type="submit" class="secondary">URL再発行</button></form>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <h2>メール送信</h2>
+  <p class="muted">送信日時: {{ order.mail_sent_at or '-' }}</p>
+  <form method="post" action="/staff/external-orders/{{ order.id }}/send-mail">
+    <div><label>件名</label><input type="text" name="mail_subject" value="{{ order.mail_subject or '' }}"></div>
+    <div style="margin-top:14px"><label>本文</label><textarea name="mail_body" style="min-height:180px">{{ order.mail_body or '' }}</textarea></div>
+    <div class="filter-actions" style="margin-top:18px"><button type="submit">メール送信</button></div>
+  </form>
+  {% if order.last_error %}<div class="error" style="margin-top:12px">{{ order.last_error }}</div>{% endif %}
+</div>
+<div class="card">
+  <h2>履歴</h2>
+  <div class="grid">
+    <div><strong>作成日時</strong><div>{{ order.created_at }}</div></div>
+    <div><strong>更新日時</strong><div>{{ order.updated_at }}</div></div>
+    <div><strong>HTMLアップロード日時</strong><div>{{ order.html_uploaded_at or '-' }}</div></div>
+    <div><strong>URL発行日時</strong><div>{{ order.url_issued_at or '-' }}</div></div>
+    <div><strong>メール送信日時</strong><div>{{ order.mail_sent_at or '-' }}</div></div>
+    <div><strong>納品日時</strong><div>{{ order.delivered_at or '-' }}</div></div>
+  </div>
+</div>
+{% endblock %}

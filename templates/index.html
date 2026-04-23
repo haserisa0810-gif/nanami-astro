@@ -623,18 +623,63 @@
         </div>
 
         <div class="row">
-          <label>占星術タイプ</label>
-          <select name="astrology_system" id="astrology_system">
-            <option value="western">西洋（tropical）</option>
-            <option value="vedic">インド（sidereal / Lahiri）</option>
-            <option value="integrated">統合（西洋＋インド）</option>
-            <option value="shichusuimei">四柱推命（β：日柱＋時柱）</option>
-            <option value="integrated3">統合（西洋＋インド＋四柱）</option>
-            <option value="integrated_w_shichu">統合（西洋＋四柱）</option>
+          <label>鑑定スタイル</label>
+          <select name="reading_style" id="reading_style">
+            <option value="general" selected>総合鑑定</option>
+            <option value="structured">構造読解</option>
+            <option value="love">恋愛・パートナーシップ</option>
+            <option value="work">仕事・キャリア</option>
+            <option value="relationship">人間関係</option>
+            <option value="timing">今の時期・流れ</option>
           </select>
         </div>
+<div class="row">
+  <label for="analysis_mode">鑑定方式</label>
+  <select name="analysis_mode" id="analysis_mode">
+    <option value="auto" selected>自動（おすすめ）</option>
+    <option value="manual">手動カスタム</option>
+  </select>
+</div>
+
+<!-- 自動モード：説明 + 想定占術 -->
+<div id="auto_mode_block">
+  <div class="row" id="auto_mode_hint_row">
+    <label>自動判定</label>
+    <div class="hint-box">
+      入力内容・相談文・観測事実をもとに、使用する占術を自動判定します。<br>
+      西洋占星術を主軸に、必要に応じて四柱推命・インド占星術を補助的に使用します。
+    </div>
+  </div>
+  <div class="row" id="auto_selected_systems_row">
+    <label>想定占術</label>
+    <div id="auto_selected_systems" class="hint-box">未判定</div>
+  </div>
+</div>
+
+<!-- 手動モード：占星術タイプ選択 -->
+<div id="manual_mode_block" style="display:none;">
+  <div class="row">
+    <label for="astrology_system">占星術タイプ</label>
+    <select name="astrology_system" id="astrology_system">
+      <option value="western">西洋（tropical）</option>
+      <option value="vedic">インド（sidereal / Lahiri）</option>
+      <option value="integrated">統合（西洋＋インド）</option>
+      <option value="shichusuimei">四柱推命（β：日柱＋時柱）</option>
+      <option value="integrated3">統合（西洋＋インド＋四柱）</option>
+      <option value="integrated_w_shichu">統合（西洋＋四柱）</option>
+    </select>
+  </div>
+  <div class="row">
+    <label></label>
+    <div class="hint-box">
+      選択した占術をそのまま使います。自動判定は動きません。<br>
+      西洋オプション（Chiron / Lilith / Vertex / 小惑星）は下のチェック状態をそのまま使います。
+    </div>
+  </div>
+</div>
 
         <div class="section-divider"></div>
+
 
         <!-- 四柱推命オプション -->
         <div class="row" id="shichusuimei_opts" style="display:none;">
@@ -770,54 +815,6 @@
 
         <input type="hidden" name="detail_level" id="detail_level" value="standard">
 
-        <div class="row">
-          <label>鑑定スタイル</label>
-          <select name="reading_style" id="reading_style">
-            <option value="general" selected>総合鑑定（自動判定メニュー）</option>
-            <option value="structured">構造読解（自動判定メニュー）</option>
-            <option value="love">恋愛・パートナーシップ</option>
-            <option value="work">仕事・キャリア</option>
-            <option value="relationship">人間関係</option>
-            <option value="timing">今の時期・流れ</option>
-          </select>
-        </div>
-<div class="row">
-  <label for="analysis_mode">鑑定方式</label>
-  <select name="analysis_mode" id="analysis_mode">
-    <option value="auto" selected>自動（おすすめ）</option>
-    <option value="manual">手動カスタム</option>
-  </select>
-</div>
-
-<div class="row" id="auto_mode_hint_row">
-  <label>自動判定の説明</label>
-  <div class="hint-box">
-    入力内容・相談文・観測事実をもとに、使用する占術を自動判定します。<br>
-    西洋占星術を主軸に、必要に応じて四柱推命・インド占星術を補助的に使用します。
-  </div>
-</div>
-
-<div id="manual_mode_block" style="display:none;">
-  <div class="row">
-    <label>使用占術（手動）</label>
-    <div class="checkbox-group">
-      <label><input type="checkbox" name="manual_systems" value="western" checked> 西洋占星術（主軸）</label>
-      <label><input type="checkbox" name="manual_systems" value="shichu"> 四柱推命</label>
-      <label><input type="checkbox" name="manual_systems" value="vedic"> インド占星術</label>
-    </div>
-    <div class="small-note">
-      ※ 西洋占星術は主軸のため必須です。外せません。<br>
-      ※ インド占星術は補助用途です。単独主軸にはなりません。
-    </div>
-  </div>
-</div>
-
-<div class="row" id="auto_selected_systems_row">
-  <label>自動判定での想定占術</label>
-  <div id="auto_selected_systems" class="hint-box">
-    未判定
-  </div>
-</div>
         <input type="hidden" name="theme" id="theme" value="overall">
 
         <div class="row">
@@ -1564,7 +1561,6 @@
   const manualOverrideInputs = [
     ...optionCheckboxes,
     document.getElementById("reading_style"),
-    document.getElementById("astrology_system"),
   ].filter(Boolean);
   let recommendTimer = null;
   let optionRecommendationInFlight = false;
@@ -1625,16 +1621,38 @@
       optionCheckboxes.forEach((el) => { el.checked = !!opts[el.name]; });
       const suggestedStyle = data.suggested_reading_style || '';
       const suggestedSystem = data.suggested_astrology_system || '';
-      if (readingStyleSelect && suggestedStyle && ["general", "structured"].includes(suggestedStyle)) readingStyleSelect.value = suggestedStyle;
+      const analysisModeValue = document.getElementById("analysis_mode")?.value || "auto";
       const astrologySystemSelect = document.getElementById("astrology_system");
-      if (astrologySystemSelect && suggestedSystem && ["western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"].includes(suggestedSystem)) astrologySystemSelect.value = suggestedSystem;
+      if (analysisModeValue === "auto") {
+        if (readingStyleSelect && suggestedStyle && ["general", "structured"].includes(suggestedStyle)) readingStyleSelect.value = suggestedStyle;
+        if (astrologySystemSelect && suggestedSystem && ["western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"].includes(suggestedSystem)) astrologySystemSelect.value = suggestedSystem;
+
+        // 想定占術ボックスをAPI判定結果で更新
+        const autoSystemsBox = document.getElementById("auto_selected_systems");
+        if (autoSystemsBox && suggestedSystem) {
+          const systemLabels = {
+            "western":             ["西洋占星術（主軸）"],
+            "vedic":               ["インド占星術（主軸）"],
+            "integrated":          ["西洋占星術（主軸）", "インド占星術（補助）"],
+            "shichusuimei":        ["四柱推命（主軸）"],
+            "integrated_w_shichu": ["西洋占星術（主軸）", "四柱推命（補助）"],
+            "integrated3":         ["西洋占星術（主軸）", "四柱推命（補助）", "インド占星術（補助）"],
+          };
+          const labels = systemLabels[suggestedSystem] || ["西洋占星術（主軸）"];
+          autoSystemsBox.innerHTML = labels.join("<br>");
+        }
+      }
       const modeLabel = data.mode === 'structured' ? '構造読解（自動判定メニュー）' : '総合鑑定（自動判定メニュー）';
       const reasonText = Object.entries(data.reasons || {})
         .filter(([, arr]) => Array.isArray(arr) && arr.length)
         .map(([key, arr]) => `・${key.replace('include_','')}: ${arr.join(' / ')}`)
         .join('\n');
       const vedicLabel = data.vedic_trigger?.level ? ` / インド発火 ${data.vedic_trigger.level}` : "";
-      setOptionRecommendationText(`自動設定済み: ${modeLabel}${vedicLabel} / システム ${suggestedSystem || "-"}`, reasonText);
+      const analysisModeValueForStatus = document.getElementById("analysis_mode")?.value || "auto";
+      const prefix = analysisModeValueForStatus === "manual"
+        ? `自動判定結果（表示のみ）: ${modeLabel}${vedicLabel} / 推奨システム ${suggestedSystem || "-"}`
+        : `自動設定済み: ${modeLabel}${vedicLabel} / システム ${suggestedSystem || "-"}`;
+      setOptionRecommendationText(prefix, reasonText);
     } catch (err) {
       setOptionRecommendationText(`自動設定に失敗: ${err.message || err}`, "");
     } finally {
@@ -1765,32 +1783,39 @@
   function updateAnalysisModeUI() {
     const mode = document.getElementById("analysis_mode")?.value || "auto";
     const manualBlock = document.getElementById("manual_mode_block");
-    const autoHintRow = document.getElementById("auto_mode_hint_row");
-    const autoSystemsRow = document.getElementById("auto_selected_systems_row");
+    const autoBlock = document.getElementById("auto_mode_block");
+    const westernOpts = document.getElementById("western_opts");
+    const autoOptionMode = document.getElementById("auto_option_mode");
 
     if (mode === "manual") {
       if (manualBlock) manualBlock.style.display = "";
-      if (autoHintRow) autoHintRow.style.display = "none";
-      if (autoSystemsRow) autoSystemsRow.style.display = "none";
+      if (autoBlock) autoBlock.style.display = "none";
+      // 手動時：auto_option_modeをOFFにして西洋オプションをシンプル表示（自動設定チェックを隠す）
+      if (autoOptionMode) {
+        autoOptionMode.checked = false;
+        autoOptionMode.closest("label").style.display = "none";
+      }
+      const statusEl = document.getElementById("option_recommendation_status");
+      const reasonsEl = document.getElementById("option_recommendation_reasons");
+      if (statusEl) statusEl.style.display = "none";
+      if (reasonsEl) reasonsEl.style.display = "none";
     } else {
       if (manualBlock) manualBlock.style.display = "none";
-      if (autoHintRow) autoHintRow.style.display = "";
-      if (autoSystemsRow) autoSystemsRow.style.display = "";
+      if (autoBlock) autoBlock.style.display = "";
+      // 自動時：auto_option_modeを復元
+      if (autoOptionMode) {
+        autoOptionMode.closest("label").style.display = "";
+      }
+      const statusEl = document.getElementById("option_recommendation_status");
+      const reasonsEl = document.getElementById("option_recommendation_reasons");
+      if (statusEl) statusEl.style.display = "";
+      if (reasonsEl) reasonsEl.style.display = "";
 
       const box = document.getElementById("auto_selected_systems");
-      if (box) {
-        const systems = getAutoSelectedSystems();
-        box.innerHTML = systems.join("<br>");
+      if (box && box.innerHTML === "未判定") {
+        box.innerHTML = "生年月日・出生地を入力すると判定します";
       }
     }
-  }
-
-  function enforceWesternChecked() {
-    const western = document.querySelector('input[name="manual_systems"][value="western"]');
-    if (!western) return;
-
-    western.checked = true;
-    western.disabled = true;
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -1799,7 +1824,10 @@
     const observationsInput = document.querySelector('[name="observations_text"]');
 
     if (analysisMode) {
-      analysisMode.addEventListener("change", updateAnalysisModeUI);
+      analysisMode.addEventListener("change", () => {
+        updateAnalysisModeUI();
+        refreshOptionRecommendation();
+      });
     }
 
     if (messageInput) {
@@ -1810,7 +1838,6 @@
       observationsInput.addEventListener("input", updateAnalysisModeUI);
     }
 
-    enforceWesternChecked();
     updateAnalysisModeUI();
     notifyAutoRecommendationDependents();
   });

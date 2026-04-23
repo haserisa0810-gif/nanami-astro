@@ -272,6 +272,66 @@ def _backfill_reports_from_orders() -> None:
                 db.execute(text("UPDATE orders SET primary_report_id = :report_id, input_origin = COALESCE(input_origin, 'legacy') WHERE id = :order_id"), {"report_id": report_id, "order_id": row["id"]})
         db.commit()
 
+
+
+def _ensure_transit_hub_tables() -> None:
+    inspector = inspect(engine)
+    try:
+        tables = set(inspector.get_table_names())
+    except Exception:
+        return
+    if "transit_hub_requests" not in tables:
+        from models import TransitHubRequest
+        TransitHubRequest.__table__.create(bind=engine, checkfirst=True)
+    if "transit_hub_jobs" not in tables:
+        from models import TransitHubJob
+        TransitHubJob.__table__.create(bind=engine, checkfirst=True)
+
+
+def _ensure_transit_hub_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        request_columns = {col["name"] for col in inspector.get_columns("transit_hub_requests")}
+    except Exception:
+        request_columns = set()
+    request_required = {
+        "channel": "ALTER TABLE transit_hub_requests ADD COLUMN channel VARCHAR(30) DEFAULT 'manual'",
+        "status": "ALTER TABLE transit_hub_requests ADD COLUMN status VARCHAR(30) DEFAULT 'draft'",
+        "customer_email": "ALTER TABLE transit_hub_requests ADD COLUMN customer_email VARCHAR(255)",
+        "period_label": "ALTER TABLE transit_hub_requests ADD COLUMN period_label VARCHAR(50) DEFAULT '3ヶ月'",
+        "template_name": "ALTER TABLE transit_hub_requests ADD COLUMN template_name VARCHAR(100) DEFAULT 'standard_3month'",
+        "notes": "ALTER TABLE transit_hub_requests ADD COLUMN notes TEXT",
+        "generated_summary": "ALTER TABLE transit_hub_requests ADD COLUMN generated_summary TEXT",
+        "generated_html": "ALTER TABLE transit_hub_requests ADD COLUMN generated_html TEXT",
+        "generated_at": "ALTER TABLE transit_hub_requests ADD COLUMN generated_at TIMESTAMP",
+        "last_error": "ALTER TABLE transit_hub_requests ADD COLUMN last_error TEXT",
+    }
+    try:
+        job_columns = {col["name"] for col in inspector.get_columns("transit_hub_jobs")}
+    except Exception:
+        job_columns = set()
+    job_required = {
+        "job_type": "ALTER TABLE transit_hub_jobs ADD COLUMN job_type VARCHAR(30) DEFAULT 'generate'",
+        "status": "ALTER TABLE transit_hub_jobs ADD COLUMN status VARCHAR(20) DEFAULT 'pending'",
+        "started_at": "ALTER TABLE transit_hub_jobs ADD COLUMN started_at TIMESTAMP",
+        "finished_at": "ALTER TABLE transit_hub_jobs ADD COLUMN finished_at TIMESTAMP",
+        "error_message": "ALTER TABLE transit_hub_jobs ADD COLUMN error_message TEXT",
+        "log_text": "ALTER TABLE transit_hub_jobs ADD COLUMN log_text TEXT",
+    }
+    with engine.begin() as conn:
+        for name, ddl in request_required.items():
+            if name not in request_columns:
+                conn.execute(text(ddl))
+        for name, ddl in job_required.items():
+            if name not in job_columns:
+                conn.execute(text(ddl))
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_transit_hub_requests_status ON transit_hub_requests (status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_transit_hub_requests_channel ON transit_hub_requests (channel)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_transit_hub_jobs_status ON transit_hub_jobs (status)"))
+        except Exception:
+            pass
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_daily_card_indexes(engine)
@@ -286,6 +346,8 @@ def init_db() -> None:
     _ensure_order_report_columns()
     _ensure_order_result_view_table()
     _ensure_order_result_view_columns()
+    _ensure_transit_hub_tables()
+    _ensure_transit_hub_columns()
     _backfill_reports_from_orders()
 
 

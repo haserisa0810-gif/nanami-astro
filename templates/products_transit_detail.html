@@ -1,0 +1,45 @@
+{% extends "platform_hub_base.html" %}{% set title = "トランジット詳細" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_transit" %}{% block content %}
+<div class="card">
+  <div class="section-head">
+    <div><h1>トランジット詳細</h1><p class="muted"><span class="code">{{ item.request_code }}</span> / 状態: {{ status_labels.get(item.status, item.status) }}</p></div>
+    <div class="row"><form method="post" action="/products/transit/{{ item.id }}/generate"><button type="submit">生成する</button></form><a class="btn secondary" href="/products/transit">一覧へ戻る</a></div>
+  </div>
+  {% if success %}<div class="success">✅ {{ success }}</div>{% endif %}
+  {% if item.last_error %}<div class="error">{{ item.last_error }}</div>{% endif %}
+</div>
+<div class="grid">
+  <div class="card">
+    <h2>案件情報</h2>
+    <form method="post" action="/products/transit/{{ item.id }}/update">
+      <div class="grid">
+        <div><label>顧客名</label><input type="text" name="customer_name" value="{{ item.customer_name }}" required></div>
+        <div><label>メール</label><input type="email" name="customer_email" value="{{ item.customer_email or '' }}"></div>
+        <div><label>生年月日</label><input type="date" name="birth_date" value="{{ item.birth_date or '' }}"></div>
+        <div><label>出生時刻</label><input type="time" name="birth_time" value="{{ item.birth_time or '' }}"></div>
+        <div><label>性別</label><input type="text" name="gender" value="{{ item.gender or '' }}"></div>
+        <div><label>都道府県</label><input type="text" name="prefecture" value="{{ item.prefecture or '' }}"></div>
+        <div><label>出生地</label><input type="text" name="birth_place" value="{{ item.birth_place or '' }}"></div>
+        <div><label>チャネル</label><select name="channel">{% for opt in channel_options %}<option value="{{ opt }}" {% if item.channel == opt %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></div>
+        <div><label>期間ラベル</label><input type="text" name="period_label" value="{{ item.period_label }}"></div>
+        <div><label>期間開始</label><input type="date" name="period_start" value="{{ item.period_start or '' }}"></div>
+        <div><label>期間終了</label><input type="date" name="period_end" value="{{ item.period_end or '' }}"></div>
+        <div><label>テンプレ名</label><input type="text" name="template_name" value="{{ item.template_name }}"></div>
+      </div>
+      <div style="margin-top:12px;"><label>メモ</label><textarea name="notes">{{ item.notes or '' }}</textarea></div>
+      <div class="row" style="margin-top:16px;"><button type="submit" class="secondary">保存する</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>生成結果</h2>
+    <p class="muted">生成日時: {{ item.generated_at or '-' }}</p>
+    <div class="stat" style="margin-top:8px;"><div class="muted">要約</div><div style="margin-top:8px;line-height:1.8;">{{ item.generated_summary or 'まだ生成されていません。' }}</div></div>
+    {% if item.generated_html %}
+      <div style="margin-top:16px;"><h3>HTMLプレビュー</h3><iframe srcdoc="{{ item.generated_html | e }}" style="width:100%;height:420px;border:1px solid #e7e1d9;border-radius:12px;background:#fff;"></iframe></div>
+    {% endif %}
+  </div>
+</div>
+<div class="card">
+  <h2>ジョブ履歴</h2>
+  <div class="table-scroll"><table><thead><tr><th>ID</th><th>状態</th><th>開始</th><th>終了</th><th>メモ</th></tr></thead><tbody>{% for job in jobs %}<tr><td>{{ job.id }}</td><td>{{ job.status }}</td><td>{{ job.started_at or '-' }}</td><td>{{ job.finished_at or '-' }}</td><td>{{ job.error_message or job.log_text or '-' }}</td></tr>{% else %}<tr><td colspan="5" class="muted">ジョブはまだありません。</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

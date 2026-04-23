@@ -1,0 +1,26 @@
+{% extends "platform_hub_base.html" %}{% set title = "生成ジョブ" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_jobs" %}{% block content %}
+<div class="card">
+  <h1>生成ジョブ</h1>
+  <p class="muted">トランジット専用ジョブだけを表示しています。通常鑑定の既存ジョブ管理には干渉しません。</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>ID</th><th>request_id</th><th>job_type</th><th>状態</th><th>開始</th><th>終了</th><th>内容</th></tr></thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>{{ job.id }}</td>
+          <td><a href="/products/transit/{{ job.request_id }}">{{ job.request_id }}</a></td>
+          <td>{{ job.job_type }}</td>
+          <td>{{ job.status }}</td>
+          <td>{{ job.started_at or '-' }}</td>
+          <td>{{ job.finished_at or '-' }}</td>
+          <td>{{ job.error_message or job.log_text or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">ジョブはまだありません。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

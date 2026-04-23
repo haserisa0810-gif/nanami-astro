@@ -3,6 +3,27 @@
 
 {common_rules}
 
+【最重要ルール（構造使用）】
+- structure_calcは必ず使用すること
+- 出力の判断（性質・行動・事故パターン）は、structure_calcの内容を根拠に決定すること
+- structure_calcを使わない出力は禁止
+
+【Vedic使用ルール（必須）】
+- must_use_vedic = true の場合：
+  → インド占星術の内容を必ず本文に含める
+- must_use_vedic = false の場合：
+  → 以下の条件を満たす場合のみ使用する
+  条件：
+  - vedic_trigger_score >= 7
+  - または vedic_trigger_level = high
+- 条件を満たさない場合：
+  → インド占星術は使用禁止
+
+【Vedic詳細使用ルール】
+- vedic_trigger_reasons に含まれる内容は必ず本文で言語化すること
+- vedic_focus_summary がある場合、それを無視した出力は禁止
+
+
 【入力データ】
 astro_raw: {astro_data}
 structure_calc: {structure_summary}
@@ -12,6 +33,21 @@ vedic_trigger_level: {vedic_trigger_level}
 vedic_trigger_score: {vedic_trigger_score}
 vedic_trigger_reasons: {vedic_trigger_reasons}
 vedic_focus_summary: {vedic_focus_summary}
+
+【四柱推命データの読み方（データがある場合のみ）】
+astro_rawまたはstructure_calcに四柱推命データが含まれている場合、以下のキーを実際に読んで本文に使う（推測・省略禁止）：
+- `summary.year_kanshi` → 年柱の干支（親世代・原家族の影響を読む）
+- `summary.day_kanshi` → 日柱の干支（日主＝本人の核となる性質）
+- `features.daiun` → 大運（現在の時期の流れ・外からの圧力）
+- `features.five_elements` → 五行バランス（強い要素・弱い要素）
+- `features.ten_gods` → 通変星（日主との関係性パターン）
+
+四柱推命の使い方：
+- 日主の性質は「感覚語」に翻訳して本文に入れる（例：「日主が丁火なら『小さく燃え続ける』『じわじわ消耗しやすい』」）
+- 年柱は「親や原家族の影響」「幼少期に受け取ったメッセージ」として家族章で使う
+- 大運は「今の時期の外的な流れ」として成長・転換期の章で使う
+- 四柱用語をそのまま出さず、必ず日常感覚に翻訳してから使う
+- 西洋・四柱が一致する性質は「その人の核」として強調する
 
 【出力の目的】
 ・説明ではなく、読み手が自分で気づく文章にする
@@ -41,7 +77,6 @@ vedic_focus_summary: {vedic_focus_summary}
 ・具体的な行動やシーンを出す
 ・最後は断定せず、余白を残して終える
 ・章末に「▼星の根拠（気になる方へ）」ブロックを置く。1〜2行以内で簡潔にまとめる（長くしない）
-・「▼統合メモ」「▼一致点」「▼ズレ」「▼一手」という形式は使わない。禁止。
 
 【重要ルール】
 ・最初の3行に具体的な行動や状況（例：メール、会議など）を入れない

@@ -1,0 +1,27 @@
+{% extends "platform_hub_base.html" %}{% set title = "外部受注登録" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_external" %}{% block content %}
+
+<div class="card">
+  <h1>外部鑑定登録</h1>
+  <p class="muted">HTML鑑定書のアップロードとURL納品を前提にした手動登録画面です。</p>
+  {% if error %}<div class="error">{% if error == 'required' %}顧客名とメールアドレスは必須です。{% else %}{{ error }}{% endif %}</div>{% endif %}
+  <form method="post" action="/staff/external-orders" enctype="multipart/form-data">
+    <div class="grid">
+      <div><label>顧客名</label><input type="text" name="customer_name" required></div>
+      <div><label>メールアドレス</label><input type="email" name="customer_email" required></div>
+      <div><label>生年月日</label><input type="date" name="birth_date"></div>
+      <div><label>出生時刻</label><input type="text" name="birth_time" placeholder="20:41"></div>
+      <div><label>性別</label><select name="gender"><option value="">未選択</option>{% for v in gender_options %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select></div>
+      <div><label>都道府県</label><input type="text" name="prefecture"></div>
+      <div><label>出生地</label><input type="text" name="birth_place"></div>
+      <div><label>販路</label><select name="source_type">{% for source in source_options %}<option value="{{ source }}">{{ source }}</option>{% endfor %}</select></div>
+      <div><label>メニュー名</label><input type="text" name="menu_name" placeholder="総合鑑定"></div>
+      <div><label>金額</label><input type="number" name="price" min="0" step="1"></div>
+      <div><label>担当者</label><input type="text" name="staff_name" value="{{ default_staff_name }}"></div>
+      <div><label>HTML鑑定書</label><input type="file" name="html_file" accept=".html,text/html"></div>
+    </div>
+    <div style="margin-top:14px"><label>相談内容</label><textarea name="consultation_text"></textarea></div>
+    <div style="margin-top:14px"><label>YAMLログ</label><textarea name="yaml_log_text" style="min-height:240px;font-family:ui-monospace,SFMono-Regular,monospace"></textarea></div>
+    <div class="filter-actions" style="margin-top:18px"><button type="submit">登録して詳細へ</button><a class="btn secondary" href="/staff/external-orders">戻る</a></div>
+  </form>
+</div>
+{% endblock %}

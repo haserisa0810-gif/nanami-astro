@@ -1,4 +1,8 @@
 import os
+import base64
+import hashlib
+import hmac
+import json
 import smtplib
 from email.mime.text import MIMEText
 from email.utils import formatdate
@@ -157,8 +161,33 @@ def _customer_line_id(order: Any) -> str:
     return ""
 
 
+def _public_report_base_url() -> str:
+    return (os.getenv("PUBLIC_REPORT_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
+
+
+def _staff_report_share_secret() -> str:
+    return (
+        os.getenv("REPORT_SHARE_SECRET")
+        or os.getenv("SECRET_KEY")
+        or os.getenv("SESSION_SECRET")
+        or "nanami-astro-staff-report-share"
+    )
+
+
+def _staff_report_share_token(order_code: str) -> str:
+    payload = json.dumps({"t": "staff_report", "o": order_code}, separators=(",", ":"), ensure_ascii=False)
+    encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    signature = base64.urlsafe_b64encode(
+        hmac.new(_staff_report_share_secret().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
+    ).decode("ascii").rstrip("=")
+    return f"{encoded}.{signature}"
+
+
 def _report_url(order: Any) -> str:
-    return f"https://pay.nanami-astro.com/report/{_safe_get(order, 'order_code', '')}"
+    order_code = str(_safe_get(order, "order_code", "")).strip()
+    if not order_code:
+        return f"{_public_report_base_url()}/report/share/"
+    return f"{_public_report_base_url()}/report/share/{_staff_report_share_token(order_code)}"
 
 
 def _trim_text(text: str, limit: int = 4000) -> str:

@@ -3,12 +3,34 @@
 
 {common_rules}
 
+【最重要ルール（構造使用）】
+- structure_calcは必ず使用すること
+- 出力の判断（性質・行動・事故パターン）は、structure_calcの内容を根拠に決定すること
+- structure_calcを使わない出力は禁止
+
+【Vedic使用ルール（必須）】
+- must_use_vedic = true の場合：
+  → インド占星術の内容を必ず本文に含める
+- must_use_vedic = false の場合：
+  → 以下の条件を満たす場合のみ使用する
+  条件：
+  - vedic_trigger_score >= 7
+  - または vedic_trigger_level = high
+- 条件を満たさない場合：
+  → インド占星術は使用禁止
+
+【Vedic詳細使用ルール】
+- vedic_trigger_reasons に含まれる内容は必ず本文で言語化すること
+- vedic_focus_summary がある場合、それを無視した出力は禁止
+
+
 【入力データ】
 astro_raw: {astro_data}
 structure_calc: {structure_summary}
 meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 must_use_vedic: {must_use_vedic}
 vedic_trigger_level: {vedic_trigger_level}
+vedic_trigger_score: {vedic_trigger_score}
 vedic_trigger_reasons: {vedic_trigger_reasons}
 vedic_focus_summary: {vedic_focus_summary}
 
@@ -84,6 +106,3 @@ vedic_focus_summary: {vedic_focus_summary}
 - 星の根拠ブロックでは、ナクシャトラ・ラーフ/ケートゥ・ハウス配置などを簡潔に補足してよい
 - must_use_vedic が true のとき、本文が西洋占星術のみで完結することを禁止する
 - must_use_vedic が false の場合はインド占星術に言及しない
-
-【禁止】
-・「▼統合メモ」ブロックを出力すること（章末は「▼星の根拠」のみ）

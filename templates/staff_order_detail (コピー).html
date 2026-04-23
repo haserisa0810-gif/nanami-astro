@@ -110,7 +110,7 @@
           <div class="row" style="gap:10px;flex-wrap:wrap">
             <button id="publish-result-button" type="submit" formaction="/staff/orders/{{ order.order_code }}/publish-result" {% if auto_ai_ready %}class="danger"{% endif %}>結果画面を開く</button>
             <button type="submit" formaction="/staff/orders/{{ order.order_code }}/generate-report" class="secondary">鑑定書を作成して保存</button>
-            {% if report_exists %}
+            {% if result_view and result_view.report_html %}
               <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-download">鑑定書をダウンロード</a>
             {% endif %}
           </div>
@@ -128,7 +128,7 @@
                 <span class="muted" style="font-size:12px">LINEがあればLINEへ、メールがあればメールへ送信します。両方あれば両方へ送信します。</span>
               {% endif %}
             </div>
-            {% if order.order_kind != 'free' and not report_exists %}
+            {% if order.order_kind != 'free' and not (result_view and result_view.report_html) %}
               <p class="muted" style="margin:0;font-size:12px;padding-left:2px;color:#c0392b;font-weight:700;">
                 鑑定書がまだ作成されていないため、納品完了も通知再送もできません。先に「鑑定書を作成」を押してください。
               </p>
@@ -144,8 +144,8 @@
             {% endif %}
           </div>
           <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
-            <button type="button" onclick="confirmDeliver()" {% if order.order_kind != 'free' and not report_exists %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>納品完了にする</button>
-            <button type="button" class="secondary" onclick="confirmResend()" {% if order.order_kind != 'free' and not report_exists %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>通知を再送</button>
+            <button type="button" onclick="confirmDeliver()" {% if order.order_kind != 'free' and not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>納品完了にする</button>
+            <button type="button" class="secondary" onclick="confirmResend()" {% if order.order_kind != 'free' and not (result_view and result_view.report_html) %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>通知を再送</button>
           </div>
           <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6">
             「通知を再送」は案件内容を変更せず、{% if order.order_kind == 'free' %}本文のみ{% else %}本文と鑑定書URL{% endif %}を利用可能な連絡先すべてへ再送します。

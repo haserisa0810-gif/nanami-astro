@@ -1,0 +1,25 @@
+{% extends "platform_hub_base.html" %}{% set title = "トランジット作成" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_transit" %}{% block content %}
+<div class="card">
+  <h1>トランジット作成</h1>
+  <p class="muted">ここで登録した案件は、既存の通常鑑定・外部鑑定テーブルとは分離して保存されます。</p>
+  {% if error %}<div class="error">必須項目を確認してください。</div>{% endif %}
+  <form method="post" action="/products/transit">
+    <div class="grid">
+      <div><label>顧客名</label><input type="text" name="customer_name" required></div>
+      <div><label>メール</label><input type="email" name="customer_email"></div>
+      <div><label>生年月日</label><input type="date" name="birth_date"></div>
+      <div><label>出生時刻</label><input type="time" name="birth_time"></div>
+      <div><label>性別</label><input type="text" name="gender" placeholder="female / male / other"></div>
+      <div><label>都道府県</label><input type="text" name="prefecture"></div>
+      <div><label>出生地</label><input type="text" name="birth_place"></div>
+      <div><label>チャネル</label><select name="channel">{% for item in channel_options %}<option value="{{ item }}">{{ item }}</option>{% endfor %}</select></div>
+      <div><label>期間ラベル</label><input type="text" name="period_label" value="3ヶ月"></div>
+      <div><label>期間開始</label><input type="date" name="period_start" value="{{ default_period_start }}"></div>
+      <div><label>期間終了</label><input type="date" name="period_end" value="{{ default_period_end }}"></div>
+      <div><label>テンプレ名</label><input type="text" name="template_name" value="standard_3month"></div>
+    </div>
+    <div style="margin-top:12px;"><label>メモ</label><textarea name="notes" placeholder="商品メモ、相談文、管理用メモなど"></textarea></div>
+    <div class="row" style="margin-top:16px;"><button type="submit">保存する</button><a class="btn secondary" href="/products/transit">戻る</a></div>
+  </form>
+</div>
+{% endblock %}

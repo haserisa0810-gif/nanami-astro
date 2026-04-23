@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
+import base64
+import hashlib
+import hmac
 import asyncio
 import json
+import os
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session, selectinload
+from google.cloud import storage
 
 from auth import clear_all_logins, get_current_staff, set_admin_login, set_reader_login, verify_password
 from db import get_db
-from models import AdminUser, Astrologer, Order, OrderDelivery, OrderResultView, Payout, YamlLog
+from models import AdminUser, Astrologer, Menu, Order, OrderDelivery, OrderResultView, Payout, YamlLog
 from routes_admin import STATUS_LABELS, _resolve_admin_login
 from services.order_service import update_order_status
 from services.location import PREFECTURE_OPTIONS, format_location_summary, resolve_birth_location
@@ -31,8 +36,153 @@ templates = Jinja2Templates(directory="templates")
 STAFF_STATUSES = ["received", "paid", "in_progress", "completed", "cancelled"]
 
 
+def _parse_date_param(value: str | None) -> date | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _staff_order_filters(request: Request) -> dict[str, str]:
+    params = request.query_params
+    return {
+        "q": (params.get("q") or "").strip(),
+        "status": (params.get("status") or "").strip(),
+        "reader_id": (params.get("reader_id") or "").strip(),
+        "menu_id": (params.get("menu_id") or "").strip(),
+        "order_kind": (params.get("order_kind") or "").strip(),
+        "source": (params.get("source") or "").strip(),
+        "created_from": (params.get("created_from") or "").strip(),
+        "created_to": (params.get("created_to") or "").strip(),
+    }
+
+
+def _apply_order_filters(stmt, filters: dict[str, str]):
+    q = filters.get("q") or ""
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            Order.order_code.ilike(like)
+            | Order.user_name.ilike(like)
+            | Order.user_contact.ilike(like)
+            | Order.free_reading_code.ilike(like)
+            | Order.external_order_ref.ilike(like)
+        )
+
+    status = filters.get("status") or ""
+    if status:
+        stmt = stmt.where(Order.status == status)
+
+    reader_id = filters.get("reader_id") or ""
+    if reader_id == "unassigned":
+        stmt = stmt.where(Order.assigned_reader_id.is_(None))
+    elif reader_id.isdigit():
+        stmt = stmt.where(Order.assigned_reader_id == int(reader_id))
+
+    menu_id = filters.get("menu_id") or ""
+    if menu_id.isdigit():
+        stmt = stmt.where(Order.menu_id == int(menu_id))
+
+    order_kind = filters.get("order_kind") or ""
+    if order_kind in {"free", "paid"}:
+        stmt = stmt.where(Order.order_kind == order_kind)
+
+    source = (filters.get("source") or "").lower()
+    if source:
+        stmt = stmt.where(func.lower(Order.source) == source)
+
+    created_from = _parse_date_param(filters.get("created_from"))
+    if created_from:
+        stmt = stmt.where(Order.created_at >= datetime.combine(created_from, time.min))
+
+    created_to = _parse_date_param(filters.get("created_to"))
+    if created_to:
+        stmt = stmt.where(Order.created_at < datetime.combine(created_to + timedelta(days=1), time.min))
+
+    return stmt
+
+
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url=url, status_code=303)
+
+
+def _report_bucket_name() -> str:
+    return (os.getenv("STAFF_REPORTS_BUCKET") or os.getenv("EXTERNAL_REPORTS_BUCKET") or "").strip()
+
+
+def _storage_client() -> storage.Client:
+    return storage.Client()
+
+
+def _report_object_name(order_code: str) -> str:
+    return f"staff_reports/{order_code}/report.html"
+
+
+def _upload_report_html(order_code: str, html: str, *, content_type: str = "text/html; charset=utf-8") -> str:
+    bucket_name = _report_bucket_name()
+    if not bucket_name:
+        raise RuntimeError("report bucket is not configured")
+    client = _storage_client()
+    bucket = client.bucket(bucket_name)
+    object_name = _report_object_name(order_code)
+    blob = bucket.blob(object_name)
+    blob.cache_control = "private, max-age=0, no-store"
+    blob.upload_from_string(html, content_type=content_type)
+    return object_name
+
+
+def _download_report_html(order_code: str) -> str | None:
+    bucket_name = _report_bucket_name()
+    if not bucket_name:
+        return None
+    client = _storage_client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(_report_object_name(order_code))
+    if not blob.exists():
+        return None
+    return blob.download_as_text(encoding="utf-8")
+
+
+def _report_exists(order_code: str) -> bool:
+    bucket_name = _report_bucket_name()
+    if not bucket_name:
+        return False
+    client = _storage_client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(_report_object_name(order_code))
+    return blob.exists()
+
+
+def _public_report_base_url() -> str:
+    return (os.getenv("PUBLIC_REPORT_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
+
+
+def _staff_report_share_secret() -> str:
+    return (
+        os.getenv("REPORT_SHARE_SECRET")
+        or os.getenv("SECRET_KEY")
+        or os.getenv("SESSION_SECRET")
+        or "nanami-astro-staff-report-share"
+    )
+
+
+def _sign_staff_report_payload(payload: str) -> str:
+    digest = hmac.new(_staff_report_share_secret().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def _staff_report_share_token(order_code: str) -> str:
+    payload = json.dumps({"t": "staff_report", "o": order_code}, separators=(",", ":"), ensure_ascii=False)
+    encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    signature = _sign_staff_report_payload(payload)
+    return f"{encoded}.{signature}"
+
+
+def _report_public_url(order_code: str) -> str:
+    return f"{_public_report_base_url()}/report/share/{_staff_report_share_token(order_code)}"
 
 
 def _safe_json_loads(value: str | None) -> dict[str, object]:
@@ -158,6 +308,8 @@ def _latest_delivery(order: Order) -> OrderDelivery | None:
 
 
 def _has_report_html(order: Order) -> bool:
+    if _report_exists(order.order_code):
+        return True
     try:
         views = list(getattr(order, "result_views", []) or [])
     except Exception:
@@ -316,15 +468,32 @@ def staff_stores_mail_sync(staff: dict = Depends(get_current_staff), db: Session
 
 @router.get("/staff/orders", response_class=HTMLResponse)
 def staff_orders(request: Request, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
-    orders = db.scalars(
+    filters = _staff_order_filters(request)
+    stmt = (
         select(Order)
         .options(selectinload(Order.menu), selectinload(Order.assigned_reader), selectinload(Order.customer))
         .order_by(Order.created_at.desc())
-    ).all()
+    )
+    stmt = _apply_order_filters(stmt, filters)
+    orders = db.scalars(stmt).all()
+    readers = db.scalars(select(Astrologer).where(Astrologer.status == "active").order_by(Astrologer.display_name.asc())).all()
+    menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc(), Menu.id.asc())).all()
+    source_rows = db.scalars(select(Order.source).distinct().order_by(Order.source.asc())).all()
+    source_options = [src for src in source_rows if src]
     return templates.TemplateResponse(
         request=request,
         name="staff_orders.html",
-        context={"request": request, "staff": staff, "orders": orders, "status_labels": STATUS_LABELS},
+        context={
+            "request": request,
+            "staff": staff,
+            "orders": orders,
+            "status_labels": STATUS_LABELS,
+            "filters": filters,
+            "filter_readers": readers,
+            "filter_menus": menus,
+            "filter_sources": source_options,
+            "order_count": len(orders),
+        },
     )
 
 
@@ -434,6 +603,12 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
         except Exception:
             option_recommendation = None
 
+    success = (request.query_params.get("success") or "").strip()
+    error = (request.query_params.get("error") or "").strip()
+    report_public_url = _report_public_url(order.order_code)
+    report_storage_path = _report_object_name(order.order_code)
+    report_exists = _report_exists(order.order_code) or bool(getattr(result_view, "report_html", None))
+
     return templates.TemplateResponse(
         request=request,
         name="staff_order_detail.html",
@@ -461,6 +636,11 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
             "customer_email": _customer_email(order),
             "default_reader_id": default_reader_id,
             "option_recommendation": option_recommendation,
+            "success": success,
+            "error": error,
+            "report_public_url": report_public_url,
+            "report_storage_path": report_storage_path,
+            "report_exists": report_exists,
         },
     )
 
@@ -664,13 +844,15 @@ def staff_generate_report(
         view.horoscope_image_url = payload.get('horoscope_image_url') or None
     else:
         payload = json.loads(view.result_payload_json)
-    view.report_html = render_report_html(order, payload)
+    rendered_report_html = render_report_html(order, payload)
+    _upload_report_html(order.order_code, rendered_report_html)
+    view.report_html = None
     view.report_generated_at = datetime.utcnow()
     actor_type, actor_id = _staff_actor(staff)
     view.updated_by_type = actor_type
     view.updated_by_id = actor_id
     db.commit()
-    return _redirect(f"/staff/orders/{order_code}")
+    return _redirect(f"/staff/orders/{order_code}?success=report_saved")
 
 
 @router.get("/staff/orders/{order_code}/report-download")
@@ -683,12 +865,66 @@ def staff_report_download(
     if not order:
         raise HTTPException(status_code=404, detail="order not found")
     view = next(iter(sorted(order.result_views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
-    if not view or not view.report_html:
+    report_html = _download_report_html(order.order_code)
+    if not report_html and view and view.report_html:
+        report_html = view.report_html
+    if not report_html:
         raise HTTPException(status_code=404, detail="report not found")
     headers = {"Content-Disposition": f'attachment; filename="report-{order.order_code}.html"'}
-    return Response(content=view.report_html, media_type='text/html; charset=utf-8', headers=headers)
+    return Response(content=report_html, media_type='text/html; charset=utf-8', headers=headers)
 
 
+@router.get("/staff/orders/{order_code}/report-preview", response_class=HTMLResponse)
+def staff_report_preview(
+    order_code: str,
+    staff: dict = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    order = db.scalar(select(Order).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    report_html = _download_report_html(order.order_code)
+    if not report_html:
+        view = db.scalar(select(OrderResultView).where(OrderResultView.order_id == order.id).order_by(OrderResultView.updated_at.desc(), OrderResultView.created_at.desc()))
+        if view and view.report_html:
+            report_html = view.report_html
+    if not report_html:
+        raise HTTPException(status_code=404, detail="report not found")
+    return HTMLResponse(content=report_html)
+
+
+@router.post("/staff/orders/{order_code}/upload-report-html")
+def staff_upload_report_html(
+    order_code: str,
+    html_file: UploadFile = File(...),
+    staff: dict = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    order = db.scalar(select(Order).options(selectinload(Order.result_views)).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    filename = (html_file.filename or "").lower()
+    if filename and not filename.endswith(".html"):
+        return _redirect(f"/staff/orders/{order_code}?error=invalid_html")
+    raw = html_file.file.read()
+    try:
+        html = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        html = raw.decode("utf-8-sig", errors="ignore")
+    if not html.strip():
+        return _redirect(f"/staff/orders/{order_code}?error=no_html")
+    _upload_report_html(order.order_code, html)
+    view = next(iter(sorted(order.result_views, key=lambda x: x.updated_at or x.created_at, reverse=True)), None)
+    if not view:
+        view = OrderResultView(order_id=order.id)
+        db.add(view)
+    view.report_html = None
+    view.report_generated_at = datetime.utcnow()
+    actor_type, actor_id = _staff_actor(staff)
+    view.updated_by_type = actor_type
+    view.updated_by_id = actor_id
+    db.commit()
+    return _redirect(f"/staff/orders/{order_code}?success=report_uploaded")
 
 
 @router.get("/staff/orders/{order_code}/analysis-result", response_class=HTMLResponse)

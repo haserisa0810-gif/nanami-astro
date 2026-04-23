@@ -106,6 +106,11 @@ SIGN_JA_SHORT = {
 }
 
 
+def _sign_label_ja(sign_raw: str) -> str:
+    sign = str(sign_raw or "").strip()
+    return SIGN_JA.get(sign, SIGN_JA_SHORT.get(sign, sign))
+
+
 def _calc_helpers():
     from services.transit_calc import calc_global_transit_snapshot
     return calc_global_transit_snapshot
@@ -292,6 +297,31 @@ def _pick_by_date(candidates: list[str], target_date: str) -> str:
     return candidates[seed % len(candidates)]
 
 
+def _pick_post_style(target_date: str, axis: str) -> str:
+    styles = ["theme", "relationship", "action", "astro", "short"]
+    seed = sum(ord(c) for c in f"{target_date}:{axis}")
+    return styles[seed % len(styles)]
+
+
+def _normalize_sign_key(sign_raw: str) -> str:
+    value = str(sign_raw or "").strip()
+    if value in SIGN_JA:
+        return value
+    reverse_short = {k: v for k, v in SIGN_JA_SHORT.items()}
+    if value in reverse_short:
+        return reverse_short[value]
+    if value in SIGN_JA.values():
+        for k, v in SIGN_JA.items():
+            if v == value:
+                return k
+    return value
+
+
+def _sign_label_ja(sign_raw: str) -> str:
+    key = _normalize_sign_key(sign_raw)
+    return SIGN_JA.get(key, SIGN_JA_SHORT.get(str(sign_raw or "").strip(), str(sign_raw or "").strip()))
+
+
 def _aspect_meaning(aspect: str, planet_a: str, planet_b: str) -> str:
     pair = {planet_a, planet_b}
     if aspect == "square":
@@ -342,12 +372,62 @@ def _extract_strong_aspects(snapshot: dict[str, Any], *, max_items: int = 2) -> 
     return rows[:max_items]
 
 
+
+
+def _extract_sign_focus(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    weights = {
+        "Sun": 3,
+        "Moon": 4,
+        "Mercury": 3,
+        "Venus": 3,
+        "Mars": 3,
+        "Jupiter": 1,
+        "Saturn": 1,
+        "Uranus": 0,
+        "Neptune": 0,
+        "Pluto": 0,
+    }
+
+    sign_scores: dict[str, int] = {}
+    sign_planets: dict[str, list[str]] = {}
+
+    for p in snapshot.get("today_planets", []) or []:
+        if not isinstance(p, dict):
+            continue
+        planet_name = str(p.get("name") or "").strip()
+        sign_raw = _normalize_sign_key(str(p.get("sign") or "").strip())
+        if not planet_name or not sign_raw:
+            continue
+
+        weight = weights.get(planet_name, 0)
+        if weight <= 0:
+            continue
+        sign_scores[sign_raw] = sign_scores.get(sign_raw, 0) + weight
+        sign_planets.setdefault(sign_raw, []).append(PLANET_JA.get(planet_name, planet_name))
+
+    if not sign_scores:
+        return None
+
+    top_sign, top_score = max(sign_scores.items(), key=lambda x: x[1])
+    planets = sign_planets.get(top_sign, [])
+    has_luminary = ("太陽" in planets) or ("月" in planets)
+
+    if top_score < 6 or not has_luminary:
+        return None
+
+    return {
+        "sign_raw": top_sign,
+        "sign_ja": _sign_label_ja(top_sign),
+        "score": top_score,
+        "planets": planets,
+    }
+
 def _basis_from_planet(snapshot: dict[str, Any], planet_name: str, axis: str) -> str:
     p = _find_planet(snapshot, planet_name)
     if not p:
         return ""
     sign_raw = str(p.get("sign") or "").strip()
-    sign = SIGN_JA.get(sign_raw, sign_raw)
+    sign = _sign_label_ja(sign_raw)
     planet = PLANET_JA.get(planet_name, planet_name)
     axis_value = str(axis or "").strip().lower()
 
@@ -393,6 +473,35 @@ def _build_astro_basis(snapshot: dict[str, Any], axis: str) -> list[str]:
     return basis[:4]
 
 
+def _pick_daily_theme_type(snapshot: dict[str, Any], target_date: str, axis: str) -> str:
+    strong_aspects = _extract_strong_aspects(snapshot, max_items=3)
+    sign_focus = _extract_sign_focus(snapshot)
+    moon = _find_planet(snapshot, "Moon")
+    mercury = _find_planet(snapshot, "Mercury")
+    venus = _find_planet(snapshot, "Venus")
+    mars = _find_planet(snapshot, "Mars")
+
+    if strong_aspects:
+        top = strong_aspects[0]
+        try:
+            orb = float(top.get("orb", 99))
+        except Exception:
+            orb = 99.0
+        if orb <= 1.0:
+            return "tight_aspect"
+
+    if moon:
+        moon_sign = _sign_label_ja(str(moon.get("sign") or "").strip())
+        seed = sum(ord(c) for c in f"{target_date}:{moon_sign}:{axis}")
+        return "moon_focus" if seed % 2 == 0 else "personal_planet"
+
+    if mercury or venus or mars:
+        return "personal_planet"
+    if sign_focus:
+        return "sign_focus"
+    return "general"
+
+
 def _summary_headline(summary: str) -> str:
     text = str(summary or "").strip()
     if not text:
@@ -401,50 +510,88 @@ def _summary_headline(summary: str) -> str:
     if not parts:
         return text
     first = parts[0]
-    if not first.endswith("日") and not first.endswith("配置"):
-        first += "日。"
-    else:
-        first += "。"
-    return first
+    if first.endswith(("。", "日", "配置", "です", "ます")):
+        return first.rstrip("。") + "。"
+    return first + "。"
 
 
-def _build_social_levels(*, target_date: str, summary: str, axis: str, astro_basis: list[str], strong_aspects: list[dict[str, Any]]) -> dict[str, str]:
+def _build_social_levels(*, target_date: str, summary: str, axis: str, astro_basis: list[str], strong_aspects: list[dict[str, Any]], sign_focus: dict[str, Any] | None = None, theme_type: str = "general") -> dict[str, str]:
     headline = _summary_headline(summary)
+    axis_label = _axis_label(axis)
+    post_style = _pick_post_style(target_date, axis)
     basis1 = astro_basis[0] if astro_basis else ""
     basis2 = astro_basis[1] if len(astro_basis) > 1 else ""
-    axis_label = _axis_label(axis)
+    sa = strong_aspects[0] if strong_aspects else None
 
-    light_candidates = [
-        f"{headline}急ぐより、言葉や段取りを少し整えてから動くと{axis_label}の流れが安定しやすくなります。",
-        f"{headline}勢いで決め切るより、一度落ち着いて優先順位を整えるほうが{axis_label}では噛み合いやすくなります。",
+    focus_line = f"今日は{sign_focus['sign_ja']}に天体が集中。" if sign_focus else ""
+    moon = ""
+    moon_obj = None
+    # snapshot is not available here; derive from basis if possible is too weak, so keep optional only via summary/headline
+
+    intro_candidates: dict[str, list[str]] = {
+        "tight_aspect": [
+            f"今日は{sa['planets']}が{sa['aspect']}（orb {sa['orb']:.2f}°）。" if sa else headline,
+            headline,
+        ],
+        "moon_focus": [headline, focus_line or headline],
+        "personal_planet": [headline, focus_line or headline],
+        "sign_focus": [focus_line or headline, headline],
+        "general": [headline, focus_line or headline],
+    }
+    intro = _pick_by_date([x for x in intro_candidates.get(theme_type, [headline]) if x], target_date + ":intro") or headline
+
+    relation_line = f"言い方や距離感を整えるほど、{axis_label}のズレを減らしやすい日です。"
+    action_line = f"今日は結果を急ぐより、順番と伝え方を整えるほうが{axis_label}が噛み合いやすくなります。"
+    astro_line = basis1 or "今日は空気のまま反応せず、少し整えてから動くほうが流れを活かしやすい日です。"
+    extra_line = basis2 or (f"{sa['meaning']}流れがあるので、勢いより調整力が効きやすくなります。" if sa else relation_line)
+
+    short_candidates = [
+        "\n".join([line for line in [intro, "流れが一方向に寄りやすい日。" if sign_focus else "空気の出方がそのまま結果に反映されやすい日。", action_line] if line]),
+        "\n".join([line for line in [focus_line or intro, astro_line, "だからこそ、反応より調整を優先するとズレを減らしやすい。"] if line]),
     ]
 
-    if basis1:
-        standard_candidates = [
-            f"{headline}{basis1} だからこそ、今日は空気のまま反応するより、ひと呼吸おいて整えてから動くほうが{axis_label}を活かしやすい流れです。",
-            f"{headline}{basis1} が背景にあるので、今日は結果を急ぐよりも伝え方や距離感を調整したほうが{axis_label}のズレを減らしやすくなります。",
-        ]
-    else:
-        standard_candidates = light_candidates
+    theme_candidates = [
+        " ".join([line for line in [focus_line if theme_type == "sign_focus" else "", headline, action_line] if line]).strip(),
+        " ".join([line for line in [intro, astro_line, relation_line] if line]).strip(),
+    ]
 
-    if strong_aspects:
-        sa = strong_aspects[0]
-        pro_candidates = [
-            f"{sa['planets']}が{sa['aspect']}（orb {sa['orb']:.2f}°）。{sa['meaning']}ので、今日は勢い任せより調整力を使うほど{axis_label}が整いやすい日。",
-            f"今日は{sa['planets']}の{sa['aspect']}がタイトで、{sa['meaning']}流れ。{basis2 or basis1 or '反応をそのまま出さず整えてから動く'}ことが{axis_label}の鍵になります。",
-        ]
-    elif basis1:
-        pro_candidates = [
-            f"今日は{basis1} {basis2 or ''} 占星術的には、空気を読むだけでなく伝え方を設計するほど{axis_label}が動きやすい日です。",
-            f"{basis1} {basis2 or ''} そのため今日は、感覚で進むよりも意図して整えることが{axis_label}の安定につながりやすくなります。",
-        ]
-    else:
-        pro_candidates = standard_candidates
+    relationship_candidates = [
+        " ".join([line for line in [intro, relation_line, extra_line] if line]).strip(),
+        " ".join([line for line in [headline, "対人では温度差や認識差が出やすいので、言葉を一段やわらげるほど噛み合いやすくなります。", extra_line] if line]).strip(),
+    ]
+
+    action_candidates = [
+        " ".join([line for line in [intro, action_line, extra_line] if line]).strip(),
+        " ".join([line for line in [headline, "今日は一気に進めるより、目的と順番を整えてから動くほうが結果につながりやすい日です。", astro_line] if line]).strip(),
+    ]
+
+    astro_candidates = [
+        " ".join([line for line in [intro, astro_line, relation_line] if line]).strip(),
+        " ".join([line for line in [focus_line, f"{sa['planets']}の{sa['aspect']}がタイト。" if sa else astro_line, action_line] if line]).strip(),
+    ]
+
+    style_map = {
+        "short": short_candidates,
+        "theme": theme_candidates,
+        "relationship": relationship_candidates,
+        "action": action_candidates,
+        "astro": astro_candidates,
+    }
+
+    standard_candidates = style_map.get(post_style, theme_candidates)
+    light_candidates = [
+        _truncate_text(_pick_by_date(short_candidates, target_date + ":short"), 120),
+        _truncate_text(_pick_by_date(theme_candidates, target_date + ":theme"), 120),
+    ]
+    pro_candidates = [
+        " ".join([line for line in [intro, astro_line, extra_line, relation_line] if line]).strip(),
+        " ".join([line for line in [focus_line, headline, basis1, basis2, action_line] if line]).strip(),
+    ]
 
     return {
-        "light": _truncate_text(_pick_by_date(light_candidates, target_date), 120),
-        "standard": _truncate_text(_pick_by_date(standard_candidates, target_date + "std"), 170),
-        "pro": _truncate_text(_pick_by_date(pro_candidates, target_date + "pro"), 190),
+        "light": _truncate_text(_pick_by_date(light_candidates, target_date + ":light"), 120),
+        "standard": _truncate_text(_pick_by_date(standard_candidates, target_date + ":std"), 170),
+        "pro": _truncate_text(_pick_by_date(pro_candidates, target_date + ":pro"), 190),
     }
 
 
@@ -626,7 +773,24 @@ def _deterministic_theme_from_snapshot(
     has_sextile = "sextile" in aspect_names
     has_conjunction = "conjunction" in aspect_names
 
+    sign_focus = _extract_sign_focus(snapshot)
+    theme_type = _pick_daily_theme_type(snapshot, target_date, axis)
+
+    moon_obj = _find_planet(snapshot, "Moon")
+    moon_sign = _sign_label_ja(str(moon_obj.get("sign") or "").strip()) if moon_obj else ""
+
     summary_parts: list[str] = []
+
+    if theme_type == "sign_focus" and sign_focus:
+        summary_parts.append(
+            f"今日は{sign_focus['sign_ja']}に天体が集まりやすく、物事が一方向に動きやすい流れです。"
+        )
+    elif theme_type == "moon_focus" and moon_sign:
+        summary_parts.append(
+            f"今日は月が{moon_sign}にあり、感情の反応や安心できる距離感が空気を左右しやすい日です。"
+        )
+    elif theme_type == "tight_aspect" and aspects:
+        pass
 
     if has_square or has_opposition:
         summary_parts.append(
@@ -735,6 +899,8 @@ def _deterministic_theme_from_snapshot(
         axis=axis,
         astro_basis=astro_basis,
         strong_aspects=strong_aspects,
+        sign_focus=sign_focus,
+        theme_type=theme_type,
     )
 
     axis_text = (
@@ -758,6 +924,8 @@ def _deterministic_theme_from_snapshot(
         "strong_aspects": strong_aspects,
         "type_translation_axis": _truncate_text(axis_text, 85),
         "source": "deterministic_fallback",
+        "sign_focus": sign_focus,
+        "theme_type": theme_type,
     }
 
 
@@ -863,6 +1031,30 @@ def _normalize_daily_theme_result(result: dict[str, Any], fallback: dict[str, An
         normalized_social["pro"] = normalized_social["standard"]
     merged["social_levels"] = normalized_social
     merged["social_post"] = normalized_social["standard"]
+
+    sign_focus = merged.get("sign_focus")
+    if isinstance(sign_focus, dict):
+        sign_raw = str(sign_focus.get("sign_raw") or "").strip()
+        sign_ja = str(sign_focus.get("sign_ja") or SIGN_JA.get(sign_raw, sign_raw)).strip()
+        try:
+            score = int(sign_focus.get("score", 0))
+        except Exception:
+            score = 0
+        planets = sign_focus.get("planets")
+        if not isinstance(planets, list):
+            planets = []
+        planets = [str(p).strip() for p in planets if str(p).strip()]
+        if sign_ja and score > 0:
+            merged["sign_focus"] = {
+                "sign_raw": sign_raw,
+                "sign_ja": sign_ja,
+                "score": score,
+                "planets": planets,
+            }
+        else:
+            merged["sign_focus"] = None
+    else:
+        merged["sign_focus"] = None
 
     return merged
 
@@ -1012,14 +1204,6 @@ async def daily_theme_generate(request: Request):
             axis=axis,
         )
         regional_sns_line = _build_regional_sns_line(regional_houses)
-        if regional_sns_line:
-            fallback_social_levels = dict(fallback.get("social_levels") or {})
-            for key in ("light", "standard", "pro"):
-                base_line = str(fallback_social_levels.get(key) or "").strip()
-                if base_line and regional_sns_line not in base_line:
-                    fallback_social_levels[key] = f"{base_line} {regional_sns_line}"
-            fallback["social_levels"] = fallback_social_levels
-            fallback["social_post"] = fallback_social_levels.get("standard") or fallback.get("social_post")
 
         raw = _call_llm_json(prompt, max_output_tokens=1100)
         parsed = _parse_jsonish_response(raw, fallback) if raw else fallback
@@ -1046,14 +1230,6 @@ async def daily_theme_generate(request: Request):
         result_payload["regional_houses"] = regional_houses
         if regional_sns_line:
             result_payload["regional_sns_line"] = regional_sns_line
-            social_levels = result_payload.get("social_levels") or {}
-            if isinstance(social_levels, dict):
-                for key in ("light", "standard", "pro"):
-                    text = str(social_levels.get(key) or "").strip()
-                    if text and regional_sns_line not in text:
-                        social_levels[key] = f"{text} {regional_sns_line}"
-                result_payload["social_levels"] = social_levels
-                result_payload["social_post"] = social_levels.get("standard") or result_payload.get("social_post")
         return JSONResponse(content=result_payload)
 
     except HTTPException:

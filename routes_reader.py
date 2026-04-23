@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 import asyncio
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
@@ -8,20 +8,72 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
+from google.cloud import storage
 
 from auth import clear_reader_login, get_current_reader, set_reader_login, verify_password
 from db import get_db
-from models import Astrologer, Order, OrderDelivery, Payout, YamlLog
+from models import Astrologer, Menu, Order, OrderDelivery, Payout, YamlLog
 from routes_staff import _resolve_reader_login
 from services.order_service import update_order_status
 from services.yaml_log_service import upsert_yaml_log
 from services.reader_availability import line_status_label, normalize_line_status
 from services.notification_service import notify_delivery_email, notify_line_delivery
+from routes_admin import STATUS_LABELS
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 
+
+
+def _parse_date_param(value: str | None) -> date | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _reader_order_filters(request: Request) -> dict[str, str]:
+    params = request.query_params
+    return {
+        "q": (params.get("q") or "").strip(),
+        "status": (params.get("status") or "").strip(),
+        "menu_id": (params.get("menu_id") or "").strip(),
+        "created_from": (params.get("created_from") or "").strip(),
+        "created_to": (params.get("created_to") or "").strip(),
+    }
+
+
+def _apply_reader_order_filters(stmt, filters: dict[str, str]):
+    q = filters.get("q") or ""
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            Order.order_code.ilike(like)
+            | Order.user_name.ilike(like)
+            | Order.user_contact.ilike(like)
+        )
+
+    status = filters.get("status") or ""
+    if status:
+        stmt = stmt.where(Order.status == status)
+
+    menu_id = filters.get("menu_id") or ""
+    if menu_id.isdigit():
+        stmt = stmt.where(Order.menu_id == int(menu_id))
+
+    created_from = _parse_date_param(filters.get("created_from"))
+    if created_from:
+        stmt = stmt.where(Order.created_at >= datetime.combine(created_from, time.min))
+
+    created_to = _parse_date_param(filters.get("created_to"))
+    if created_to:
+        stmt = stmt.where(Order.created_at < datetime.combine(created_to + timedelta(days=1), time.min))
+
+    return stmt
 def _run_async_notification(coro) -> None:
     try:
         asyncio.run(coro)
@@ -82,8 +134,20 @@ def reader_dashboard(request: Request, reader: Astrologer = Depends(get_current_
 
 @router.get("/reader/orders", response_class=HTMLResponse)
 def reader_orders(request: Request, reader: Astrologer = Depends(get_current_reader), db: Session = Depends(get_db)):
-    orders = db.scalars(select(Order).options(selectinload(Order.menu)).where(Order.assigned_reader_id == reader.id).order_by(Order.created_at.desc())).all()
-    return templates.TemplateResponse(request=request, name="reader_orders.html", context={"request": request, "reader": reader, "orders": orders})
+    filters = _reader_order_filters(request)
+    stmt = select(Order).options(selectinload(Order.menu)).where(Order.assigned_reader_id == reader.id).order_by(Order.created_at.desc())
+    stmt = _apply_reader_order_filters(stmt, filters)
+    orders = db.scalars(stmt).all()
+    menus = db.scalars(select(Menu).where(Menu.is_active == True).order_by(Menu.price.asc(), Menu.id.asc())).all()
+    return templates.TemplateResponse(request=request, name="reader_orders.html", context={
+        "request": request,
+        "reader": reader,
+        "orders": orders,
+        "filters": filters,
+        "filter_menus": menus,
+        "status_labels": STATUS_LABELS,
+        "order_count": len(orders),
+    })
 
 
 @router.get("/reader/orders/{order_code}", response_class=HTMLResponse)
@@ -120,7 +184,7 @@ def reader_save_delivery(order_code: str, request: Request, delivery_text: str =
         db.add(delivery)
 
     should_notify = action in {"deliver_notify", "deliver_auto"}
-    has_report_html = bool(order.result_views and any(getattr(v, "report_html", None) for v in order.result_views))
+    has_report_html = _report_exists(order.order_code) or bool(order.result_views and any(getattr(v, "report_html", None) for v in order.result_views))
     if action == "deliver_auto":
         notify_mode = "auto"
     else:
