@@ -54,14 +54,18 @@ def send_mail(subject: str, body: str, to_emails: list[str]) -> bool:
     msg["Date"] = formatdate(localtime=True)
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
-            server.ehlo()
-            if smtp_port in (587, 25):
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=20) as server:
+                server.ehlo()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(from_email, to_emails, msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+                server.ehlo()
                 server.starttls()
                 server.ehlo()
-            if smtp_user and smtp_pass:
                 server.login(smtp_user, smtp_pass)
-            server.sendmail(from_email, to_emails, msg.as_string())
+                server.sendmail(from_email, to_emails, msg.as_string())
         return True
     except Exception as e:
         print("メール送信エラー:", repr(e))
