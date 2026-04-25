@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>総合鑑定書 — さばめ様</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Noto+Serif+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #090806;
+  --bg2: #11100d;
+  --surface: #171511;
+  --surface2: #1d1a15;
+  --panel: #14120f;
+  --gold: #c9a84c;
+  --gold-light: #ead6a1;
+  --gold-soft: rgba(201,168,76,0.54);
+  --gold-faint: rgba(201,168,76,0.08);
+  --text: #efe7d7;
+  --text-muted: #cdbda0;
+  --text-dim: #978a75;
+  --border: rgba(201,168,76,0.18);
+  --border-mid: rgba(201,168,76,0.34);
+  --chart-edge: rgba(234,214,161,0.12);
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+body {
+  background: radial-gradient(ellipse at top, rgba(201,168,76,0.05), transparent 40%), var(--bg);
+  color: var(--text);
+  font-family: 'Noto Serif JP', serif;
+  font-size: 17px;
+  line-height: 2.05;
+}
+a { color: inherit; }
+.cover {
+  min-height: 100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  padding:4rem 2rem;
+  position:relative;
+  overflow:hidden;
+}
+.cover::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(ellipse 58% 38% at 50% 24%, rgba(201,168,76,0.07) 0%, transparent 72%),
+    radial-gradient(ellipse 42% 52% at 84% 82%, rgba(116,92,36,0.06) 0%, transparent 64%);
+  pointer-events:none;
+}
+.cover-ornament {
+  font-family:'Cormorant Garamond',serif;
+  font-size:13px;
+  letter-spacing:0.38em;
+  color:var(--gold-soft);
+  text-transform:uppercase;
+  margin-bottom:3rem;
+}
+.cover-title-wrap { text-align:center; margin-bottom:3rem; }
+.cover-name {
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(1.5rem,3vw,2.2rem);
+  letter-spacing:0.14em;
+  color:var(--gold-light);
+  margin-bottom:1rem;
+}
+.cover-title-jp {
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(2.1rem,5vw,3.6rem);
+  color:var(--gold-light);
+  letter-spacing:0.1em;
+  line-height:1.2;
+}
+.cover-title-sub {
+  margin-top:0.8rem;
+  font-size:12px;
+  letter-spacing:0.28em;
+  color:var(--text-dim);
+  text-transform:uppercase;
+}
+.cover-divider {
+  width:120px;
+  height:1px;
+  background:linear-gradient(to right, transparent, var(--gold-soft), transparent);
+  margin:2rem auto;
+}
+.cover-info { text-align:center; }
+.cover-info-table {
+  display:inline-grid;
+  grid-template-columns:auto auto;
+  gap:6px 2rem;
+  text-align:left;
+  margin-bottom:2rem;
+}
+.cover-label { font-size:11px; letter-spacing:0.14em; color:var(--text-dim); }
+.cover-value { font-size:13px; color:var(--text-muted); letter-spacing:0.04em; }
+.cover-tagline {
+  font-family:'Cormorant Garamond',serif;
+  font-size:17px;
+  font-style:italic;
+  color:var(--gold-soft);
+  letter-spacing:0.07em;
+}
+.toc {
+  background:var(--bg2);
+  border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  padding:4rem 2rem;
+}
+.toc-inner, .chapter-inner { max-width:760px; margin:0 auto; }
+.chapter-inner-wide { max-width:920px; margin:0 auto; }
+.toc-heading {
+  text-align:center;
+  font-family:'Cormorant Garamond',serif;
+  font-size:11px;
+  letter-spacing:0.34em;
+  color:var(--gold-soft);
+  text-transform:uppercase;
+  margin-bottom:2.4rem;
+}
+.toc-list { list-style:none; }
+.toc-item a {
+  display:flex;
+  align-items:baseline;
+  gap:1rem;
+  padding:14px 0;
+  text-decoration:none;
+  border-bottom:1px solid var(--border);
+}
+.toc-item:last-child a { border-bottom:none; }
+.toc-num {
+  min-width:32px;
+  color:var(--text-dim);
+  font-family:'Cormorant Garamond',serif;
+  font-size:13px;
+}
+.toc-chapter-title { flex:1; color:var(--text-muted); }
+.toc-pages { font-size:11px; color:var(--text-dim); }
+.chapter {
+  padding:6rem 2rem;
+  border-bottom:1px solid var(--border);
+}
+.chapter:nth-child(even) { background:var(--bg2); }
+.chapter-eyebrow {
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  margin-bottom:2.5rem;
+}
+.chapter-num {
+  font-family:'Cormorant Garamond',serif;
+  font-size:48px;
+  color:var(--border-mid);
+  line-height:1;
+}
+.chapter-label {
+  font-size:10px;
+  color:var(--text-dim);
+  letter-spacing:0.28em;
+  text-transform:uppercase;
+}
+.chapter-title {
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(1.7rem,3.2vw,2.25rem);
+  color:var(--gold-light);
+  line-height:1.3;
+  letter-spacing:0.05em;
+}
+.chapter-divider {
+  width:60px;
+  height:1px;
+  background:var(--gold-soft);
+  margin-bottom:3rem;
+}
+.chapter-body { font-size:17px; line-height:2.08; color:var(--text); }
+.chapter-body p { margin-bottom:1.55rem; }
+.chapter-body h3 {
+  font-family:'Cormorant Garamond',serif;
+  font-size:23px;
+  color:var(--gold-light);
+  margin:2.8rem 0 1.15rem;
+  padding-left:1rem;
+  border-left:2px solid var(--gold-soft);
+  font-weight:400;
+}
+.chapter-body strong { color:var(--gold-light); font-weight:400; }
+.naming {
+  display:inline-block;
+  background:var(--surface2);
+  border:1px solid var(--border-mid);
+  border-radius:2px;
+  padding:0.42rem 1rem;
+  font-size:13px;
+  letter-spacing:0.08em;
+  color:var(--gold-light);
+  margin:0.5rem 0 1.5rem;
+}
+.callout {
+  background:var(--gold-faint);
+  border:1px solid var(--border-mid);
+  border-radius:2px;
+  padding:1.5rem 1.8rem;
+  margin:2.4rem 0;
+}
+.callout p { margin:0; }
+.closer {
+  border-top:1px solid var(--border);
+  margin-top:3rem;
+  padding-top:2rem;
+}
+.closer p {
+  font-family:'Cormorant Garamond',serif;
+  font-size:19px;
+  color:var(--gold-light);
+  font-style:italic;
+  line-height:1.8;
+  margin:0;
+}
+.chart-section-label {
+  text-align:center;
+  font-size:11px;
+  letter-spacing:0.2em;
+  color:var(--text-dim);
+  text-transform:uppercase;
+  margin-bottom:1.4rem;
+}
+.chart-frame {
+  max-width:560px;
+  margin:0 auto 3rem;
+  background:linear-gradient(180deg, rgba(234,214,161,0.03), rgba(234,214,161,0.015)), var(--panel);
+  border:1px solid var(--chart-edge);
+  border-radius:14px;
+  padding:16px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.015);
+}
+.planet-legend, .aspect-legend {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:4px 12px;
+  margin-top:0.6rem;
+}
+.planet-legend span, .aspect-legend span {
+  font-size:11px;
+  color:var(--text-dim);
+}
+.shichu-wrap { overflow-x:auto; }
+.shichu-table {
+  width:100%;
+  max-width:580px;
+  margin:0 auto 2rem;
+  border-collapse:collapse;
+}
+.shichu-table th, .shichu-table td {
+  border:1px solid var(--border-mid);
+  padding:10px 14px;
+  text-align:center;
+}
+.shichu-table th {
+  font-size:11px;
+  color:var(--text-dim);
+  background:var(--surface);
+  letter-spacing:0.12em;
+  font-weight:400;
+}
+.shichu-kanshi {
+  display:block;
+  font-family:'Cormorant Garamond',serif;
+  font-size:26px;
+  color:var(--gold-light);
+}
+.shichu-ten-god {
+  display:block;
+  font-size:12px;
+  color:var(--text-dim);
+  margin-top:3px;
+}
+.shichu-current { background:var(--surface2); }
+.shichu-section-label {
+  text-align:center;
+  font-size:11px;
+  letter-spacing:0.14em;
+  color:var(--text-dim);
+  margin:2rem 0 0.8rem;
+}
+.five-el-wrap {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:6px;
+  margin:1.5rem 0;
+}
+.five-el-badge {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:8px 14px;
+  border:1px solid var(--border);
+  border-radius:3px;
+  background:var(--surface);
+}
+.five-el-badge .el-name { font-size:16px; color:var(--gold-light); }
+.five-el-badge .el-count { font-size:11px; color:var(--text-dim); margin-top:2px; }
+.daiun-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));
+  gap:1px;
+  background:var(--border);
+  border:1px solid var(--border);
+  margin:2rem 0;
+}
+.daiun-cell {
+  position:relative;
+  background:var(--surface);
+  padding:1rem;
+}
+.daiun-cell.current { background:var(--surface2); }
+.daiun-cell.current::before {
+  content:'現在';
+  position:absolute;
+  top:8px;
+  right:8px;
+  font-size:9px;
+  letter-spacing:0.1em;
+  color:var(--gold-soft);
+  border:1px solid var(--border-mid);
+  padding:1px 5px;
+}
+.daiun-kanshi {
+  display:block;
+  font-family:'Cormorant Garamond',serif;
+  font-size:22px;
+  color:var(--gold-light);
+  margin-bottom:4px;
+}
+.daiun-age { display:block; font-size:11px; color:var(--text-muted); }
+.daiun-year { display:block; font-size:10px; color:var(--text-dim); }
+footer {
+  padding:4rem 2rem;
+  text-align:center;
+  border-top:1px solid var(--border);
+}
+.footer-logo {
+  font-family:'Cormorant Garamond',serif;
+  font-size:20px;
+  color:var(--gold-soft);
+  letter-spacing:0.14em;
+  margin-bottom:0.5rem;
+}
+.footer-note { font-size:11px; color:var(--text-dim); line-height:1.8; letter-spacing:0.08em; }
+@media (max-width: 640px) {
+  .chapter, .toc, .cover, footer { padding-left:1.2rem; padding-right:1.2rem; }
+  .cover-info-table { grid-template-columns:1fr; gap:2px 0; }
+  .daiun-grid { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+<section class="cover" id="top">
+  <div class="cover-ornament">Integrated Astrology × Four Pillars of Destiny</div>
+  <div class="cover-title-wrap">
+    <div class="cover-name">さばめ 様</div>
+    <div class="cover-title-jp">総合鑑定書</div>
+    <div class="cover-title-sub">ホロスコープ × 四柱推命　統合リーディング</div>
+  </div>
+  <div class="cover-divider"></div>
+  <div class="cover-info">
+    <div class="cover-info-table">
+      <span class="cover-label">生年月日</span><span class="cover-value">1986年2月23日</span>
+      <span class="cover-label">出生時刻</span><span class="cover-value">07時25分（宮城県仙台市）</span>
+      <span class="cover-label">太陽星座</span><span class="cover-value">魚座 4度・12ハウス</span>
+      <span class="cover-label">上昇点</span><span class="cover-value">魚座 29度</span>
+      <span class="cover-label">日干</span><span class="cover-value">戊（つちのえ・土）</span>
+      <span class="cover-label">四柱</span><span class="cover-value">丙寅・庚寅・戊戌・丙辰</span>
+      <span class="cover-label">鑑定日</span><span class="cover-value">2026年4月21日</span>
+    </div>
+    <div class="cover-tagline">"山が、海の底に沈んでいる"</div>
+  </div>
+</section>
+
+<nav class="toc" id="toc">
+  <div class="toc-inner">
+    <div class="toc-heading">目次 — Contents</div>
+    <ul class="toc-list">
+      <li class="toc-item"><a href="#charts"><span class="toc-num">図</span><span class="toc-chapter-title">ホロスコープ図・四柱推命命式</span><span class="toc-pages"></span></a></li>
+<li class="toc-item"><a href="#ch1"><span class="toc-num">01</span><span class="toc-chapter-title">基本性格・本質</span><span class="toc-pages">約15P</span></a></li>
+<li class="toc-item"><a href="#ch2"><span class="toc-num">02</span><span class="toc-chapter-title">才能・適性・仕事運</span><span class="toc-pages">約15P</span></a></li>
+<li class="toc-item"><a href="#ch3"><span class="toc-num">03</span><span class="toc-chapter-title">恋愛・パートナーシップ</span><span class="toc-pages">約12P</span></a></li>
+<li class="toc-item"><a href="#ch4"><span class="toc-num">04</span><span class="toc-chapter-title">お金・豊かさの流れ</span><span class="toc-pages">約10P</span></a></li>
+<li class="toc-item"><a href="#ch5"><span class="toc-num">05</span><span class="toc-chapter-title">魂の課題・人生のテーマ</span><span class="toc-pages">約10P</span></a></li>
+<li class="toc-item"><a href="#ch6"><span class="toc-num">06</span><span class="toc-chapter-title">生涯年表・大運の流れ</span><span class="toc-pages">約20P</span></a></li>
+<li class="toc-item"><a href="#ch7"><span class="toc-num">07</span><span class="toc-chapter-title">今年・来年の運勢（2026〜2027）</span><span class="toc-pages">約12P</span></a></li>
+    </ul>
+  </div>
+</nav>
+
+<section class="chapter" id="charts">
+  <div class="chapter-inner-wide">
+    <div class="chapter-eyebrow">
+      <div class="chapter-num" style="font-size:32px;">図</div>
+      <div class="chapter-eyebrow-right">
+        <span class="chapter-label">Charts</span>
+        <h2 class="chapter-title">ホロスコープ図・四柱推命命式</h2>
+      </div>
+    </div>
+    <div class="chapter-divider"></div>
+
+    <div class="chart-section-label">Natal Chart — Western Astrology</div>
+    <div class="chart-frame">
+      <svg width="100%" viewBox="0 0 560 560" style="display:block;background:#161411;border-radius:4px;">
+<rect x="0" y="0" width="560" height="560" fill="#161411"/>
+<path d="M68.0,282.2L32.0,282.5A248,248 0 0,0 66.5,406.2L97.5,387.9A212,212 0 0,1 68.0,282.2Z" fill="rgba(131,80,80,0.12)" stroke="none"/>
+<line x1="68.0" y1="282.2" x2="32.0" y2="282.5" stroke="#756e63" stroke-width="0.8"/>
+<text x="58.5" y="341.8" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#c98e88" opacity="0.95">♈</text>
+<path d="M97.5,387.9L66.5,406.2A248,248 0 0,0 158.2,496.0L175.9,464.7A212,212 0 0,1 97.5,387.9Z" fill="rgba(154,125,61,0.12)" stroke="none"/>
+<line x1="97.5" y1="387.9" x2="66.5" y2="406.2" stroke="#756e63" stroke-width="0.8"/>
+<text x="125.5" y="435.8" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#c9b37f" opacity="0.95">♉</text>
+<path d="M175.9,464.7L158.2,496.0A248,248 0 0,0 280.0,528.0L280.0,492.0A212,212 0 0,1 175.9,464.7Z" fill="rgba(85,108,140,0.13)" stroke="none"/>
+<line x1="175.9" y1="464.7" x2="158.2" y2="496.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="224.4" y="508.4" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#93b2c1" opacity="0.95">♊</text>
+<path d="M280.0,492.0L280.0,528.0A248,248 0 0,0 401.8,496.0L384.1,464.7A212,212 0 0,1 280.0,492.0Z" fill="rgba(73,111,97,0.13)" stroke="none"/>
+<line x1="280.0" y1="492.0" x2="280.0" y2="528.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="335.6" y="508.4" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#8fb5aa" opacity="0.95">♋</text>
+<path d="M384.1,464.7L401.8,496.0A248,248 0 0,0 493.5,406.2L462.5,387.9A212,212 0 0,1 384.1,464.7Z" fill="rgba(140,106,57,0.12)" stroke="none"/>
+<line x1="384.1" y1="464.7" x2="401.8" y2="496.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="434.5" y="435.8" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#cfaa74" opacity="0.95">♌</text>
+<path d="M462.5,387.9L493.5,406.2A248,248 0 0,0 528.0,282.0L492.0,282.0A212,212 0 0,1 462.5,387.9Z" fill="rgba(91,112,67,0.12)" stroke="none"/>
+<line x1="462.5" y1="387.9" x2="493.5" y2="406.2" stroke="#756e63" stroke-width="0.8"/>
+<text x="501.5" y="341.8" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#9db07a" opacity="0.95">♍</text>
+<path d="M492.0,282.0L528.0,282.0A248,248 0 0,0 493.5,158.0L462.5,176.3A212,212 0 0,1 492.0,282.0Z" fill="rgba(85,108,140,0.13)" stroke="none"/>
+<line x1="492.0" y1="282.0" x2="528.0" y2="282.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="501.5" y="222.4" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#93b2c1" opacity="0.95">♎</text>
+<path d="M462.5,176.3L493.5,158.0A248,248 0 0,0 401.8,68.0L384.1,99.3A212,212 0 0,1 462.5,176.3Z" fill="rgba(102,82,136,0.12)" stroke="none"/>
+<line x1="462.5" y1="176.3" x2="493.5" y2="158.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="434.5" y="128.2" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#aa93be" opacity="0.95">♏</text>
+<path d="M384.1,99.3L401.8,68.0A248,248 0 0,0 280.0,32.0L280.0,68.0A212,212 0 0,1 384.1,99.3Z" fill="rgba(137,88,60,0.12)" stroke="none"/>
+<line x1="384.1" y1="99.3" x2="401.8" y2="68.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="335.6" y="55.6" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#c98d70" opacity="0.95">♐</text>
+<path d="M280.0,68.0L280.0,32.0A248,248 0 0,0 158.2,68.0L175.9,99.3A212,212 0 0,1 280.0,68.0Z" fill="rgba(79,107,130,0.12)" stroke="none"/>
+<line x1="280.0" y1="68.0" x2="280.0" y2="32.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="224.4" y="55.6" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#8ea8ba" opacity="0.95">♑</text>
+<path d="M175.9,99.3L158.2,68.0A248,248 0 0,0 66.5,158.0L97.5,176.3A212,212 0 0,1 175.9,99.3Z" fill="rgba(85,108,140,0.13)" stroke="none"/>
+<line x1="175.9" y1="99.3" x2="158.2" y2="68.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="125.5" y="128.2" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#93b2c1" opacity="0.95">♒</text>
+<path d="M97.5,176.3L66.5,158.0A248,248 0 0,0 32.0,282.0L68.0,282.2A212,212 0 0,1 97.5,176.3Z" fill="rgba(94,78,131,0.12)" stroke="none"/>
+<line x1="97.5" y1="176.3" x2="66.5" y2="158.0" stroke="#756e63" stroke-width="0.8"/>
+<text x="58.5" y="222.4" text-anchor="middle" dominant-baseline="central" font-size="15" fill="#a293be" opacity="0.95">♓</text>
+<circle cx="280" cy="280" r="248" fill="none" stroke="#888888" stroke-width="1.5"/>
+<circle cx="280" cy="280" r="212" fill="none" stroke="#8b8375" stroke-width="1"/>
+<circle cx="280" cy="280" r="62" fill="none" stroke="#6d665c" stroke-width="0.8"/>
+<line x1="68.3" y1="281.3" x2="280.0" y2="282.0" stroke="#b9ab8f" stroke-width="1.5"/>
+<line x1="68.3" y1="281.3" x2="32.0" y2="281.0" stroke="#b9ab8f" stroke-width="1.5"/>
+<line x1="280.0" y1="492.0" x2="280.0" y2="218.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="280.0" y1="492.0" x2="280.0" y2="528.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="243.8" y1="484.4" x2="280.0" y2="218.0" stroke="#b9ab8f" stroke-width="1.5"/>
+<line x1="243.8" y1="484.4" x2="225.7" y2="516.0" stroke="#b9ab8f" stroke-width="1.5"/>
+<line x1="491.7" y1="283.0" x2="280.0" y2="282.0" stroke="#b9ab8f" stroke-width="1.5"/>
+<line x1="491.7" y1="283.0" x2="528.0" y2="283.3" stroke="#b9ab8f" stroke-width="1.5"/>
+<line x1="280.0" y1="68.0" x2="280.0" y2="342.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="280.0" y1="68.0" x2="280.0" y2="32.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="316.2" y1="75.6" x2="280.0" y2="342.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="316.2" y1="75.6" x2="334.3" y2="44.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="414.1" y1="144.1" x2="280.0" y2="282.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="414.1" y1="144.1" x2="432.5" y2="112.5" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="462.0" y1="221.8" x2="280.0" y2="282.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="462.0" y1="221.8" x2="480.5" y2="190.2" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="462.0" y1="342.2" x2="280.0" y2="282.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="462.0" y1="342.2" x2="480.5" y2="373.8" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="414.1" y1="419.9" x2="280.0" y2="282.0" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<line x1="414.1" y1="419.9" x2="432.5" y2="451.5" stroke="#6d665c" stroke-width="0.8" stroke-dasharray="3 3"/>
+<text x="84.3" y="290.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">1</text>
+<text x="160.0" y="468.4" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">2</text>
+<text x="243.0" y="498.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">3</text>
+<text x="280.0" y="450.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">4</text>
+<text x="340.0" y="498.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">5</text>
+<text x="456.0" y="370.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">6</text>
+<text x="476.0" y="284.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">7</text>
+<text x="456.0" y="196.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">8</text>
+<text x="400.0" y="128.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">9</text>
+<text x="280.0" y="110.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">10</text>
+<text x="160.0" y="128.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">11</text>
+<text x="104.0" y="196.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#b0a38d">12</text>
+<line x1="128.5" y1="230.9" x2="431.5" y2="333.1" stroke="#8e6666" stroke-width="2.0" opacity="0.7"/>
+<line x1="222.0" y1="356.7" x2="390.6" y2="200.3" stroke="#8e6666" stroke-width="1.5" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="128.5" y1="230.9" x2="390.6" y2="200.3" stroke="#6f84a0" stroke-width="1.8" opacity="0.7"/>
+<line x1="291.0" y1="153.0" x2="363.0" y2="148.4" stroke="#6f84a0" stroke-width="1.2" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="291.0" y1="153.0" x2="352.1" y2="251.5" stroke="#6f84a0" stroke-width="1.2" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="431.5" y1="333.1" x2="247.8" y2="162.4" stroke="#8e6666" stroke-width="1.5" opacity="0.7"/>
+<line x1="128.5" y1="230.9" x2="247.8" y2="162.4" stroke="#6f84a0" stroke-width="1.2" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="222.0" y1="356.7" x2="390.6" y2="200.3" stroke="#8e6666" stroke-width="1.5" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="128.5" y1="230.9" x2="291.0" y2="153.0" stroke="#6f84a0" stroke-width="1.5" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="222.0" y1="356.7" x2="247.8" y2="162.4" stroke="#6f84a0" stroke-width="1.5" opacity="0.7" stroke-dasharray="5,4"/>
+<line x1="363.0" y1="148.4" x2="391.5" y2="168.2" stroke="#9c7868" stroke-width="2" opacity="0.8"/>
+<circle cx="222.0" cy="356.7" r="10" fill="#161411" stroke="#bda66d" stroke-width="1.8"/>
+<text x="222.0" y="356.7" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#d1b677" font-weight="bold">☉</text>
+<text x="218.3" y="378.7" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">4°</text>
+<line x1="128.5" y1="222.2" x2="128.5" y2="239.6" stroke="#7d8faa" stroke-width="2"/>
+<circle cx="128.5" cy="230.9" r="10" fill="#161411" stroke="#7d8faa" stroke-width="1.8"/>
+<text x="128.5" y="230.9" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#bfc9d7" font-weight="bold">☽</text>
+<text x="128.5" y="252.9" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">13°</text>
+<line x1="254.0" y1="141.0" x2="237.0" y2="165.6" stroke="#709785" stroke-width="2"/>
+<circle cx="245.5" cy="153.3" r="10" fill="#161411" stroke="#709785" stroke-width="1.8"/>
+<text x="245.5" y="153.3" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#b6d2c7" font-weight="bold">☿</text>
+<text x="245.5" y="175.3" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">20°</text>
+<line x1="273.5" y1="141.0" x2="256.5" y2="165.6" stroke="#9e6f87" stroke-width="2"/>
+<circle cx="265.0" cy="153.3" r="10" fill="#161411" stroke="#9e6f87" stroke-width="1.8"/>
+<text x="265.0" y="153.3" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#d6b2c4" font-weight="bold">♀</text>
+<text x="265.0" y="175.3" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">12°</text>
+<line x1="391.5" y1="159.0" x2="391.5" y2="177.4" stroke="#aa6f68" stroke-width="2"/>
+<circle cx="391.5" cy="168.2" r="10" fill="#161411" stroke="#aa6f68" stroke-width="1.8"/>
+<text x="391.5" y="168.2" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#e0b6ad" font-weight="bold">♂</text>
+<text x="391.5" y="190.2" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">12°</text>
+<line x1="291.0" y1="143.0" x2="291.0" y2="163.0" stroke="#8574aa" stroke-width="2"/>
+<circle cx="291.0" cy="153.0" r="10" fill="#161411" stroke="#8574aa" stroke-width="1.8"/>
+<text x="291.0" y="153.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#c9bbeb" font-weight="bold">♃</text>
+<text x="291.0" y="175.0" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">0°</text>
+<line x1="400.0" y1="190.0" x2="381.6" y2="210.6" stroke="#7f8b97" stroke-width="2"/>
+<circle cx="390.8" cy="200.3" r="10" fill="#161411" stroke="#7f8b97" stroke-width="1.8"/>
+<text x="390.8" y="200.3" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#c6d1dc" font-weight="bold">♄</text>
+<text x="390.8" y="222.3" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">9°</text>
+<line x1="363.0" y1="138.4" x2="363.0" y2="158.4" stroke="#7097a6" stroke-width="2"/>
+<circle cx="363.0" cy="148.4" r="10" fill="#161411" stroke="#7097a6" stroke-width="1.8"/>
+<text x="363.0" y="148.4" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#b5d2de" font-weight="bold">♅</text>
+<text x="363.0" y="170.4" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">22°</text>
+<line x1="352.1" y1="241.5" x2="352.1" y2="261.5" stroke="#7285ab" stroke-width="2"/>
+<circle cx="352.1" cy="251.5" r="10" fill="#161411" stroke="#7285ab" stroke-width="1.8"/>
+<text x="352.1" y="251.5" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#c4d0ee" font-weight="bold">♆</text>
+<text x="352.1" y="273.5" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">5°R</text>
+<line x1="431.5" y1="323.1" x2="431.5" y2="343.1" stroke="#8b6d82" stroke-width="2"/>
+<circle cx="431.5" cy="333.1" r="10" fill="#161411" stroke="#8b6d82" stroke-width="1.8"/>
+<text x="431.5" y="333.1" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#d4bfcc" font-weight="bold">♇</text>
+<text x="431.5" y="355.1" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">7°R</text>
+<line x1="237.8" y1="152.4" x2="257.8" y2="172.4" stroke="#b2955f" stroke-width="2"/>
+<circle cx="247.8" cy="162.4" r="10" fill="#161411" stroke="#b2955f" stroke-width="1.8"/>
+<text x="247.8" y="162.4" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#decb98" font-weight="bold">☊</text>
+<text x="247.8" y="184.4" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">2°R</text>
+<line x1="311.0" y1="175.0" x2="311.0" y2="195.0" stroke="#6f8a73" stroke-width="2"/>
+<circle cx="311.0" cy="185.0" r="10" fill="#161411" stroke="#6f8a73" stroke-width="1.8"/>
+<text x="311.0" y="185.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#c0d5c2" font-weight="bold">⚷</text>
+<text x="311.0" y="207.0" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#c0b49d">9°</text>
+<rect x="54.3" y="271.0" width="28" height="18" rx="3" fill="#7f6a33" opacity="0.92"/>
+<text x="68.3" y="280.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#161411" font-weight="bold">AC</text>
+<rect x="266.0" y="471.0" width="28" height="18" rx="3" fill="#7f6a33" opacity="0.92"/>
+<text x="280.0" y="480.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#161411" font-weight="bold">IC</text>
+<rect x="477.7" y="271.0" width="28" height="18" rx="3" fill="#7f6a33" opacity="0.92"/>
+<text x="491.7" y="280.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#161411" font-weight="bold">DC</text>
+<rect x="229.8" y="57.0" width="28" height="18" rx="3" fill="#7f6a33" opacity="0.92"/>
+<text x="243.8" y="66.0" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#161411" font-weight="bold">MC</text>
+<text x="280" y="266" text-anchor="middle" font-size="10" fill="#b4a892">1986.2.23</text>
+<text x="280" y="280" text-anchor="middle" font-size="10" fill="#b4a892">07:25 JST</text>
+<text x="280" y="294" text-anchor="middle" font-size="10" fill="#b4a892">仙台市</text>
+</svg>
+    </div>
+    <div class="planet-legend">
+      <span>☉太陽</span><span>☽月</span><span>☿水星</span><span>♀金星</span>
+      <span>♂火星</span><span>♃木星</span><span>♄土星</span><span>♅天王星</span>
+      <span>♆海王星</span><span>♇冥王星</span><span>☊ノード</span><span>⚷カイロン</span>
+    </div>
+    <div class="aspect-legend">
+      <span>実線：主要な強い結びつき</span>
+      <span>破線：緊張と調整の要素</span>
+    </div>
+
+    <div class="shichu-section-label" style="margin-top:3rem;">Four Pillars of Destiny — 四柱推命命式</div>
+    <div class="shichu-wrap">
+      <table class="shichu-table">
+        <tr><th>時柱</th><th>日柱</th><th>月柱</th><th>年柱</th></tr>
+        <tr>
+          <td><span class="shichu-kanshi">丙</span><span class="shichu-ten-god">偏印</span></td>
+          <td class="shichu-current"><span class="shichu-kanshi">戊</span><span class="shichu-ten-god">日主</span></td>
+          <td><span class="shichu-kanshi">庚</span><span class="shichu-ten-god">食神</span></td>
+          <td><span class="shichu-kanshi">丙</span><span class="shichu-ten-god">偏印</span></td>
+        </tr>
+        <tr>
+          <td><span class="shichu-kanshi">辰<span style="font-size:14px;color:var(--text-dim);">★</span></span><span class="shichu-ten-god">比肩・正官・正財</span></td>
+          <td class="shichu-current"><span class="shichu-kanshi">戌</span><span class="shichu-ten-god">比肩・傷官・印綬</span></td>
+          <td><span class="shichu-kanshi">寅</span><span class="shichu-ten-god">偏官・偏印・比肩</span></td>
+          <td><span class="shichu-kanshi">寅</span><span class="shichu-ten-god">偏官・偏印・比肩</span></td>
+        </tr>
+        <tr><td colspan="4" style="font-size:11px;color:var(--text-dim);padding:6px;border-top:1px solid var(--border);">★ 空亡（辰・巳）— 時柱に空亡あり</td></tr>
+      </table>
+    </div>
+
+    <div class="shichu-section-label">五行バランス（天干・可視）</div>
+    <div class="five-el-wrap">
+      <div class="five-el-badge"><span class="el-name">木</span><span class="el-count">2（寅×2）</span></div>
+      <div class="five-el-badge"><span class="el-name">火</span><span class="el-count">2（丙×2）</span></div>
+      <div class="five-el-badge"><span class="el-name">土</span><span class="el-count">3（戊・戌・辰）</span></div>
+      <div class="five-el-badge"><span class="el-name">金</span><span class="el-count">1（庚）</span></div>
+      <div class="five-el-badge" style="border-color:rgba(201,168,76,0.5);"><span class="el-name" style="color:var(--text-dim);">水</span><span class="el-count" style="color:var(--text-dim);">0 — 欠落</span></div>
+    </div>
+
+    <div class="shichu-section-label">大運（10年ごとの流れ）</div>
+    <div class="daiun-grid">
+      <div class="daiun-cell"><span class="daiun-kanshi">己丑</span><span class="daiun-age">6〜16歳</span><span class="daiun-year">1993〜2003年</span></div>
+      <div class="daiun-cell"><span class="daiun-kanshi">戊子</span><span class="daiun-age">16〜26歳</span><span class="daiun-year">2003〜2013年</span></div>
+      <div class="daiun-cell"><span class="daiun-kanshi">丁亥</span><span class="daiun-age">26〜36歳</span><span class="daiun-year">2013〜2023年</span></div>
+      <div class="daiun-cell current"><span class="daiun-kanshi">丙戌</span><span class="daiun-age">36〜46歳</span><span class="daiun-year">2023〜2033年</span></div>
+      <div class="daiun-cell"><span class="daiun-kanshi">乙酉</span><span class="daiun-age">46〜56歳</span><span class="daiun-year">2033〜2043年</span></div>
+      <div class="daiun-cell"><span class="daiun-kanshi">甲申</span><span class="daiun-age">56〜66歳</span><span class="daiun-year">2043〜2053年</span></div>
+      <div class="daiun-cell"><span class="daiun-kanshi">癸未</span><span class="daiun-age">66〜76歳</span><span class="daiun-year">2053〜2063年</span></div>
+      <div class="daiun-cell"><span class="daiun-kanshi">壬午</span><span class="daiun-age">76〜86歳</span><span class="daiun-year">2063〜2073年</span></div>
+    </div>
+  </div>
+</section>
+
+
+<section class="chapter" id="ch1">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">01</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter One</span><h2 class="chapter-title">基本性格・本質</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<div class="naming">本質の命名：透明な岩盤</div>
+<p>さばめさんという人を一言で表すなら「山が、海の底に沈んでいる」です。これがいちばん近い表現です。外から見ると深く静かな海です。波も立たず、どこまでも受け入れてくれそうな雰囲気があります。</p>
+<p>ただその下には、動かない山があります。しかも小さなものではありません。かなり大きいです。そして特徴的なのは、その山の存在に、さばめさん自身もまだ十分には気づいていないことです。</p>
+<h3>外から見える姿と内側の真実</h3>
+<p>上昇点は魚座29度にあります。周囲からは柔らかい人、優しい人、受け止めてくれる人として見られやすい配置です。実際にそういう振る舞いもできます。太陽、水星、金星、木星が魚座12ハウスに集まっているため、感受性の強さもかなりあります。</p>
+<p>ただし正確に言うと、優しいというより<strong>察知能力が高すぎて合わせてしまう状態</strong>です。相手の意図や空気を読む速度が速いため、自分がどうしたいかを確かめる前に反応してしまいます。これが続くと、自分の望みがあとから分からなくなる感覚が出てきます。</p>
+<p>一方で四柱推命では日主が戊の土です。これは山の性質で、簡単には動かない核を持ちます。外では流れているように見えても、内側はほとんど動いていません。五行でも土が相対的に強く、水が表層では欠けています。見た目の柔らかさに対して、芯はかなり重いです。</p>
+<p>このため「優柔不断」「動けない」と見られやすいのですが、実際は違います。動けないのではなく、<strong>納得できないことに身体が止まっている</strong>だけです。腑に落ちた瞬間は迷いなく動きます。</p>
+<h3>12ハウスという見えない宇宙</h3>
+<p>12ハウス集中の影響で、エネルギーの多くが内側で処理されています。人と一緒にいる間は相手の状態を優先して受け取るため、自分の感情は後回しになります。その結果、別れたあとで初めて「あ、今日はしんどかった」と気づきやすいです。こうした時間差は、この配置らしい動きです。</p>
+<p>月は獅子座5ハウスにあります。だから本音では、表現したい気持ちもかなり強いです。深く潜っていたい気持ちと、出ていきたい気持ちが同時にあります。どちらかが嘘なのではなく、両方とも本音です。だから疲れやすいのです。</p>
+<div class="naming">繰り返すパターン：没入 → 消耗 → 沈黙ループ</div>
+<p>さばめさんの中では、没入して深く入り込み、消耗して黙り込み、また次の対象に向かうという流れが起きやすいです。これは意志の弱さではありません。感知の精度が高いことの副作用です。リスク面でも、過集中から燃え尽きに振れやすい傾向が出ています。</p>
+<h3>対人関係のクセ</h3>
+<p>対人関係では「つながる」というより「溶ける」形になりやすいです。関係が深くなるほど境界が曖昧になり、距離感が分からなくなります。そしてその状態を「ちゃんと関われている」と認識してしまうことがあります。</p>
+<div class="callout"><p>だから最終的な鍵は、自分が山であるという前提を忘れないことです。流れることもできます。柔らかくもいられます。でも核は動いていません。それを前提にしたとき、消耗の仕方が大きく変わります。</p></div>
+<div class="closer"><p>さばめさんは優しいだけの人ではありません。核が強いまま、境界が薄い人です。弱いのではなく、精度が高いのです。</p></div>
+
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="ch2">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">02</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter Two</span><h2 class="chapter-title">才能・適性・仕事運</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<p>さばめさんの才能は「見えないものを見える形にする力」です。これは比喩ではなく、配置そのものがそうなっています。水星が魚座12ハウスにあり、木星も同じ領域に入っています。論理で順番に積み上げるというより、全体像を先に受け取るタイプです。</p>
+<h3>12ハウスの才能という逆説</h3>
+<p>会話をしていても、言葉そのものより先に、その人の状態や温度が入ってきやすいです。表面では明るく話していても、奥にある疲れや違和感を先に察知するような受信の仕方です。これは訓練というより体質に近いです。</p>
+<p>さらに四柱推命では月干に庚の食神があります。受け取ったものを、外に出す回路がちゃんとあります。感じる力だけで終わらず、表現に変換できる構造です。ここが大きいです。受信だけの人ではありません。受信したものを言葉にできる人です。</p>
+<div class="naming">才能の命名：翻訳者型知性</div>
+<p>ただし問題は、分かりすぎることで止まりやすいことです。まだ言い切れない。もう少し正確にしたい。まだ浅い気がする。そう感じているうちに、出すタイミングを逃しやすいです。これは真面目さでもありますが、同時に表現の詰まりにもなります。</p>
+<p>月が獅子座5ハウスにあるため、本来は出した方が循環します。表に出す、創る、見せる、伝える。こうした動きが入ったときに、本来のエネルギーが活性化します。ずっと裏方にいると、強みが閉じたままになります。</p>
+<h3>仕事で出る強さ</h3>
+<p>火星、土星、天王星、ユノーが射手座9ハウスに集まっています。ここには「いい加減なことは言えない」「自分で腑に落ちたものしか本当に信じない」という強さがあります。人から聞いた知識をそのまま話すより、自分で掘って納得したものしか武器になりません。</p>
+<p>だから適性としては、一対一で深く対話する仕事、構造を読み解く仕事、まだ言葉になっていないものを翻訳する仕事が強いです。相談、分析、編集、リーディング、設計、整理、言語化。こうした分野とかなり相性がいいです。</p>
+<p>また土の要素が強いため、継続力もあります。時間をかけて積み上げるほど強くなります。派手に見えなくても、続けたものが最終的に厚みになります。仕事面では「すぐ勝つ」より「長く残る」タイプです。</p>
+<p>ただし、続けられることと、続けるべきことは別です。合わない場所でも粘ってしまい、気づいたときにはかなり消耗していることがあります。だから「続ける力」は長所であると同時に、扱いを間違えると足かせにもなります。</p>
+<div class="closer"><p>さばめさんの才能は正確さそのものではありません。深度です。深く掴んだものを出したときに、はじめて本当の価値になります。</p></div>
+
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="ch3">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">03</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter Three</span><h2 class="chapter-title">恋愛・パートナーシップ</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<p>恋愛は、さばめさんにとっていちばん揺さぶられやすい領域です。外からは穏やかに見えても、関係性の中ではかなり深い動きが起きます。冥王星が蠍座7ハウスにあり、サウスノードも同じ7ハウスに入っています。大事な相手との関係が、ただ心地よいものでは終わりにくい配置です。人生を変えるような関わりになりやすいです。</p>
+<h3>深淵としての関係性</h3>
+<p>惹かれる相手も、安定だけをくれる人というより、自分の深い部分を揺らす人になりやすいです。落ち着くから好きというより、深く引っかかるから離れられない。そういう引力が働きやすいです。</p>
+<p>ここで起きやすいのは「相手を愛している」と同時に「相手に自分の輪郭を預けている」状態です。深く惹かれた相手と一緒にいると、自分の感覚が相手に寄りやすいです。相手が揺れると自分も揺れます。相手が変わると、自分の位置までずれます。</p>
+<p>金星は魚座12ハウスにあります。愛情の形としてはとても深いです。相手の気持ちを受け取りやすく、境界を越えて共鳴しやすいです。美しい配置ですが、そのぶん自分を消しやすいです。親密さと自己喪失が近い場所にあります。</p>
+<div class="naming">繰り返すパターン：全か無か型接続</div>
+<p>さらに金星と火星はスクエアです。深く融合したい気持ちと、自由でいたい気持ちがぶつかります。近づきたいのに苦しくなる。離れると寂しい。ちょうどいい距離感がいちばん難しいです。ここに恋愛のしんどさが出やすいです。</p>
+<p>四柱推命でも日支戌の蔵干に傷官があり、相手への理想や見る目の鋭さが出ています。好きだからこそ、相手の粗さや足りなさも見えます。これは冷たさではなく、精度の高さです。ただし相手からは「認められていない」と受け取られやすいことがあります。</p>
+<p>また、時柱の空亡に正財が入っているため、理想の相手像はあるのに、現実の誰かとぴたりと重なる感覚は持ちにくいです。好きになっても、どこかでわずかなズレを感じ続けやすいです。</p>
+<div class="callout"><p>このパターンの出口は、関係に入る前から自分の輪郭を持っておくことです。相手の中で自分を見つけるのではなく、自分の中に根を持ったうえで関係に入ることが、恋愛の質を変えていきます。</p></div>
+<div class="closer"><p>さばめさんの恋愛の課題は、愛し方そのものではありません。愛しながら自分でいることです。</p></div>
+
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="ch4">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">04</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter Four</span><h2 class="chapter-title">お金・豊かさの流れ</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<p>お金との関係を一言で言うなら「土の中に埋まっている鉱脈」です。確かにあります。すぐ地表に出てこないだけです。一度掘り当てたものは、長く続きます。四柱推命の日主が戊で、土が強く、正財も時柱にあります。短期の一発より、積み上げて安定させる流れに向いています。</p>
+<h3>豊かさの構造</h3>
+<p>また偏財の要素も時柱にあり、ひとつの収入だけでなく複数の流れを持つほうが合っています。本業一本で完全固定というより、信頼のある軸を持ちながら、周辺にいくつかの収入口をつくるほうが自然です。</p>
+<p>月干の食神は、才能や表現がそのまま財に流れる構造を持ちます。自分の中で深く理解したものを外に出したとき、それが対価につながりやすいです。逆に、腑に落ちていないことを無理に商品化すると、急にエネルギーが漏れます。できることと、売っていいことは一致しません。自分の深さと噛み合ったものだけが続きます。</p>
+<div class="naming">繰り返すパターン：先払い型提供</div>
+<p>ここで起きやすい落とし穴は、価値を先に渡しすぎることです。相手のためにと思って与え、請求はあと回しになる。あるいは十分に理解してもらってから受け取ろうとする。これは優しさでもありますが、同時に自分を低い位置に置く癖でもあります。</p>
+<p>木星が魚座12ハウスにあるため、見えないところでの応援やご縁は入りやすいです。「気づいたら助けられていた」「思いがけない形で支えが来る」ということは起こりやすいです。けれど、だからこそ「なんとかなる」に甘えやすく、自分が実際にはかなり回していることへの自覚が薄れやすいです。</p>
+<p>今の大運は丙戌です。2023年から2033年は、内側で深めてきたものを形にしていく時期です。火が土を温め、持っているものを現実化しやすい運気です。ここで大事なのは、自分の深さにきちんと対価を求めることです。</p>
+<div class="closer"><p>さばめさんにとって、お金は単に稼ぐものではありません。深さの対価として受け取るものです。受け取ることへの許可が出た瞬間から、流れが変わります。</p></div>
+
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="ch5">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">05</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter Five</span><h2 class="chapter-title">魂の課題・人生のテーマ</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<p>魂の課題を一言で言うなら「溶けることをやめて、山になること」です。これは性格を変える話ではありません。もともとある核を、自分で認める話です。</p>
+<h3>持ち越してきたもの</h3>
+<p>サウスノードは蠍座7ハウスにあります。過去から持ってきた慣れた動きは、他者と深く結びつくことで自分を感じることです。誰かとの強い関係の中で、自分の意味や位置を確かめる。これは魂にとっての安全地帯です。</p>
+<p>ただ今生の成長方向は逆です。ノースノードが牡牛座1ハウスにあるため、先に自分を持つことが求められます。他者の反応や関係性の中ではなく、自分の身体感覚と価値感覚の中に根を下ろすことです。</p>
+<p>さばめさんは孤独が極端に苦手というより、「自分だけでいていい」という感覚がまだ薄いだけです。一人でいることはできます。でも一人でいる自分を、そのままで良いと思い切るところにまだ摩擦があります。だから誰かとの濃い関係に入ると、そこで自分を確かめたくなりやすいです。</p>
+<h3>言葉にまつわる傷</h3>
+<p>カイロンは双子座3ハウスです。ここには「自分の言葉が本当に届いているのか分からない」という傷があります。伝えたいことはあるのに、言語にした瞬間に少しずれる。感知しているものの解像度が高すぎて、言葉に落とすと粗く感じてしまうのです。</p>
+<div class="naming">繰り返すパターン：言語化の摩擦</div>
+<p>だからさばめさんにとって表現は、得意であると同時に痛みも伴う領域です。伝えることはできる。でも、これで全部ではないという違和感が残りやすいです。そのズレを埋めようとすることが、表現の原動力にもなります。</p>
+<p>また、時柱の辰が空亡であるため、人生後半に向けて「形」への執着を手放すテーマがあります。実績、評価、肩書、数字。もちろんそれらは無意味ではありません。ただ、それがないと自分が成り立たないと思い込むと、本来の流れが詰まります。</p>
+<p>十二運では年柱と月柱が長生です。何度でも立ち上がる力があります。折れても終わりません。根からまた芽が出ます。ただし、再生できることと、消耗していいことは別です。倒れてから回復することを繰り返すより、消耗しない形を先に作ることが本来の課題です。</p>
+<div class="closer"><p>さばめさんの課題は、強くなることではありません。すでに強いことを知ることです。山は最初からそこにあります。気づくだけでいいのです。</p></div>
+
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="ch6">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">06</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter Six</span><h2 class="chapter-title">生涯年表・大運の流れ</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<p>さばめさんの人生を大きく見ると、表面より内側で先に深まっていく流れです。目に見える変化より先に、地下で流れが変わります。だから外から見ると遅く見えることがありますが、実際にはずっと準備が進んでいます。</p>
+<h3>大運の全体的な方向性</h3>
+<p>大運は逆行で進みます。女性で陽干年生まれのため、時間とともに生まれつきのエネルギーと違う質へ向かっていく流れです。楽になるというより、深くなっていく人生です。大運の開始は約6歳3か月です。流れ自体は大きくずれていません。</p>
+<p>第1運の己丑は、幼少期に土の重さが重なります。感受性はあるのに、外の世界のルールとも向き合わなければならない時期です。周囲が平気で流せることが、自分には残りやすかったかもしれません。深く受け取る土台が、この時期にできています。</p>
+<p>第2運の戊子は、自分探しが強まりやすい10年です。答えがないというより、すでにある答えを「これだ」と認識する感覚がまだ育っていない時期です。自分でありたい気持ちと、輪郭が定まらない感じが同時にありやすいです。</p>
+<p>第3運の丁亥は、学びと深化の時期です。外から見ると何をしているか分かりにくくても、内側ではかなり濃く積み上がっています。この10年に深めたことが、その後の人生の基盤になります。遠回りに見えても、実際には地下水脈を掘っていた時期です。</p>
+<p>第4運の丙戌は現在の運期です。2023年から2033年に当たります。ここでは、それまで深めてきたものを形にしていく流れが強まります。偏印と比肩の色合いが出るため、独自の考えを持ちながら、自分の力で現実化していくことが求められます。</p>
+<div class="callout"><p>今のポイントは「準備ができてから出す」ではなく「出しながら整える」ことです。今の時点で持っている深さを外に出し、その反応の中でさらに洗練していく。そういう動きが合っています。</p></div>
+<p>第5運の乙酉では、より社会的な評価と表現の洗練が強まります。今まで個人の中で育ててきたものが、広い文脈で信頼されやすくなります。「急に認められる」というより「もともとあったものが見えるようになる」時期です。</p>
+<p>第6運以降は、さらに試されながら定着していきます。56歳以降は外からの要求や社会的な圧力も増えますが、それは壊すためではなく、本物を固めるための試練です。66歳以降は財と知恵が安定しやすく、人生の後半で掘り当てた鉱脈が流れやすくなります。</p>
+<div class="closer"><p>さばめさんの人生は、遅咲きではありません。深根型です。地上に出るまでに時間がかかる分、出たときには水脈が太いのです。</p></div>
+
+    </div>
+  </div>
+</section>
+
+<section class="chapter" id="ch7">
+  <div class="chapter-inner">
+    <div class="chapter-eyebrow"><div class="chapter-num">07</div><div class="chapter-eyebrow-right"><span class="chapter-label">Chapter Seven</span><h2 class="chapter-title">今年・来年の運勢（2026〜2027）</h2></div></div>
+    <div class="chapter-divider"></div>
+    <div class="chapter-body">
+      
+<p>2026年から2027年にかけての流れは、かなり大きいです。今は丙戌の大運の中盤で、内側で深めてきたものが外へ動きやすい時期です。特に2026年は「解放」と「再定義」が同時に起きやすいです。</p>
+<h3>春から初夏</h3>
+<p>春から初夏にかけては、土台を固める流れがあります。土星がネイタル土星にトラインで入り、木星がネイタル水星にトラインで入っています。今まで積み上げたものを言葉にしやすく、形にしやすい時期です。また天王星がASCにセクスタイルで入っており、見え方や出し方に新しい風が入っています。</p>
+<p>今の時期は、大きく広げるというより、自分の中で分かっていたことを外へ通すのに向いています。言葉にすると流れが動きやすいです。</p>
+<h3>2026年5月から7月</h3>
+<p>この時期は揺さぶりが強くなります。天王星がネイタル太陽にスクエアへ向かうため、これまでの在り方をそのまま続けられなくなる感覚が出やすいです。突然の変化というより、古い殻がもたなくなる感じです。同時に冥王星がネイタル冥王星へスクエアで入り、執着やコントロールのテーマも浮上しやすいです。</p>
+<p>この時期は「正しい形」を探しすぎないことが大事です。壊れるように見えるものがあっても、土台そのものが壊れているとは限りません。古い表面が剥がれているだけということも多いです。</p>
+<h3>2026年夏から初秋</h3>
+<p>この時期はいちばんの追い風があります。木星が月にコンジャンクションし、火星と土星にもトラインで入ります。表現すること、出すこと、伝えることが一気に後押しされます。月が獅子座5ハウスなので、このタイミングで前に出したものは強く反応を呼びやすいです。</p>
+<div class="naming">転換点：出すタイミングを待たないこと</div>
+<p>「まだ早い」と感じても、この時期は出したほうが流れに乗ります。12ハウス的なためらいより、木星の拡大に乗ったほうがいい時期です。ここで動いたことが、その後数年の流れを作ります。</p>
+<p>秋以降は、夏に動かしたものを育てる時期です。急いで拡大するより、残すものを見極めることのほうが大切です。土の強い命式なので、広げるより根付かせるほうが合っています。</p>
+<p>2027年は丁未年で、2026年に広がったものを選別する年です。引き算が効きます。本当に続けるものと、勢いで広がっただけのものが分かれてきます。ここで削ることは後退ではありません。むしろ本物だけを残す整理です。</p>
+<div class="closer"><p>この二年間を通していちばん大切なのは、自分が山であることを信頼することです。変化は起きます。揺さぶりもあります。でも核は動いていません。変わるための時間というより、もともとそうだった自分に戻るための時間です。</p></div>
+
+    </div>
+  </div>
+</section>
+
+
+<footer>
+  <div class="footer-logo">Hoshitsuki Nanami</div>
+  <div class="footer-note">ホロスコープ × 四柱推命の統合分析に基づく鑑定書です。<br>占星術・命理学はひとつの視点と羅針盤としてお役立てください。</div>
+</footer>
+</body>
+</html>

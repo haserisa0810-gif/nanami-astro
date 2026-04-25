@@ -1,7 +1,27 @@
 {% extends "platform_hub_base.html" %}{% set title = "外部受注詳細" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_external" %}{% block content %}
 
-{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {{ success }}</p>{% endif %}
-{% if error %}<div class="error">{% if error == 'no_html' %}HTML未登録です。{% elif error == 'no_public_url' %}先に公開URLを発行してください。{% elif error == 'mail_failed' %}メール送信に失敗しました。SMTP設定を確認してください。{% else %}{{ error }}{% endif %}</div>{% endif %}
+{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {% if success == 'report_queued' %}AI鑑定書生成を開始しました。生成中はこの画面が自動更新されます。{% elif success == 'report_generated' %}AI鑑定書を生成しました。{% elif success == 'report_status_reset' %}生成状態を未生成に戻しました。{% else %}{{ success }}{% endif %}</p>{% endif %}
+{% if error %}<div class="error">{% if error == 'no_html' %}HTML未登録です。{% elif error == 'no_public_url' %}先に公開URLを発行してください。{% elif error == 'mail_failed' %}メール送信に失敗しました。SMTP設定を確認してください。{% elif error == 'generate_failed' %}AI鑑定書生成に失敗しました。下部のエラー内容を確認してください。{% elif error == 'generate_not_confirmed' %}生成ボタンのクリックが確認できなかったため、生成は開始しませんでした。{% else %}{{ error }}{% endif %}</div>{% endif %}
+{% set gen_status = order.report_generation_status or 'not_started' %}
+{% set gen_progress_is_step = order.last_error and order.last_error.startswith('STEP:') %}
+<style>
+.report-status-box{margin-top:14px;border:1px solid #e5ddd0;border-radius:14px;padding:16px;background:#fffdf9;}
+.report-status-box.generating{border-color:#d6c4ff;background:linear-gradient(180deg,#fbf8ff,#fffdf9);}
+.report-status-box.completed{border-color:#b7dfc4;background:#f2fff6;}
+.report-status-box.failed{border-color:#f0b8b8;background:#fff6f6;}
+.report-status-main{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;}
+.report-status-title{font-weight:800;font-size:15px;margin-bottom:4px;}
+.report-status-text{font-size:13px;color:#5f6470;line-height:1.7;}
+.report-status-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;}
+.report-status-pill.generating{background:#f0eaff;color:#6a4db5;}
+.report-status-pill.completed{background:#dcf8e4;color:#287a3d;}
+.report-status-pill.failed{background:#ffe1e1;color:#a33a3a;}
+.report-status-pill.not_started{background:#f2efe8;color:#7a7368;}
+.report-spinner{width:14px;height:14px;border:2px solid rgba(106,77,181,.25);border-top-color:#6a4db5;border-radius:50%;animation:reportSpin .8s linear infinite;display:inline-block;}
+@keyframes reportSpin{to{transform:rotate(360deg)}}
+.report-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center;}
+.report-error-detail{margin-top:12px;padding:10px 12px;background:#fff;border:1px solid #f0b8b8;border-radius:10px;color:#9f2f2f;font-size:12px;white-space:pre-wrap;}
+</style>
 <div class="card">
   <div class="section-head">
     <div><h1>外部鑑定詳細</h1><p class="muted">{{ order.order_code }} / {{ status_labels.get(order.status, order.status) }}</p></div>
@@ -9,12 +29,17 @@
       <form method="post" action="/staff/external-orders/{{ order.id }}/mark-delivered"><button type="submit" class="secondary">納品済みにする</button></form>
       {% if has_html %}<a class="btn secondary" href="/staff/external-orders/{{ order.id }}/preview" target="_blank">HTMLプレビュー</a>{% endif %}
       {% if order.public_url %}<a class="btn" href="{{ order.public_url }}" target="_blank">公開URLを開く</a>{% endif %}
+      {% if gen_status == 'generating' %}
+        <form method="post" action="/staff/external-orders/{{ order.id }}/reset-report-status" onsubmit="return confirm('生成中の表示を未生成に戻します。裏処理が完全に止まるわけではありません。よろしいですか？');">
+          <button type="submit" class="secondary">生成中表示を解除</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 </div>
 <div class="card">
   <h2>基本情報・YAML・メール文面</h2>
-  <form method="post" action="/staff/external-orders/{{ order.id }}/update">
+  <form id="external_order_update_form" method="post" action="/staff/external-orders/{{ order.id }}/update">
     <div class="grid">
       <div><label>受付番号</label><input type="text" value="{{ order.order_code }}" readonly></div>
       <div><label>状態</label><input type="text" value="{{ status_labels.get(order.status, order.status) }}" readonly></div>
@@ -27,15 +52,111 @@
       <div><label>出生地</label><input type="text" name="birth_place" value="{{ order.birth_place or '' }}"></div>
       <div><label>販路</label><select name="source_type">{% for source in source_options %}<option value="{{ source }}" {% if order.source_type == source %}selected{% endif %}>{{ source }}</option>{% endfor %}</select></div>
       <div><label>メニュー名</label><input type="text" name="menu_name" value="{{ order.menu_name or '' }}"></div>
+      <div><label>鑑定書プラン</label><select name="report_plan" class="report-plan-select">{% for plan in report_plan_options %}<option value="{{ plan }}" {% if (order.report_generation_plan or 'standard') == plan %}selected{% endif %}>{{ report_plan_labels.get(plan, plan) }}</option>{% endfor %}</select></div>
       <div><label>金額</label><input type="number" name="price" min="0" step="1" value="{{ order.price if order.price is not none else '' }}"></div>
       <div><label>担当者</label><input type="text" name="staff_name" value="{{ order.staff_name or '' }}"></div>
       <div><label>有効期限</label><input type="datetime-local" name="expires_at" value="{{ order.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if order.expires_at else '' }}"></div>
     </div>
+    <details class="report-options-details" style="margin-top:14px;border:1px solid #e5ddd0;border-radius:10px;padding:12px;background:#fffdf9;">
+      <summary style="cursor:pointer;font-weight:700;">詳細オプションを開く</summary>
+      <p class="report-premium-note muted" style="display:none;margin-top:10px;font-size:12px;">プレミアムは小惑星・トランジット・特殊星・今年来年運勢がすべて標準搭載です。追加オプションは変更不要です。</p>
+      <div class="report-option-checkboxes" style="display:grid;gap:10px;margin-top:12px;font-size:13px;">
+        <label><input type="checkbox" name="option_asteroids" value="true" {% if report_options.get('option_asteroids') %}checked{% endif %}> 小惑星を追加する（Ceres / Pallas / Juno / Vesta）</label>
+        <label><input type="checkbox" name="option_transit" value="true" {% if report_options.get('option_transit') %}checked{% endif %}> トランジット時期読みを追加する</label>
+        <label><input type="checkbox" name="option_special_points" value="true" {% if report_options.get('option_special_points') %}checked{% endif %}> 特殊星・隠れた才能を追加する</label>
+        <label><input type="checkbox" name="option_year_forecast" value="true" {% if report_options.get('option_year_forecast') %}checked{% endif %}> 今年・来年の運勢を追加する</label>
+      </div>
+      <p class="muted" style="margin-top:10px;font-size:12px;">STORESの追加オプションと同じ考え方です。閉じている場合も、保存済みチェック状態で生成されます。</p>
+    </details>
     <div style="margin-top:14px"><label>相談内容</label><textarea name="consultation_text">{{ order.consultation_text or '' }}</textarea></div>
     <div style="margin-top:14px"><label>YAMLログ</label><textarea name="yaml_log_text" style="min-height:240px;font-family:ui-monospace,SFMono-Regular,monospace">{{ order.yaml_log_text or '' }}</textarea></div>
     <div style="margin-top:14px"><label>メール件名</label><input type="text" name="mail_subject" value="{{ order.mail_subject or '' }}"></div>
     <div style="margin-top:14px"><label>メール本文</label><textarea name="mail_body" style="min-height:180px">{{ order.mail_body or '' }}</textarea></div>
     <div class="filter-actions" style="margin-top:18px"><button type="submit">保存</button></div>
+  </form>
+</div>
+<div class="card">
+  <h2>AI鑑定書生成</h2>
+  <p class="muted">通常鑑定と同じ計算ロジックでYAMLを作成し、外部受注用プロンプト＋Claude Sonnet 4.6でHTML鑑定書を生成します。</p>
+
+  <div class="report-status-box {{ gen_status }}" id="report_status_box" data-status="{{ gen_status }}">
+    <div class="report-status-main">
+      <div>
+        <div class="report-status-title" id="report_status_title">
+          {% if gen_status == 'generating' %}AI鑑定書を生成中です
+          {% elif gen_status == 'completed' %}AI鑑定書の生成が完了しました
+          {% elif gen_status == 'failed' %}AI鑑定書の生成に失敗しました
+          {% else %}AI鑑定書はまだ生成されていません{% endif %}
+        </div>
+        <div class="report-status-text" id="report_status_text">
+          {% if gen_status == 'generating' %}
+            裏側で生成しています。この画面はステータスだけを確認します。完了または失敗したら自動で更新します。
+          {% elif gen_status == 'completed' %}
+            HTML保存まで完了しています。内容を確認して、必要なら公開URLを発行してください。
+          {% elif gen_status == 'failed' %}
+            エラー内容を確認して、入力内容やAPI設定を見直してから再生成してください。
+          {% else %}
+            プランと詳細オプションを選んで生成を開始できます。
+          {% endif %}
+        </div>
+      </div>
+      <div class="report-status-pill {{ gen_status }}" id="report_status_pill">
+        {% if gen_status == 'generating' %}<span class="report-spinner"></span>生成中
+        {% elif gen_status == 'completed' %}✅ 完了
+        {% elif gen_status == 'failed' %}❌ 失敗
+        {% else %}未生成{% endif %}
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:14px">
+      <div><strong>生成状態</strong><div id="report_status_value">{{ gen_status }}</div></div>
+      <div><strong>現在ステップ</strong><div id="report_step_value">{% if gen_progress_is_step %}{{ order.last_error[5:].split('|')[0] }}{% else %}-{% endif %}</div></div>
+      <div><strong>生成プラン</strong><div>{{ report_plan_labels.get(order.report_generation_plan or 'standard', order.report_generation_plan or 'standard') }}</div></div>
+      <div><strong>占術システム</strong><div>{{ order.report_generation_system or '-' }}</div></div>
+      <div><strong>モデル</strong><div>{{ order.report_generation_model or 'Claude Sonnet' }}</div></div>
+      <div><strong>生成日時</strong><div id="report_generated_at_value">{{ order.report_generated_at or '-' }}</div></div>
+      <div><strong>詳細オプション</strong><div>{% set ns = namespace(any_option=false) %}{% for key, label in report_option_labels.items() %}{% if report_options.get(key) %}{{ label }}<br>{% set ns.any_option = true %}{% endif %}{% endfor %}{% if not ns.any_option %}-{% endif %}</div></div>
+    </div>
+
+    {% if gen_status == 'failed' and order.last_error and not gen_progress_is_step %}
+      <div class="report-error-detail">{{ order.last_error }}</div>
+    {% endif %}
+
+    <div class="report-actions">
+      {% if has_html %}<a class="btn secondary" href="/staff/external-orders/{{ order.id }}/preview" target="_blank">HTMLプレビュー</a>{% endif %}
+      {% if order.public_url %}<a class="btn" href="{{ order.public_url }}" target="_blank">公開URLを開く</a>{% endif %}
+      {% if has_html and not order.public_url %}<form method="post" action="/staff/external-orders/{{ order.id }}/issue-url"><button type="submit" class="secondary">URL発行</button></form>{% endif %}
+      {% if gen_status == 'generating' %}<form method="post" action="/staff/external-orders/{{ order.id }}/reset-report-status" onsubmit="return confirm('生成中表示を解除して未生成に戻します。裏処理が動いている場合でも画面上は停止扱いになります。よろしいですか？');"><button type="submit" class="secondary">生成中を解除</button></form>{% endif %}
+      {% if gen_status == 'failed' %}<form method="post" action="/staff/external-orders/{{ order.id }}/reset-report-status"><button type="submit" class="secondary">未生成に戻す</button></form>{% endif %}
+    </div>
+  </div>
+
+  <form id="external_report_generate_form" method="post" action="/staff/external-orders/{{ order.id }}/generate-report" style="margin-top:14px">
+    <input type="hidden" name="confirm_generate" id="confirm_generate" value="0">
+    <label>生成プラン</label>
+    <select name="report_plan" class="report-plan-select" {% if gen_status == 'generating' %}disabled{% endif %}>{% for plan in report_plan_options %}<option value="{{ plan }}" {% if (order.report_generation_plan or 'standard') == plan %}selected{% endif %}>{{ report_plan_labels.get(plan, plan) }}</option>{% endfor %}</select>
+    <details class="report-options-details" style="margin-top:14px;border:1px solid #e5ddd0;border-radius:10px;padding:12px;background:#fffdf9;">
+      <summary style="cursor:pointer;font-weight:700;">詳細オプションを開く</summary>
+      <p class="report-premium-note muted" style="display:none;margin-top:10px;font-size:12px;">プレミアムは小惑星・トランジット・特殊星・今年来年運勢がすべて標準搭載です。追加オプションは変更不要です。</p>
+      <div class="report-option-checkboxes" style="display:grid;gap:10px;margin-top:12px;font-size:13px;">
+        <label><input type="checkbox" name="option_asteroids" value="true" {% if report_options.get('option_asteroids') %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> 小惑星を追加する（Ceres / Pallas / Juno / Vesta）</label>
+        <label><input type="checkbox" name="option_transit" value="true" {% if report_options.get('option_transit') %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> トランジット時期読みを追加する</label>
+        <label><input type="checkbox" name="option_special_points" value="true" {% if report_options.get('option_special_points') %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> 特殊星・隠れた才能を追加する</label>
+        <label><input type="checkbox" name="option_year_forecast" value="true" {% if report_options.get('option_year_forecast') %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> 今年・来年の運勢を追加する</label>
+      </div>
+      <p class="muted" style="margin-top:10px;font-size:12px;">ここでチェックした内容が今回の生成とプロンプトに反映されます。小惑星は計算オプションにも反映します。</p>
+    </details>
+    <div class="filter-actions" style="margin-top:14px">
+      {% if gen_status == 'generating' %}
+        <button type="submit" disabled>生成中…</button>
+      {% elif gen_status == 'completed' %}
+        <button type="submit" class="secondary js-generate-submit" onclick="return confirm('既存の鑑定書を上書きして再生成します。よろしいですか？');">再生成する</button>
+      {% elif gen_status == 'failed' %}
+        <button type="submit" class="js-generate-submit">失敗したので再生成する</button>
+      {% else %}
+        <button type="submit" class="js-generate-submit">AI鑑定書を生成</button>
+      {% endif %}
+    </div>
   </form>
 </div>
 <div class="grid">
@@ -66,7 +187,7 @@
     <div style="margin-top:14px"><label>本文</label><textarea name="mail_body" style="min-height:180px">{{ order.mail_body or '' }}</textarea></div>
     <div class="filter-actions" style="margin-top:18px"><button type="submit">メール送信</button></div>
   </form>
-  {% if order.last_error %}<div class="error" style="margin-top:12px">{{ order.last_error }}</div>{% endif %}
+  {% if order.last_error and not gen_progress_is_step %}<div class="error" style="margin-top:12px">{{ order.last_error }}</div>{% endif %}
 </div>
 <div class="card">
   <h2>履歴</h2>
@@ -79,4 +200,168 @@
     <div><strong>納品日時</strong><div>{{ order.delivered_at or '-' }}</div></div>
   </div>
 </div>
+<script>
+(function(){
+  function syncReportOptionUI(){
+    var selects = document.querySelectorAll('.report-plan-select');
+    var plan = 'standard';
+    selects.forEach(function(sel){ if (sel.value) plan = sel.value; });
+    var isPremium = plan === 'premium';
+    document.querySelectorAll('.report-options-details').forEach(function(box){
+      var note = box.querySelector('.report-premium-note');
+      var opts = box.querySelector('.report-option-checkboxes');
+      if (note) note.style.display = isPremium ? '' : 'none';
+      if (opts) opts.style.opacity = isPremium ? '0.55' : '1';
+      box.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
+        if (isPremium) {
+          cb.checked = true;
+          cb.disabled = true;
+        } else {
+          cb.disabled = false;
+        }
+      });
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    document.querySelectorAll('.report-plan-select').forEach(function(sel){
+      sel.addEventListener('change', syncReportOptionUI);
+    });
+    syncReportOptionUI();
+  });
+})();
+</script>
+
+
+<script>
+(function(){
+  // AI生成フォームは基本情報フォームと分かれているため、
+  // 「保存」を押さずに生成しても現在の入力値がバックエンドへ渡るようにコピーする。
+  document.addEventListener('DOMContentLoaded', function(){
+    var updateForm = document.getElementById('external_order_update_form');
+    var generateForm = document.getElementById('external_report_generate_form');
+    if (!updateForm || !generateForm) return;
+
+    var copyNames = [
+      'customer_name', 'customer_email', 'birth_date', 'birth_time', 'gender',
+      'prefecture', 'birth_place', 'consultation_text', 'source_type',
+      'menu_name', 'price', 'staff_name', 'yaml_log_text'
+    ];
+
+    var confirmInput = document.getElementById('confirm_generate');
+    generateForm.querySelectorAll('.js-generate-submit').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        if (confirmInput) confirmInput.value = '1';
+      });
+    });
+
+    generateForm.addEventListener('submit', function(event){
+      if (!confirmInput || confirmInput.value !== '1') {
+        event.preventDefault();
+        alert('生成ボタンを押した時だけ生成を開始します。');
+        return;
+      }
+      generateForm.querySelectorAll('input[data-copied-from-basic="1"]').forEach(function(el){ el.remove(); });
+      copyNames.forEach(function(name){
+        var src = updateForm.querySelector('[name="' + name + '"]');
+        if (!src) return;
+        var hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = name;
+        hidden.value = src.value || '';
+        hidden.setAttribute('data-copied-from-basic', '1');
+        generateForm.appendChild(hidden);
+      });
+    });
+  });
+})();
+</script>
+
+<script>
+(function(){
+  var initialStatus = {{ gen_status|tojson }};
+  if (initialStatus !== 'generating') return;
+
+  var statusUrl = "/staff/external-orders/{{ order.id }}/report-status";
+  var pollCount = 0;
+  var maxPollCount = 180; // 5秒 × 180 = 最大15分
+
+  function setStatusUi(status, data) {
+    var box = document.getElementById('report_status_box');
+    var title = document.getElementById('report_status_title');
+    var text = document.getElementById('report_status_text');
+    var pill = document.getElementById('report_status_pill');
+    var value = document.getElementById('report_status_value');
+    var generatedAt = document.getElementById('report_generated_at_value');
+    var stepValue = document.getElementById('report_step_value');
+
+    if (box) {
+      box.classList.remove('not_started', 'generating', 'completed', 'failed');
+      box.classList.add(status);
+      box.dataset.status = status;
+    }
+    if (pill) {
+      pill.classList.remove('not_started', 'generating', 'completed', 'failed');
+      pill.classList.add(status);
+    }
+    if (value) value.textContent = status;
+    if (stepValue && data && data.step) stepValue.textContent = data.step;
+    if (generatedAt && data && data.generated_at) generatedAt.textContent = data.generated_at;
+
+    if (status === 'generating') {
+      if (title) title.textContent = 'AI鑑定書を生成中です';
+      if (text) text.textContent = (data && data.progress_message) ? data.progress_message : '裏側で生成しています。この画面はステータスだけを確認しています。完了または失敗したら自動で更新します。';
+      if (pill) pill.innerHTML = '<span class="report-spinner"></span>生成中';
+    } else if (status === 'completed') {
+      if (title) title.textContent = 'AI鑑定書の生成が完了しました';
+      if (text) text.textContent = 'HTML保存まで完了しています。画面を更新します。';
+      if (pill) pill.textContent = '✅ 完了';
+    } else if (status === 'failed') {
+      if (title) title.textContent = 'AI鑑定書の生成に失敗しました';
+      if (text) text.textContent = (data && data.last_error) ? data.last_error : 'エラー内容を確認してから再生成してください。';
+      if (pill) pill.textContent = '❌ 失敗';
+    }
+  }
+
+  async function pollReportStatus() {
+    pollCount += 1;
+    if (pollCount > maxPollCount) {
+      setStatusUi('failed', {last_error: '15分以上経過したため自動確認を停止しました。画面を手動更新して状態を確認してください。'});
+      return;
+    }
+
+    try {
+      var res = await fetch(statusUrl, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+        cache: 'no-store',
+        redirect: 'manual'
+      });
+
+      if (res.type === 'opaqueredirect' || res.status === 0 || res.status === 401 || res.status === 403) {
+        setStatusUi('failed', {last_error: 'ログイン状態を確認できません。別タブでログインし直してから画面を更新してください。'});
+        return;
+      }
+      if (!res.ok) throw new Error('status api error: ' + res.status);
+
+      var data = await res.json();
+      var status = data.status || 'not_started';
+      setStatusUi(status, data);
+
+      if (status === 'generating') {
+        window.setTimeout(pollReportStatus, 5000);
+      } else {
+        window.setTimeout(function(){ window.location.href = "/staff/external-orders/{{ order.id }}"; }, 1200);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusUi('generating', {last_error: 'ステータス確認中です。'});
+      window.setTimeout(pollReportStatus, 8000);
+    }
+  }
+
+  window.setTimeout(pollReportStatus, 5000);
+})();
+</script>
+
 {% endblock %}

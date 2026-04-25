@@ -239,6 +239,35 @@ def _ensure_order_report_columns() -> None:
         except Exception:
             pass
 
+def _ensure_external_order_report_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        tables = set(inspector.get_table_names())
+    except Exception:
+        return
+    if "external_orders" not in tables:
+        return
+    try:
+        columns = {col["name"] for col in inspector.get_columns("external_orders")}
+    except Exception:
+        return
+    required = {
+        "report_generation_status": "ALTER TABLE external_orders ADD COLUMN report_generation_status VARCHAR(30)",
+        "report_generation_plan": "ALTER TABLE external_orders ADD COLUMN report_generation_plan VARCHAR(30)",
+        "report_generation_system": "ALTER TABLE external_orders ADD COLUMN report_generation_system VARCHAR(50)",
+        "report_generation_prompt_key": "ALTER TABLE external_orders ADD COLUMN report_generation_prompt_key VARCHAR(100)",
+        "report_generation_model": "ALTER TABLE external_orders ADD COLUMN report_generation_model VARCHAR(100)",
+        "report_generated_at": "ALTER TABLE external_orders ADD COLUMN report_generated_at TIMESTAMP",
+    }
+    with engine.begin() as conn:
+        for name, ddl in required.items():
+            if name not in columns:
+                conn.execute(text(ddl))
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_external_orders_report_generation_status ON external_orders (report_generation_status)"))
+        except Exception:
+            pass
+
 
 def _backfill_reports_from_orders() -> None:
     inspector = inspect(engine)
@@ -344,6 +373,7 @@ def init_db() -> None:
     _ensure_intake_draft_table()
     _ensure_report_table()
     _ensure_order_report_columns()
+    _ensure_external_order_report_columns()
     _ensure_order_result_view_table()
     _ensure_order_result_view_columns()
     _ensure_transit_hub_tables()

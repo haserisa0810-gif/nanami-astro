@@ -2,34 +2,33 @@
 
 from __future__ import annotations
 
+CLAUDE_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_SONNET_MODEL = "claude-sonnet-4-6"
+
 
 def resolve_ai_model(model_key: str):
     """
-    UIで選択されたモデルキーを
-    (provider, model_name) に変換する
-
-    例:
-    claude_haiku -> ("claude", "claude-3-haiku")
+    UIで選択されたモデルキーを(provider, model_name)に変換する。
+    Anthropic APIキーはHaiku/Sonnet共通で使える。モデル名だけ切り替える。
     """
     model_map = {
-        "claude_haiku": ("claude", "claude-3-haiku"),
-        "claude_sonnet": ("claude", "claude-3-5-sonnet"),
+        "claude_haiku": ("claude", CLAUDE_HAIKU_MODEL),
+        "claude_sonnet": ("claude", CLAUDE_SONNET_MODEL),
         "gemini_flash": ("gemini", "gemini-2.0-flash"),
         "gemini_flash_light": ("gemini", "gemini-2.0-flash-lite"),
         "gemini_pro": ("gemini", "gemini-2.5-pro"),
         # 新UI互換
-        "haiku": ("claude", "claude-3-haiku"),
-        "sonnet": ("claude", "claude-3-5-sonnet"),
+        "haiku": ("claude", CLAUDE_HAIKU_MODEL),
+        "sonnet": ("claude", CLAUDE_SONNET_MODEL),
         "flash-lite": ("gemini", "gemini-2.0-flash-lite"),
         "flash": ("gemini", "gemini-2.0-flash"),
         "pro": ("gemini", "gemini-2.5-pro"),
     }
 
     if not model_key:
-        return ("claude", "claude-3-haiku")
+        return ("claude", CLAUDE_HAIKU_MODEL)
 
-    return model_map.get(model_key, ("claude", "claude-3-haiku"))
-
+    return model_map.get(model_key, ("claude", CLAUDE_HAIKU_MODEL))
 
 
 def is_high_quality(model_key: str) -> bool:
@@ -40,7 +39,6 @@ def is_high_quality(model_key: str) -> bool:
         "sonnet",
         "pro",
     ]
-
 
 
 def is_fast_model(model_key: str) -> bool:

@@ -419,6 +419,15 @@ class ExternalOrder(TimestampMixin, Base):
     mail_body: Mapped[Optional[str]] = mapped_column(Text)
     mail_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    # 共通鑑定書生成エンジン用（外部受注 → STORES連携にも拡張しやすい形）
+    report_generation_status: Mapped[Optional[str]] = mapped_column(String(30))
+    report_generation_plan: Mapped[Optional[str]] = mapped_column(String(30))
+    report_generation_system: Mapped[Optional[str]] = mapped_column(String(50))
+    report_generation_prompt_key: Mapped[Optional[str]] = mapped_column(String(100))
+    report_generation_model: Mapped[Optional[str]] = mapped_column(String(100))
+    report_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
     last_error: Mapped[Optional[str]] = mapped_column(Text)
 
 

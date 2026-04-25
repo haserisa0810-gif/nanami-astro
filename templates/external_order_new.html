@@ -15,13 +15,55 @@
       <div><label>出生地</label><input type="text" name="birth_place"></div>
       <div><label>販路</label><select name="source_type">{% for source in source_options %}<option value="{{ source }}">{{ source }}</option>{% endfor %}</select></div>
       <div><label>メニュー名</label><input type="text" name="menu_name" placeholder="総合鑑定"></div>
+      <div><label>鑑定書プラン</label><select name="report_plan" class="report-plan-select">{% for plan in report_plan_options %}<option value="{{ plan }}" {% if plan == 'standard' %}selected{% endif %}>{{ report_plan_labels.get(plan, plan) }}</option>{% endfor %}</select></div>
       <div><label>金額</label><input type="number" name="price" min="0" step="1"></div>
       <div><label>担当者</label><input type="text" name="staff_name" value="{{ default_staff_name }}"></div>
       <div><label>HTML鑑定書</label><input type="file" name="html_file" accept=".html,text/html"></div>
     </div>
+    <details class="report-options-details" style="margin-top:14px;border:1px solid #e5ddd0;border-radius:10px;padding:12px;background:#fffdf9;">
+      <summary style="cursor:pointer;font-weight:700;">詳細オプションを開く</summary>
+      <p class="report-premium-note muted" style="display:none;margin-top:10px;font-size:12px;">プレミアムは小惑星・トランジット・特殊星・今年来年運勢がすべて標準搭載です。追加オプションは変更不要です。</p>
+      <div class="report-option-checkboxes" style="display:grid;gap:10px;margin-top:12px;font-size:13px;">
+        <label><input type="checkbox" name="option_asteroids" value="true"> 小惑星を追加する（Ceres / Pallas / Juno / Vesta）</label>
+        <label><input type="checkbox" name="option_transit" value="true" checked> トランジット時期読みを追加する</label>
+        <label><input type="checkbox" name="option_special_points" value="true"> 特殊星・隠れた才能を追加する</label>
+        <label><input type="checkbox" name="option_year_forecast" value="true" checked> 今年・来年の運勢を追加する</label>
+      </div>
+      <p class="muted" style="margin-top:10px;font-size:12px;">初期値はスタンダード想定です。あとから詳細画面で変更できます。</p>
+    </details>
     <div style="margin-top:14px"><label>相談内容</label><textarea name="consultation_text"></textarea></div>
     <div style="margin-top:14px"><label>YAMLログ</label><textarea name="yaml_log_text" style="min-height:240px;font-family:ui-monospace,SFMono-Regular,monospace"></textarea></div>
     <div class="filter-actions" style="margin-top:18px"><button type="submit">登録して詳細へ</button><a class="btn secondary" href="/staff/external-orders">戻る</a></div>
   </form>
 </div>
+<script>
+(function(){
+  function syncReportOptionUI(){
+    var selects = document.querySelectorAll('.report-plan-select');
+    var plan = 'standard';
+    selects.forEach(function(sel){ if (sel.value) plan = sel.value; });
+    var isPremium = plan === 'premium';
+    document.querySelectorAll('.report-options-details').forEach(function(box){
+      var note = box.querySelector('.report-premium-note');
+      var opts = box.querySelector('.report-option-checkboxes');
+      if (note) note.style.display = isPremium ? '' : 'none';
+      if (opts) opts.style.opacity = isPremium ? '0.55' : '1';
+      box.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
+        if (isPremium) {
+          cb.checked = true;
+          cb.disabled = true;
+        } else {
+          cb.disabled = false;
+        }
+      });
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    document.querySelectorAll('.report-plan-select').forEach(function(sel){
+      sel.addEventListener('change', syncReportOptionUI);
+    });
+    syncReportOptionUI();
+  });
+})();
+</script>
 {% endblock %}

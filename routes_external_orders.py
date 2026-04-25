@@ -8,17 +8,18 @@ import json
 import os
 import secrets
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from google.cloud import storage
 from sqlalchemy.orm import Session
 
 from auth import get_current_staff
-from db import get_db
+from db import get_db, db_session
 from models import ExternalOrder, Order, OrderResultView
 from services.notification_service import send_mail
+from services.report_generation_service import REPORT_OPTION_LABELS, REPORT_PLAN_LABELS, REPORT_PLAN_OPTIONS, default_report_options, generate_external_order_report, normalize_report_options, order_report_options
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -30,7 +31,7 @@ EXTERNAL_STATUSES = {
     "mail_sent": "メール送信済み",
     "delivered": "納品済み",
 }
-SOURCE_OPTIONS = ["coconala", "manual"]
+SOURCE_OPTIONS = ["coconala", "stores", "manual"]
 GENDER_OPTIONS = ["female", "male", "other", "unknown"]
 
 
@@ -188,6 +189,100 @@ def _coerce_price(value: str | None) -> int | None:
         return None
 
 
+def _checkbox_on(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "on", "yes", "checked"}
+
+
+def _report_options_from_form(plan: str, option_asteroids: str | None, option_transit: str | None, option_special_points: str | None, option_year_forecast: str | None) -> dict[str, bool]:
+    raw = {
+        "option_asteroids": _checkbox_on(option_asteroids),
+        "option_transit": _checkbox_on(option_transit),
+        "option_special_points": _checkbox_on(option_special_points),
+        "option_year_forecast": _checkbox_on(option_year_forecast),
+    }
+    return normalize_report_options(plan, raw)
+
+
+def _apply_report_options(order: ExternalOrder, options: dict[str, bool]) -> None:
+    for key in REPORT_OPTION_LABELS:
+        setattr(order, key, bool(options.get(key)))
+
+
+def _generation_stale_minutes() -> int:
+    raw = (os.getenv("EXTERNAL_REPORT_GENERATION_STALE_MINUTES") or "30").strip()
+    try:
+        return max(5, int(raw))
+    except ValueError:
+        return 30
+
+
+def _generation_started_at(order: ExternalOrder) -> datetime | None:
+    # 専用の started_at カラムを増やさず、既存カラムで安全に判定する。
+    # generating 開始時に report_generated_at へ時刻を入れ、完了時は生成完了時刻として上書きされる想定。
+    return order.report_generated_at or order.updated_at or order.created_at
+
+
+def _mark_stale_generation_if_needed(db: Session, order: ExternalOrder) -> bool:
+    """長時間 stuck した generating を failed に落として画面ループを止める。"""
+    if (order.report_generation_status or "") != "generating":
+        return False
+    started_at = _generation_started_at(order)
+    if not started_at:
+        return False
+    # DBがnaive datetime前提なので utcnow で比較する。
+    elapsed = datetime.utcnow() - started_at
+    limit = timedelta(minutes=_generation_stale_minutes())
+    if elapsed <= limit:
+        return False
+    order.report_generation_status = "failed"
+    order.last_error = (
+        f"生成開始から{_generation_stale_minutes()}分以上経過したため停止扱いにしました。"
+        "再生成する場合は入力内容を確認してから再生成してください。"
+    )
+    db.commit()
+    return True
+
+
+
+
+def _extract_generation_progress(raw: str | None) -> tuple[str, str, str]:
+    """Return (step, message, real_error).
+
+    While generating, services/report_generation_service.py stores progress in
+    last_error as STEP:<step>|<message>. That value is not an error.
+    """
+    text = (raw or "").strip()
+    if text.startswith("STEP:"):
+        body = text[5:]
+        if "|" in body:
+            step, message = body.split("|", 1)
+        else:
+            step, message = body, body
+        return step.strip(), message.strip(), ""
+    return "", "", text
+
+def _run_external_report_generation_background(order_id: int, plan: str, report_options: dict[str, bool]) -> None:
+    """外部受注鑑定書をレスポンス後に生成します。"""
+    print(f"[external_report][background] start order_id={order_id} plan={plan} options={report_options}", flush=True)
+    with db_session() as bg_db:
+        order = bg_db.get(ExternalOrder, order_id)
+        if not order:
+            print(f"[external_report][background] order_not_found order_id={order_id}", flush=True)
+            return
+        try:
+            generate_external_order_report(bg_db, order, plan=plan, report_options=report_options)
+            print(f"[external_report][background] completed order_id={order_id}", flush=True)
+        except Exception as exc:
+            try:
+                order.report_generation_status = "failed"
+                order.last_error = str(exc)[:2000]
+                bg_db.commit()
+            except Exception:
+                bg_db.rollback()
+            print(f"[external_report][background] failed order_id={order_id} error={exc}", flush=True)
+            return
+
+
 def _apply_filters(stmt, q: str, status: str, source_type: str, staff_name: str, created_from: str, created_to: str):
     if q:
         like = f"%{q}%"
@@ -274,6 +369,8 @@ def external_order_new(request: Request, staff: dict = Depends(get_current_staff
             "source_options": SOURCE_OPTIONS,
             "gender_options": GENDER_OPTIONS,
             "default_staff_name": staff.get("display_name") or "",
+            "report_plan_options": REPORT_PLAN_OPTIONS,
+            "report_plan_labels": REPORT_PLAN_LABELS,
             "error": request.query_params.get("error"),
         },
     )
@@ -295,6 +392,11 @@ async def external_order_create(
     price: str = Form(""),
     staff_name: str = Form(""),
     yaml_log_text: str = Form(""),
+    report_plan: str = Form("standard"),
+    option_asteroids: str | None = Form(None),
+    option_transit: str | None = Form(None),
+    option_special_points: str | None = Form(None),
+    option_year_forecast: str | None = Form(None),
     html_file: UploadFile | None = File(None),
     staff: dict = Depends(get_current_staff),
     db: Session = Depends(get_db),
@@ -320,7 +422,11 @@ async def external_order_create(
         staff_name=(staff_name or staff.get("display_name") or "").strip() or None,
         yaml_log_text=yaml_log_text or None,
         status="draft",
+        report_generation_plan=report_plan if report_plan in REPORT_PLAN_OPTIONS else "standard",
+        report_generation_status="not_started",
+        report_generation_model="claude-sonnet-4-6",
     )
+    _apply_report_options(order, _report_options_from_form(order.report_generation_plan or "standard", option_asteroids, option_transit, option_special_points, option_year_forecast))
     db.add(order)
     db.flush()
 
@@ -361,6 +467,7 @@ def external_order_detail(order_id: int, request: Request, staff: dict = Depends
     order = db.get(ExternalOrder, order_id)
     if not order:
         raise HTTPException(status_code=404)
+    _mark_stale_generation_if_needed(db, order)
     if not order.mail_subject:
         order.mail_subject = _default_subject()
     if not order.mail_body:
@@ -376,6 +483,10 @@ def external_order_detail(order_id: int, request: Request, staff: dict = Depends
             "status_labels": EXTERNAL_STATUSES,
             "source_options": SOURCE_OPTIONS,
             "gender_options": GENDER_OPTIONS,
+            "report_plan_options": REPORT_PLAN_OPTIONS,
+            "report_plan_labels": REPORT_PLAN_LABELS,
+            "report_option_labels": REPORT_OPTION_LABELS,
+            "report_options": order_report_options(order),
             "success": request.query_params.get("success"),
             "error": request.query_params.get("error"),
             "has_html": _html_exists(order),
@@ -399,6 +510,11 @@ def external_order_update(
     price: str = Form(""),
     staff_name: str = Form(""),
     yaml_log_text: str = Form(""),
+    report_plan: str = Form("standard"),
+    option_asteroids: str | None = Form(None),
+    option_transit: str | None = Form(None),
+    option_special_points: str | None = Form(None),
+    option_year_forecast: str | None = Form(None),
     mail_subject: str = Form(""),
     mail_body: str = Form(""),
     expires_at: str = Form(""),
@@ -421,11 +537,148 @@ def external_order_update(
     order.price = _coerce_price(price)
     order.staff_name = (staff_name or staff.get("display_name") or "").strip() or None
     order.yaml_log_text = yaml_log_text or None
+    if report_plan in REPORT_PLAN_OPTIONS:
+        order.report_generation_plan = report_plan
+    _apply_report_options(order, _report_options_from_form(order.report_generation_plan or "standard", option_asteroids, option_transit, option_special_points, option_year_forecast))
     order.mail_subject = (mail_subject or _default_subject()).strip()
     order.mail_body = (mail_body or "").strip() or _default_body(order)
     order.expires_at = _parse_datetime_local(expires_at)
     db.commit()
     return _redirect(f"/staff/external-orders/{order.id}?success=saved")
+
+
+@router.post("/staff/external-orders/{order_id}/generate-report")
+def external_order_generate_report(
+    order_id: int,
+    background_tasks: BackgroundTasks,
+    report_plan: str = Form("standard"),
+    option_asteroids: str | None = Form(None),
+    option_transit: str | None = Form(None),
+    option_special_points: str | None = Form(None),
+    option_year_forecast: str | None = Form(None),
+    confirm_generate: str | None = Form(None),
+    # 生成ボタンは基本情報フォームとは別フォームなので、未保存の入力値も一緒に受け取る。
+    # これが無いと、画面上は生年月日が入っていてもDB未保存のまま生成して「生年月日未入力」になる。
+    customer_name: str | None = Form(None),
+    customer_email: str | None = Form(None),
+    birth_date: str | None = Form(None),
+    birth_time: str | None = Form(None),
+    gender: str | None = Form(None),
+    prefecture: str | None = Form(None),
+    birth_place: str | None = Form(None),
+    consultation_text: str | None = Form(None),
+    source_type: str | None = Form(None),
+    menu_name: str | None = Form(None),
+    price: str | None = Form(None),
+    staff_name: str | None = Form(None),
+    yaml_log_text: str | None = Form(None),
+    db: Session = Depends(get_db),
+    staff: dict = Depends(get_current_staff),
+):
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+
+    # 誤送信対策：生成ボタンのクリックでセットされる確認フラグが無いPOSTは実行しない。
+    # 自動更新・Enterキー・別ボタン由来のsubmitで勝手に生成が始まる事故を防ぐ。
+    if str(confirm_generate or "").strip() != "1":
+        return _redirect(f"/staff/external-orders/{order.id}?error=generate_not_confirmed")
+
+    try:
+        # 詳細画面で編集した直後に「保存」を押さず生成しても、現在の入力値を先にDBへ反映する。
+        if customer_name is not None:
+            order.customer_name = customer_name.strip() or order.customer_name
+        if customer_email is not None:
+            order.customer_email = customer_email.strip() or order.customer_email
+        if birth_date is not None:
+            order.birth_date = _parse_date(birth_date)
+        if birth_time is not None:
+            order.birth_time = (birth_time or "").strip() or None
+        if gender is not None:
+            order.gender = (gender or "").strip() or None
+        if prefecture is not None:
+            order.prefecture = (prefecture or "").strip() or None
+        if birth_place is not None:
+            order.birth_place = (birth_place or "").strip() or None
+        if consultation_text is not None:
+            order.consultation_text = (consultation_text or "").strip() or None
+        if source_type is not None and source_type in SOURCE_OPTIONS:
+            order.source_type = source_type
+        if menu_name is not None:
+            order.menu_name = (menu_name or "").strip() or None
+        if price is not None:
+            order.price = _coerce_price(price)
+        if staff_name is not None:
+            order.staff_name = (staff_name or staff.get("display_name") or "").strip() or None
+        if yaml_log_text is not None:
+            order.yaml_log_text = yaml_log_text or None
+
+        plan = report_plan if report_plan in REPORT_PLAN_OPTIONS else (order.report_generation_plan or "standard")
+        options = _report_options_from_form(plan, option_asteroids, option_transit, option_special_points, option_year_forecast)
+
+        if not order.birth_date:
+            order.report_generation_status = "failed"
+            order.last_error = "生年月日が未入力です。基本情報の生年月日を入力してから再生成してください。"
+            _apply_report_options(order, options)
+            db.commit()
+            return _redirect(f"/staff/external-orders/{order.id}?error=generate_failed")
+
+        # 同期生成しない。画面は即戻し、実処理はBackgroundTask側で新しいDBセッションを使って実行する。
+        order.report_generation_plan = plan
+        order.report_generation_status = "generating"
+        order.report_generated_at = datetime.utcnow()
+        order.report_generation_model = os.getenv("EXTERNAL_REPORT_CLAUDE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6"
+        order.last_error = None
+        _apply_report_options(order, options)
+        db.commit()
+
+        background_tasks.add_task(_run_external_report_generation_background, order.id, plan, dict(options))
+        return _redirect(f"/staff/external-orders/{order.id}?success=report_queued")
+    except Exception as exc:
+        order.last_error = str(exc)[:2000]
+        order.report_generation_status = "failed"
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?error=generate_failed")
+
+
+
+
+@router.get("/staff/external-orders/{order_id}/report-status")
+def external_order_report_status(order_id: int, db: Session = Depends(get_db), staff: dict = Depends(get_current_staff)):
+    """AI鑑定書生成の状態だけを返す軽量API。
+
+    詳細画面全体を自動更新すると、セッション状態によって /login リダイレクトを繰り返すことがあるため、
+    生成中のポーリングはこのJSON APIだけを見る。
+    """
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+
+    _mark_stale_generation_if_needed(db, order)
+    status = order.report_generation_status or "not_started"
+    progress_step, progress_message, real_error = _extract_generation_progress(order.last_error)
+    has_html = _html_exists(order)
+    return JSONResponse({
+        "status": status,
+        "step": progress_step,
+        "progress_message": progress_message,
+        "has_html": bool(has_html),
+        "public_url": order.public_url or "",
+        "last_error": real_error if status == "failed" else "",
+        "generated_at": order.report_generated_at.isoformat() if order.report_generated_at else "",
+        "html_uploaded_at": order.html_uploaded_at.isoformat() if order.html_uploaded_at else "",
+    })
+
+@router.post("/staff/external-orders/{order_id}/reset-report-status")
+def external_order_reset_report_status(order_id: int, db: Session = Depends(get_db), staff: dict = Depends(get_current_staff)):
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+    order.report_generation_status = "not_started"
+    order.last_error = None
+    order.report_generated_at = None
+    db.commit()
+    return _redirect(f"/staff/external-orders/{order.id}?success=report_status_reset")
 
 
 @router.post("/staff/external-orders/{order_id}/upload-html")
