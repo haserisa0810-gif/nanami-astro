@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import urllib.parse
 import secrets
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, File
@@ -20,6 +21,7 @@ from db import get_db, db_session
 from models import ExternalOrder, Order, OrderResultView
 from services.notification_service import send_mail
 from services.report_generation_service import REPORT_OPTION_LABELS, REPORT_PLAN_LABELS, REPORT_PLAN_OPTIONS, default_report_options, generate_external_order_report, normalize_report_options, order_report_options
+from services.external_pdf_service import download_pdf_bytes, generate_pdf_from_html_to_storage, pdf_exists, pdf_filename
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -41,6 +43,10 @@ def _redirect(url: str) -> RedirectResponse:
 
 def _bucket_name() -> str:
     return os.getenv("EXTERNAL_REPORTS_BUCKET", "").strip()
+
+def _pdf_bucket_name() -> str:
+    # PDFはHTMLと同じバケットに保存する。必要なら EXTERNAL_PDFS_BUCKET で分離できます。
+    return (os.getenv("EXTERNAL_PDFS_BUCKET") or os.getenv("EXTERNAL_REPORTS_BUCKET") or "").strip()
 
 
 def _storage_client() -> storage.Client:
@@ -490,6 +496,7 @@ def external_order_detail(order_id: int, request: Request, staff: dict = Depends
             "success": request.query_params.get("success"),
             "error": request.query_params.get("error"),
             "has_html": _html_exists(order),
+            "has_pdf": pdf_exists(bucket_name=_pdf_bucket_name(), order_code=order.order_code),
         },
     )
 
@@ -771,6 +778,47 @@ def external_order_mark_delivered(order_id: int, db: Session = Depends(get_db), 
     order.delivered_at = datetime.utcnow()
     db.commit()
     return _redirect(f"/staff/external-orders/{order.id}?success=delivered")
+
+
+@router.post("/staff/external-orders/{order_id}/generate-pdf")
+def external_order_generate_pdf(order_id: int, request: Request, db: Session = Depends(get_db), staff: dict = Depends(get_current_staff)):
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+    html = _download_html(order)
+    if not html:
+        return _redirect(f"/staff/external-orders/{order.id}?error=no_html")
+    try:
+        generate_pdf_from_html_to_storage(
+            html=html,
+            order_code=order.order_code,
+            bucket_name=_pdf_bucket_name(),
+            base_url=str(request.base_url),
+        )
+        order.last_error = None
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?success=pdf_generated")
+    except Exception as exc:
+        order.last_error = f"PDF生成に失敗しました: {exc}"
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?error=pdf_failed")
+
+
+@router.get("/staff/external-orders/{order_id}/download-pdf")
+def external_order_download_pdf(order_id: int, db: Session = Depends(get_db), staff: dict = Depends(get_current_staff)):
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+    data = download_pdf_bytes(bucket_name=_pdf_bucket_name(), order_code=order.order_code)
+    if not data:
+        raise HTTPException(status_code=404, detail="PDFがまだ生成されていません")
+    filename = pdf_filename(order.order_code, order.customer_name)
+    quoted = filename.encode("utf-8")
+    headers = {
+        "Content-Disposition": "attachment; filename=report.pdf; filename*=UTF-8''" + urllib.parse.quote_from_bytes(quoted),
+        "Cache-Control": "private, no-store",
+    }
+    return Response(content=data, media_type="application/pdf", headers=headers)
 
 
 @router.get("/staff/external-orders/{order_id}/preview", response_class=HTMLResponse)

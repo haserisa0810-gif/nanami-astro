@@ -537,6 +537,8 @@ const staffOptionReasons = document.getElementById('option_recommendation_reason
 const staffOptionCheckboxes = ['include_chiron','include_lilith','include_vertex','include_asteroids'].map((id) => document.getElementById(id)).filter(Boolean);
 let staffRecommendTimer = null;
 let staffOptionRecommendationInFlight = false;
+let staffLastOptionSignature = '';
+let staffPendingRecommendation = false;
 
 function formatStaffReadingStyleLabel(value) {
   return value === 'structured' ? '構造読解（自動判定メニュー）' : '総合鑑定（自動判定メニュー）';
@@ -573,10 +575,29 @@ function staffSetOptionText(status, reasons) {
 }
 
 
+
+function getStaffOptionSignature() {
+  const names = ['birth_date','birth_time','birth_place','birth_prefecture','birth_lat','birth_lon','gender','consultation_text'];
+  const parts = names.map((name) => `${name}=${document.querySelector(`[name="${name}"]`)?.value || ''}`);
+  parts.push(`house_system=${document.getElementById('house_system')?.value || 'P'}`);
+  parts.push(`node_mode=${document.getElementById('node_mode')?.value || 'true'}`);
+  parts.push(`lilith_mode=${document.getElementById('lilith_mode')?.value || 'mean'}`);
+  parts.push(`theme=${document.getElementById('theme')?.value || 'overall'}`);
+  return parts.join('&');
+}
+
 async function refreshStaffOptionRecommendation() {
   if (!staffAutoOptionMode || String(staffAutoOptionMode.value || "").toLowerCase() !== "true") {
     staffSetOptionDisabled(false);
     staffSetOptionText('自動反映はOFFです。手動で変更できます。', '');
+    return;
+  }
+  const signature = getStaffOptionSignature();
+  if (staffOptionRecommendationInFlight) {
+    staffPendingRecommendation = true;
+    return;
+  }
+  if (signature === staffLastOptionSignature) {
     return;
   }
   const birthDate = document.querySelector('[name="birth_date"]')?.value || '';
@@ -584,10 +605,12 @@ async function refreshStaffOptionRecommendation() {
   const lat = document.querySelector('[name="birth_lat"]')?.value || '';
   const lon = document.querySelector('[name="birth_lon"]')?.value || '';
   if (!birthDate || (!pref && !(lat && lon))) {
+    staffLastOptionSignature = signature;
     staffSetOptionDisabled(true);
     staffSetOptionText('生年月日と出生地がそろうと自動判定します。', '');
     return;
   }
+  staffLastOptionSignature = signature;
   staffSetOptionDisabled(true);
   staffOptionRecommendationInFlight = true;
   staffSetOptionText('オプションを算出中…', '');
@@ -635,39 +658,23 @@ async function refreshStaffOptionRecommendation() {
     } else {
       staffSetOptionDisabled(false);
     }
+    if (staffPendingRecommendation) {
+      staffPendingRecommendation = false;
+      scheduleStaffOptionRecommendation(250);
+    }
   }
 }
 
 function scheduleStaffOptionRecommendation(delay = 350) {
+  if (typeof delay !== 'number') delay = 350;
   clearTimeout(staffRecommendTimer);
   staffRecommendTimer = setTimeout(refreshStaffOptionRecommendation, delay);
 }
 
-function dispatchStaffFieldRefresh(el) {
-  if (!el) return;
-  try {
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  } catch (e) {}
-}
-
-function installProgrammaticValueWatcher(el) {
-  if (!el || el.__staffAutoWatcherInstalled) return;
-  el.__staffAutoWatcherInstalled = true;
-  let currentValue = el.value;
-  try {
-    Object.defineProperty(el, 'value', {
-      get() { return currentValue; },
-      set(v) {
-        currentValue = v;
-        queueMicrotask(() => dispatchStaffFieldRefresh(el));
-      },
-      configurable: true,
-      enumerable: true,
-    });
-  } catch (e) {
-    // some browsers/elements may not allow overriding value; ignore
-  }
+function scheduleStaffLocationRefreshAfterMapAction() {
+  [80, 250, 600, 1200].forEach((delay) => {
+    setTimeout(() => scheduleStaffOptionRecommendation(80), delay);
+  });
 }
 
 function hookMapDrivenLocationRefresh() {
@@ -679,7 +686,6 @@ function hookMapDrivenLocationRefresh() {
   ].filter(Boolean);
 
   watched.forEach((el) => {
-    installProgrammaticValueWatcher(el);
     el.addEventListener('input', () => scheduleStaffOptionRecommendation(80));
     el.addEventListener('change', () => scheduleStaffOptionRecommendation(80));
     el.addEventListener('blur', () => scheduleStaffOptionRecommendation(80));
@@ -698,20 +704,9 @@ function hookMapDrivenLocationRefresh() {
       id.includes('map') || cls.includes('map') || cls.includes('leaflet')
     );
     if (isMapAction) {
-      setTimeout(() => scheduleStaffOptionRecommendation(80), 50);
-      setTimeout(() => scheduleStaffOptionRecommendation(80), 250);
-      setTimeout(() => scheduleStaffOptionRecommendation(80), 600);
+      scheduleStaffLocationRefreshAfterMapAction();
     }
   }, true);
-
-  const body = document.body;
-  if (body && !body.__staffLocationObserverInstalled) {
-    body.__staffLocationObserverInstalled = true;
-    const observer = new MutationObserver(() => {
-      scheduleStaffOptionRecommendation(120);
-    });
-    observer.observe(body, { subtree: true, childList: true, attributes: true, characterData: false });
-  }
 }
 
 function setAutoAiStatusBox(mode) {

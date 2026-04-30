@@ -9,6 +9,31 @@
 </div>
 <div class="grid">
   <div class="card">
+    <h2>HTML登録・URL発行</h2>
+    <p class="muted">完成済みの鑑定HTMLをアップロード、または直接貼り付けて保存できます。保存後に公開URLを発行します。</p>
+    <form method="post" action="/products/transit/{{ item.id }}/html" enctype="multipart/form-data" style="margin-top:12px;">
+      <div><label>HTMLファイル</label><input type="file" name="html_file" accept=".html,.htm,text/html"></div>
+      <div style="margin-top:12px;"><label>HTML直接貼り付け</label><textarea name="html_text" placeholder="<!doctype html>..." style="min-height:180px;"></textarea></div>
+      <div class="row" style="margin-top:16px;"><button type="submit">HTMLを登録する</button></div>
+    </form>
+    <div class="stat" style="margin-top:16px;">
+      <div class="muted">登録HTML</div>
+      <div style="margin-top:8px;line-height:1.8;">
+        ファイル名: {{ item.html_original_name or '-' }}<br>
+        登録日時: {{ item.html_uploaded_at or '-' }}
+      </div>
+    </div>
+    <form method="post" action="/products/transit/{{ item.id }}/issue-url" style="margin-top:16px;">
+      <button type="submit" {% if not item.generated_html %}disabled{% endif %}>URLを発行する</button>
+    </form>
+    {% if item.public_url %}
+      <div class="success" style="margin-top:16px;">
+        公開URL: <a href="{{ item.public_url }}" target="_blank" rel="noopener">{{ item.public_url }}</a><br>
+        発行日時: {{ item.url_issued_at or '-' }}
+      </div>
+    {% endif %}
+  </div>
+  <div class="card">
     <h2>案件情報</h2>
     <form method="post" action="/products/transit/{{ item.id }}/update">
       <div class="grid">

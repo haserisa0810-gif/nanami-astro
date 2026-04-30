@@ -456,6 +456,14 @@ class TransitHubRequest(TimestampMixin, Base):
     generated_summary: Mapped[Optional[str]] = mapped_column(Text)
     generated_html: Mapped[Optional[str]] = mapped_column(Text)
     generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    # HTML registration / public URL publishing for transit reports
+    html_original_name: Mapped[Optional[str]] = mapped_column(String(255))
+    html_uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    public_token: Mapped[Optional[str]] = mapped_column(String(128), unique=True, index=True)
+    public_url: Mapped[Optional[str]] = mapped_column(Text)
+    url_issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
     last_error: Mapped[Optional[str]] = mapped_column(Text)
 
     jobs: Mapped[list["TransitHubJob"]] = relationship(back_populates="request", cascade="all, delete-orphan")

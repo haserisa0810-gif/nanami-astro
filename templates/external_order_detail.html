@@ -124,6 +124,8 @@
 
     <div class="report-actions">
       {% if has_html %}<a class="btn secondary" href="/staff/external-orders/{{ order.id }}/preview" target="_blank">HTMLプレビュー</a>{% endif %}
+      {% if has_html %}<form method="post" action="/staff/external-orders/{{ order.id }}/generate-pdf"><button type="submit" class="secondary">PDF生成</button></form>{% endif %}
+      {% if has_html %}<a class="btn" href="/staff/external-orders/{{ order.id }}/download-pdf">PDFダウンロード</a>{% endif %}
       {% if order.public_url %}<a class="btn" href="{{ order.public_url }}" target="_blank">公開URLを開く</a>{% endif %}
       {% if has_html and not order.public_url %}<form method="post" action="/staff/external-orders/{{ order.id }}/issue-url"><button type="submit" class="secondary">URL発行</button></form>{% endif %}
       {% if gen_status == 'generating' %}<form method="post" action="/staff/external-orders/{{ order.id }}/reset-report-status" onsubmit="return confirm('生成中表示を解除して未生成に戻します。裏処理が動いている場合でも画面上は停止扱いになります。よろしいですか？');"><button type="submit" class="secondary">生成中を解除</button></form>{% endif %}
@@ -168,6 +170,15 @@
       <input type="file" name="html_file" accept=".html,text/html" required>
       <div class="filter-actions" style="margin-top:14px"><button type="submit">HTML差し替え</button></div>
     </form>
+  </div>
+  <div class="card">
+    <h2>PDF納品</h2>
+    <p class="muted">ココナラ等のPDF納品用です。HTMLの黒背景・金色デザインを保ったままA4 PDFを生成します。</p>
+    <div class="row">
+      {% if has_html %}<form method="post" action="/staff/external-orders/{{ order.id }}/generate-pdf"><button type="submit">PDF生成</button></form>{% endif %}
+      {% if has_html %}<a class="btn secondary" href="/staff/external-orders/{{ order.id }}/download-pdf">PDFダウンロード</a>{% endif %}
+    </div>
+    {% if not has_html %}<p class="muted">先にAI鑑定書生成またはHTML登録をしてください。</p>{% endif %}
   </div>
   <div class="card">
     <h2>公開URL</h2>
