@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 def configure_ephemeris() -> int:
-    ephe_dir = Path(__file__).resolve().parents[2] / "ephe"
+    ephe_dir = Path(__file__).resolve().parents[1] / "ephe"
     if ephe_dir.exists() and any(ephe_dir.glob("*.se1")):
         swe.set_ephe_path(str(ephe_dir))
         return swe.FLG_SWIEPH
@@ -17,7 +17,7 @@ def configure_ephemeris() -> int:
 
 
 def ephemeris_debug_info() -> dict:
-    ephe_dir = Path(__file__).resolve().parents[2] / "ephe"
+    ephe_dir = Path(__file__).resolve().parents[1] / "ephe"
     files = sorted([p.name for p in ephe_dir.glob("*")]) if ephe_dir.exists() else []
     return {
         "ephe_dir": str(ephe_dir),

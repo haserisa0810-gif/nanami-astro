@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Minimal Synastry Engine (MVP)
 # =========================
 # 目的:
-# - FreeAstro の natal 結果（2名分）から、相互作用の「材料」を機械的に抽出する
+# - natal 結果（2名分）から、相互作用の「材料」を機械的に抽出する
 # - 吉凶や断定はしない（AI側にもさせない）
 # - 占星計算の厳密さより、入力データに基づく“作り足しゼロ”の安定を優先
 

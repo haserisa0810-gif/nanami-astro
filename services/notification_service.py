@@ -166,7 +166,7 @@ def _customer_line_id(order: Any) -> str:
 
 
 def _public_report_base_url() -> str:
-    return (os.getenv("PUBLIC_REPORT_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
+    return (os.getenv("PUBLIC_REPORT_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
 
 
 def _staff_report_share_secret() -> str:
@@ -246,7 +246,6 @@ async def notify_line_delivery(order: Any, mode: str | None = None) -> bool:
         return False
 
     report_url = _report_url(order)
-    delivery = _latest_delivery_text(order)
     body_lines = [
         f"{_safe_get(order, 'user_name', 'お客様')} 様",
         "",
@@ -256,6 +255,10 @@ async def notify_line_delivery(order: Any, mode: str | None = None) -> bool:
         "▼鑑定書はこちら",
         report_url,
     ]
+    if mode != "delivery_with_report":
+        delivery = _latest_delivery_text(order)
+    else:
+        delivery = ""
     if delivery:
         body_lines += ["", "▼鑑定本文", _trim_text(delivery, 3200)]
     message = _join_lines(body_lines)
@@ -272,17 +275,16 @@ async def notify_delivery_email(order: Any, mode: str | None = None) -> bool:
 
     subject = "【星月七海の星読み】鑑定結果のご案内"
     report_url = _report_url(order)
-    delivery = _latest_delivery_text(order)
     body_lines = [
         f"{_safe_get(order, 'user_name', 'お客様')} 様",
         "",
         "鑑定が完了しました。",
         f"受付番号: {_safe_get(order, 'order_code')}",
-        f"通知種別: {mode or 'delivery'}",
         "",
         "▼鑑定書はこちら",
         report_url,
+        "",
+        "※このメールには鑑定本文は載せていません。",
+        "※鑑定書は上記リンク先でご確認ください。",
     ]
-    if delivery:
-        body_lines += ["", "▼鑑定本文", _trim_text(delivery, 12000)]
     return send_mail(subject, _join_lines(body_lines), [to_email])

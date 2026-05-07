@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import json
 import secrets
 from datetime import date, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, inspect, select, text
 from sqlalchemy.orm import Session
@@ -21,13 +23,93 @@ from services.transit_hub_service import (
     generate_request_code,
     generate_request_output,
 )
+from services.social_daily_scenario import create_social_video, generate_daily_assets
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+SOCIAL_SCENARIO_DIR = Path(os.getenv("SOCIAL_SCENARIO_DIR", "outputs/social_scenarios"))
+SOCIAL_ALLOWED_SUFFIXES = {".txt", ".json", ".wav", ".mp3", ".m4a", ".aac", ".mp4", ".mov", ".jpg", ".jpeg", ".png", ".webp"}
+SOCIAL_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+SOCIAL_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".aac"}
 
 
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url=url, status_code=303)
+
+
+def _social_dir() -> Path:
+    root = SOCIAL_SCENARIO_DIR
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def _scenario_stamp(value: str | None = None) -> str:
+    raw = (value or date.today().isoformat()).strip()
+    try:
+        return date.fromisoformat(raw).strftime("%Y%m%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+
+
+def _safe_social_file(filename: str) -> Path:
+    root = _social_dir()
+    path = (root / filename).resolve()
+    if root not in path.parents and path != root:
+        raise HTTPException(status_code=400, detail="invalid file path")
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    return path
+
+
+def _social_asset_groups() -> list[dict]:
+    root = _social_dir()
+    groups: dict[str, dict] = {}
+    for path in sorted(root.glob("scenario_*.*"), key=lambda p: p.name, reverse=True):
+        if path.suffix.lower() not in SOCIAL_ALLOWED_SUFFIXES:
+            continue
+        stem = path.stem
+        if not stem.startswith("scenario_"):
+            continue
+        stamp = stem.replace("scenario_", "", 1)
+        group = groups.setdefault(
+            stamp,
+            {
+                "stamp": stamp,
+                "date": f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}" if len(stamp) == 8 else stamp,
+                "files": [],
+                "script_preview": "",
+                "json_payload": None,
+            },
+        )
+        item = {
+            "name": path.name,
+            "suffix": path.suffix.lower().lstrip("."),
+            "size_kb": round(path.stat().st_size / 1024, 1),
+            "url": f"/products/social-scenarios/files/{path.name}",
+            "updated_at": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+        }
+        group["files"].append(item)
+        if path.suffix.lower() == ".txt":
+            group["script_preview"] = path.read_text(encoding="utf-8", errors="ignore")[:800]
+        elif path.suffix.lower() == ".json":
+            try:
+                group["json_payload"] = json_preview = json.loads(path.read_text(encoding="utf-8"))
+                if not group["script_preview"]:
+                    group["script_preview"] = str(json_preview.get("full_script") or "")[:800]
+            except Exception:
+                pass
+    return list(groups.values())
+
+
+def _find_social_asset(stamp: str, suffixes: set[str]) -> Path | None:
+    root = _social_dir()
+    for suffix in sorted(suffixes):
+        candidate = root / f"scenario_{stamp}{suffix}"
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -116,6 +198,84 @@ def _serialize_transit(req: TransitHubRequest) -> dict:
         "generated_at": req.generated_at.isoformat() if req.generated_at else None,
         "last_error": req.last_error,
     }
+
+
+@router.get("/products/social-scenarios", response_class=HTMLResponse)
+def products_social_scenarios(request: Request, staff: dict = Depends(get_current_staff)):
+    return templates.TemplateResponse(request=request, name="products_social_scenarios.html", context={
+        "staff": staff,
+        "items": _social_asset_groups(),
+        "output_dir": str(_social_dir()),
+        "today": date.today().isoformat(),
+        "success": request.query_params.get("success"),
+        "error": request.query_params.get("error"),
+    })
+
+
+@router.post("/products/social-scenarios/generate")
+def products_social_scenarios_generate(
+    target_date: str = Form(""),
+    use_mock: str | None = Form(None),
+    make_voice: str | None = Form(None),
+    staff: dict = Depends(get_current_staff),
+):
+    try:
+        scenario_date = date.fromisoformat(target_date.strip()) if target_date.strip() else date.today()
+        generate_daily_assets(
+            target_date=scenario_date,
+            output_dir=_social_dir(),
+            use_mock=bool(use_mock),
+            make_voice=bool(make_voice),
+        )
+        return _redirect("/products/social-scenarios?success=generated")
+    except Exception as exc:
+        return _redirect(f"/products/social-scenarios?error={str(exc)[:120]}")
+
+
+@router.post("/products/social-scenarios/upload")
+async def products_social_scenarios_upload(
+    target_date: str = Form(""),
+    asset: UploadFile = File(...),
+    staff: dict = Depends(get_current_staff),
+):
+    stamp = _scenario_stamp(target_date)
+    suffix = Path(asset.filename or "").suffix.lower()
+    if suffix not in SOCIAL_ALLOWED_SUFFIXES:
+        return _redirect("/products/social-scenarios?error=unsupported_file_type")
+    target = _social_dir() / f"scenario_{stamp}{suffix}"
+    data = await asset.read()
+    target.write_bytes(data)
+    return _redirect("/products/social-scenarios?success=uploaded")
+
+
+@router.post("/products/social-scenarios/video")
+def products_social_scenarios_video(
+    target_date: str = Form(""),
+    duration_seconds: int = Form(60),
+    staff: dict = Depends(get_current_staff),
+):
+    try:
+        stamp = _scenario_stamp(target_date)
+        image_path = _find_social_asset(stamp, SOCIAL_IMAGE_SUFFIXES)
+        if image_path is None:
+            return _redirect("/products/social-scenarios?error=upload_image_first")
+        audio_path = _find_social_asset(stamp, SOCIAL_AUDIO_SUFFIXES)
+        output_path = _social_dir() / f"scenario_{stamp}.mp4"
+        create_social_video(
+            image_path=image_path,
+            audio_path=audio_path,
+            output_path=output_path,
+            duration_seconds=duration_seconds,
+        )
+        return _redirect("/products/social-scenarios?success=video_generated")
+    except Exception as exc:
+        return _redirect(f"/products/social-scenarios?error={str(exc)[:120]}")
+
+
+@router.get("/products/social-scenarios/files/{filename}")
+def products_social_scenarios_file(filename: str, staff: dict = Depends(get_current_staff)):
+    path = _safe_social_file(filename)
+    return FileResponse(path)
 
 
 @router.get("/products/transit", response_class=HTMLResponse)

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, selectinload
 from google.cloud import storage
 
 from auth import clear_all_logins, get_current_staff, set_admin_login, set_reader_login, verify_password
-from db import get_db
+from db import get_db, db_session
 from models import AdminUser, Astrologer, Menu, Order, OrderDelivery, OrderResultView, Payout, YamlLog
 from routes_admin import STATUS_LABELS, _resolve_admin_login
 from services.order_service import update_order_status
@@ -29,6 +29,14 @@ from services.result_builder import build_result_payload, render_report_html, re
 from services.notification_service import notify_delivery_email, notify_line_delivery
 from services.astrologer_summary import build_full_astrologer_summary
 from services.auto_order_ai_service import process_order_auto_reading
+from services.external_pdf_service import download_pdf_bytes, generate_pdf_from_html_to_storage, pdf_exists, pdf_filename
+from services.report_generation_service import (
+    REPORT_PLAN_LABELS,
+    REPORT_PLAN_OPTIONS,
+    default_report_options,
+    generate_staff_order_report,
+    normalize_report_options,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -109,6 +117,62 @@ def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url=url, status_code=303)
 
 
+def _checkbox_on(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "on", "yes", "checked"}
+
+
+def _staff_report_options_from_form(
+    report_plan: str,
+    option_asteroids: str | None,
+    option_transit: str | None,
+    option_special_points: str | None,
+    option_year_forecast: str | None,
+) -> dict[str, bool]:
+    raw = {
+        "option_asteroids": _checkbox_on(option_asteroids),
+        "option_transit": _checkbox_on(option_transit),
+        "option_special_points": _checkbox_on(option_special_points),
+        "option_year_forecast": _checkbox_on(option_year_forecast),
+    }
+    return normalize_report_options(report_plan, raw)
+
+
+def _extract_report_progress(raw: str | None) -> tuple[str, str, str]:
+    text = (raw or "").strip()
+    if text.startswith("STEP:"):
+        body = text[5:]
+        if "|" in body:
+            step, message = body.split("|", 1)
+        else:
+            step, message = body, body
+        return step.strip(), message.strip(), ""
+    return "", "", text
+
+
+def _run_staff_report_generation_background(order_id: int, report_plan: str, report_options: dict[str, bool]) -> None:
+    print(f"[staff_report][background] start order_id={order_id} plan={report_plan} options={report_options}", flush=True)
+    with db_session() as bg_db:
+        order = bg_db.scalar(
+            select(Order)
+            .options(selectinload(Order.menu), selectinload(Order.customer), selectinload(Order.assigned_reader))
+            .where(Order.id == order_id)
+        )
+        if not order:
+            print(f"[staff_report][background] order_not_found order_id={order_id}", flush=True)
+            return
+        try:
+            generate_staff_order_report(bg_db, order, report_plan=report_plan, report_options=report_options)
+            print(f"[staff_report][background] completed order_id={order_id}", flush=True)
+        except Exception as exc:
+            try:
+                order.report_generation_status = "failed"
+                order.report_last_error = str(exc)[:2000]
+                bg_db.commit()
+            except Exception:
+                bg_db.rollback()
+            print(f"[staff_report][background] failed order_id={order_id} error={exc}", flush=True)
+
+
 def _report_bucket_name() -> str:
     return (os.getenv("STAFF_REPORTS_BUCKET") or os.getenv("EXTERNAL_REPORTS_BUCKET") or "").strip()
 
@@ -157,7 +221,7 @@ def _report_exists(order_code: str) -> bool:
 
 
 def _public_report_base_url() -> str:
-    return (os.getenv("PUBLIC_REPORT_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
+    return (os.getenv("PUBLIC_REPORT_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
 
 
 def _staff_report_share_secret() -> str:
@@ -608,6 +672,12 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
     report_public_url = _report_public_url(order.order_code)
     report_storage_path = _report_object_name(order.order_code)
     report_exists = _report_exists(order.order_code) or bool(getattr(result_view, "report_html", None))
+    report_plan = (order.report_generation_plan or "standard").strip()
+    if report_plan not in REPORT_PLAN_OPTIONS:
+        report_plan = "standard"
+    report_options = default_report_options(report_plan)
+    report_progress_step, report_progress_message, report_real_error = _extract_report_progress(order.report_last_error)
+    report_pdf_exists = pdf_exists(bucket_name=_report_bucket_name(), order_code=order.order_code) if report_exists else False
 
     return templates.TemplateResponse(
         request=request,
@@ -641,6 +711,15 @@ def staff_order_detail(order_code: str, request: Request, staff: dict = Depends(
             "report_public_url": report_public_url,
             "report_storage_path": report_storage_path,
             "report_exists": report_exists,
+            "report_plan": report_plan,
+            "report_plan_labels": REPORT_PLAN_LABELS,
+            "report_plan_options": REPORT_PLAN_OPTIONS,
+            "report_options": report_options,
+            "report_generation_status": order.report_generation_status or "not_started",
+            "report_progress_step": report_progress_step,
+            "report_progress_message": report_progress_message,
+            "report_real_error": report_real_error,
+            "report_pdf_exists": report_pdf_exists,
         },
     )
 
@@ -820,6 +899,71 @@ def staff_publish_result(
     return _redirect(f"/staff/orders/{order_code}/astrologer-result")
 
 
+@router.post("/staff/orders/{order_code}/generate-ai-report")
+def staff_generate_ai_report(
+    order_code: str,
+    background_tasks: BackgroundTasks,
+    report_plan: str = Form("standard"),
+    option_asteroids: str | None = Form(None),
+    option_transit: str | None = Form(None),
+    option_special_points: str | None = Form(None),
+    option_year_forecast: str | None = Form(None),
+    staff: dict = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    order = db.scalar(select(Order).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    if not order.birth_date:
+        order.report_generation_status = "failed"
+        order.report_last_error = "生年月日が未入力です。案件詳細の基本情報を確認してください。"
+        db.commit()
+        return _redirect(f"/staff/orders/{order_code}?error=generate_failed")
+
+    plan = report_plan if report_plan in REPORT_PLAN_OPTIONS else "standard"
+    options = _staff_report_options_from_form(plan, option_asteroids, option_transit, option_special_points, option_year_forecast)
+    order.report_mode = plan
+    order.report_generation_plan = plan
+    order.report_generation_status = "generating"
+    order.report_generation_model = os.getenv("EXTERNAL_REPORT_CLAUDE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6"
+    order.report_generated_at = datetime.utcnow()
+    order.report_last_error = None
+    db.commit()
+
+    background_tasks.add_task(_run_staff_report_generation_background, order.id, plan, dict(options))
+    return _redirect(f"/staff/orders/{order_code}?success=report_queued")
+
+
+@router.get("/staff/orders/{order_code}/report-status")
+def staff_order_report_status(order_code: str, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    step, progress_message, real_error = _extract_report_progress(order.report_last_error)
+    has_html = _report_exists(order.order_code)
+    return JSONResponse({
+        "status": order.report_generation_status or "not_started",
+        "step": step,
+        "progress_message": progress_message,
+        "has_html": bool(has_html),
+        "public_url": _report_public_url(order.order_code),
+        "last_error": real_error if (order.report_generation_status or "") == "failed" else "",
+        "generated_at": order.report_generated_at.isoformat() if order.report_generated_at else "",
+    })
+
+
+@router.post("/staff/orders/{order_code}/reset-report-status")
+def staff_order_reset_report_status(order_code: str, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    order.report_generation_status = "not_started"
+    order.report_last_error = None
+    order.report_generated_at = None
+    db.commit()
+    return _redirect(f"/staff/orders/{order_code}?success=report_status_reset")
+
+
 @router.post("/staff/orders/{order_code}/generate-report")
 def staff_generate_report(
     order_code: str,
@@ -891,6 +1035,43 @@ def staff_report_preview(
     if not report_html:
         raise HTTPException(status_code=404, detail="report not found")
     return HTMLResponse(content=report_html)
+
+
+@router.post("/staff/orders/{order_code}/generate-report-pdf")
+def staff_generate_report_pdf(
+    order_code: str,
+    staff: dict = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    order = db.scalar(select(Order).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    report_html = _download_report_html(order.order_code)
+    if not report_html:
+        return _redirect(f"/staff/orders/{order_code}?error=no_html")
+    generate_pdf_from_html_to_storage(
+        html=report_html,
+        order_code=order.order_code,
+        bucket_name=_report_bucket_name(),
+        base_url=_public_report_base_url(),
+    )
+    return _redirect(f"/staff/orders/{order_code}?success=pdf_generated")
+
+
+@router.get("/staff/orders/{order_code}/report-pdf-download")
+def staff_report_pdf_download(
+    order_code: str,
+    staff: dict = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    order = db.scalar(select(Order).where(Order.order_code == order_code))
+    if not order:
+        raise HTTPException(status_code=404, detail="order not found")
+    data = download_pdf_bytes(bucket_name=_report_bucket_name(), order_code=order.order_code)
+    if not data:
+        raise HTTPException(status_code=404, detail="pdf not found")
+    headers = {"Content-Disposition": f'attachment; filename="{pdf_filename(order.order_code, order.user_name)}"'}
+    return Response(content=data, media_type="application/pdf", headers=headers)
 
 
 @router.post("/staff/orders/{order_code}/upload-report-html")

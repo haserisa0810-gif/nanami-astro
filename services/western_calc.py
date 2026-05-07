@@ -7,13 +7,6 @@ from typing import Any
 
 import swisseph as swe
 
-from services.asteroid_provider import (
-    AsteroidProviderError,
-    fetch_asteroids,
-    is_configured as asteroid_api_configured,
-    provider_config as asteroid_provider_config,
-)
-
 SIGNS = [
     "Ari", "Tau", "Gem", "Can", "Leo", "Vir",
     "Lib", "Sco", "Sag", "Cap", "Aqu", "Pis",
@@ -71,7 +64,7 @@ def _ephe_candidates() -> list[Path]:
         candidates.append(Path(env_path))
 
     candidates.extend([
-        Path(__file__).resolve().parents[2] / "ephe",
+        Path(__file__).resolve().parents[1] / "ephe",
         Path("/app/ephe"),
     ])
 
@@ -273,7 +266,6 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
         "core_mode": core_mode,
         "asteroid_engine": "disabled",
         "asteroid_api_status": "disabled",
-        "asteroid_provider": asteroid_provider_config(),
     }
 
     def add_body(name: str, body_id: int, *, require_swieph: bool = False, custom_reason: str | None = None) -> bool:
@@ -326,35 +318,13 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
                 local_ok = local_ok and ok
             calc_engine["asteroid_api_status"] = "not_needed" if local_ok else "partial_local"
         else:
-            calc_engine["asteroid_engine"] = "freeastro_api"
-            if asteroid_api_configured():
-                try:
-                    result = fetch_asteroids(payload, asteroid_names)
-                    returned = {item["name"]: item for item in result.get("planets", [])}
-                    for asteroid_name in asteroid_names:
-                        item = returned.get(asteroid_name)
-                        if item is None:
-                            skipped_bodies.append({
-                                "name": asteroid_name,
-                                "reason": "FreeAstro API 応答にこの小惑星が含まれていません",
-                            })
-                            continue
-                        planets.append(_body_dict(asteroid_name, float(item["lon"]), bool(item.get("retrograde", False)), cusps))
-                    calc_engine["asteroid_api_status"] = "success"
-                except AsteroidProviderError as e:
-                    calc_engine["asteroid_api_status"] = "failed"
-                    for asteroid_name in asteroid_names:
-                        skipped_bodies.append({
-                            "name": asteroid_name,
-                            "reason": f"FreeAstro API 取得失敗: {e}",
-                        })
-            else:
-                calc_engine["asteroid_api_status"] = "not_configured"
-                for asteroid_name in asteroid_names:
-                    skipped_bodies.append({
-                        "name": asteroid_name,
-                        "reason": "Swiss Ephemeris (*.se1) が無く、FreeAstro API も未設定です",
-                    })
+            calc_engine["asteroid_engine"] = "unavailable_without_swieph"
+            calc_engine["asteroid_api_status"] = "removed"
+            for asteroid_name in asteroid_names:
+                skipped_bodies.append({
+                    "name": asteroid_name,
+                    "reason": "Swiss Ephemeris (*.se1) が無いため、この小惑星は計算できません",
+                })
 
     _append_angle("ASC", asc, 1, planets, cusps)
     _append_angle("MC", mc, 10, planets, cusps)

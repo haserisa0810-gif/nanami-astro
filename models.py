@@ -206,6 +206,14 @@ class Order(TimestampMixin, Base):
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     primary_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("reports.id"))
+    report_mode: Mapped[Optional[str]] = mapped_column(String(30))
+    report_generation_status: Mapped[Optional[str]] = mapped_column(String(30))
+    report_generation_plan: Mapped[Optional[str]] = mapped_column(String(30))
+    report_generation_system: Mapped[Optional[str]] = mapped_column(String(50))
+    report_generation_prompt_key: Mapped[Optional[str]] = mapped_column(String(100))
+    report_generation_model: Mapped[Optional[str]] = mapped_column(String(100))
+    report_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    report_last_error: Mapped[Optional[str]] = mapped_column(Text)
 
     customer: Mapped[Optional[Customer]] = relationship(back_populates="orders")
     source_free_order: Mapped[Optional[Order]] = relationship(

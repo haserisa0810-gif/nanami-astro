@@ -58,7 +58,7 @@ def _object_name(order_code: str) -> str:
 
 
 def _build_public_url(request: Request, token: str) -> str:
-    base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    base = (os.getenv("PUBLIC_REPORT_BASE_URL") or "https://pay.nanami-astro.com").rstrip("/")
     if base:
         return f"{base}/report/share/{token}"
     return str(request.url_for("external_report_share", token=token))
@@ -326,6 +326,9 @@ def _default_body(order: ExternalOrder) -> str:
 
 以下のURLよりご確認ください。
 {url}
+
+※このメールには鑑定本文は載せていません。
+※PDFは必要に応じて別途ご案内します。
 
 ご不明点がありましたら、このメールへご返信ください。"""
 
@@ -752,7 +755,7 @@ def external_order_send_mail(
         return _redirect(f"/staff/external-orders/{order.id}?error=no_public_url")
 
     order.mail_subject = (mail_subject or order.mail_subject or _default_subject()).strip()
-    order.mail_body = (mail_body or order.mail_body or _default_body(order)).strip()
+    order.mail_body = _default_body(order).strip()
 
     ok = send_mail(order.mail_subject, order.mail_body, [order.customer_email])
 

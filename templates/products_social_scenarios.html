@@ -1,0 +1,127 @@
+{% extends "platform_hub_base.html" %}{% set title = "SNS投稿素材" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_social" %}{% block content %}
+<style>
+  .asset-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+  .asset-list{display:grid;gap:14px}
+  .asset-card{background:#fff;border:1px solid #e7e1d9;border-radius:18px;padding:18px}
+  .asset-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .asset-files{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+  .file-link{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid #d7d1c8;border-radius:10px;text-decoration:none;color:#111;background:#faf8f5;font-size:13px}
+  .preview-box{background:#faf8f5;border:1px solid #eee2d5;border-radius:12px;padding:12px;white-space:pre-wrap;line-height:1.7;max-height:300px;overflow:auto}
+  .media-preview{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+  .media-preview video,.media-preview audio,.media-preview img{width:100%;border-radius:12px;border:1px solid #eee2d5;background:#faf8f5}
+  .side-form{position:sticky;top:112px}
+  @media (max-width: 900px){.asset-layout{grid-template-columns:1fr}.side-form{position:static}}
+</style>
+
+<div class="section-head">
+  <div>
+    <h1>SNS投稿素材</h1>
+    <p class="muted">投稿前に台本・音声・動画を確認するための画面です。TikTok/Instagramへの自動投稿は行いません。</p>
+  </div>
+  <span class="result-count">{{ items|length }}件</span>
+</div>
+
+{% if success %}
+  <div class="success">処理が完了しました。</div>
+{% endif %}
+{% if error %}
+  <div class="error">処理に失敗しました: {{ error }}</div>
+{% endif %}
+
+<div class="asset-layout">
+  <div class="asset-list">
+    {% for item in items %}
+      <section class="asset-card">
+        <div class="asset-head">
+          <div>
+            <h2>{{ item.date }}</h2>
+            <p class="muted">scenario_{{ item.stamp }}</p>
+          </div>
+          <span class="pill">{{ item.files|length }}ファイル</span>
+        </div>
+
+        <div class="asset-files">
+          {% for file in item.files %}
+            <a class="file-link" href="{{ file.url }}" target="_blank" rel="noopener">
+              {{ file.suffix|upper }} / {{ file.size_kb }}KB
+            </a>
+          {% endfor %}
+        </div>
+
+        {% set videos = item.files|selectattr("suffix", "in", ["mp4", "mov"])|list %}
+        {% set audios = item.files|selectattr("suffix", "in", ["wav", "mp3"])|list %}
+        {% set images = item.files|selectattr("suffix", "in", ["jpg", "jpeg", "png", "webp"])|list %}
+        {% if videos or audios or images %}
+          <div class="media-preview">
+            {% for file in images %}
+              <div>
+                <p class="muted">{{ file.name }}</p>
+                <img src="{{ file.url }}" alt="{{ file.name }}">
+              </div>
+            {% endfor %}
+            {% for file in videos %}
+              <div>
+                <p class="muted">{{ file.name }}</p>
+                <video controls playsinline src="{{ file.url }}"></video>
+              </div>
+            {% endfor %}
+            {% for file in audios %}
+              <div>
+                <p class="muted">{{ file.name }}</p>
+                <audio controls src="{{ file.url }}"></audio>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if item.script_preview %}
+          <h3>台本プレビュー</h3>
+          <div class="preview-box">{{ item.script_preview }}</div>
+        {% endif %}
+
+        <form method="post" action="/products/social-scenarios/video" style="margin-top:14px">
+          <input type="hidden" name="target_date" value="{{ item.date }}">
+          <input type="hidden" name="duration_seconds" value="60">
+          <button type="submit" class="secondary">MP4動画を作る</button>
+          <span class="muted">画像が必要です。音声があれば音声付きになります。</span>
+        </form>
+      </section>
+    {% else %}
+      <div class="card">
+        <h2>素材はまだありません</h2>
+        <p class="muted">右側のフォームから台本生成、または既存のmp4/wav/txt/jsonをアップロードしてください。</p>
+      </div>
+    {% endfor %}
+  </div>
+
+  <aside class="side-form">
+    <div class="card">
+      <h2>台本を生成</h2>
+      <form method="post" action="/products/social-scenarios/generate">
+        <label>対象日</label>
+        <input type="date" name="target_date" value="{{ today }}">
+        <p><label><input type="checkbox" name="use_mock" value="1" style="width:auto"> テスト生成（Claudeを呼ばない）</label></p>
+        <p><label><input type="checkbox" name="make_voice" value="1" style="width:auto"> VOICEVOX音声も作る</label></p>
+        <button type="submit">生成する</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>素材アップロード</h2>
+      <form method="post" action="/products/social-scenarios/upload" enctype="multipart/form-data">
+        <label>対象日</label>
+        <input type="date" name="target_date" value="{{ today }}">
+        <label>ファイル</label>
+        <input type="file" name="asset" accept=".txt,.json,.wav,.mp3,.m4a,.aac,.mp4,.mov,.jpg,.jpeg,.png,.webp" required>
+        <p class="muted">同じ日付・同じ拡張子のファイルは置き換えます。</p>
+        <button type="submit">アップロード</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>保存先</h2>
+      <p class="code">{{ output_dir }}</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}

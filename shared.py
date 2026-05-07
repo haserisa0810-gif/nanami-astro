@@ -182,7 +182,7 @@ def _calc_payload_from_inputs(
         "lng": float(lon),
         "city": city,
 
-        # FreeAstro寄せの既定値
+        # Swiss Ephemeris 計算用の既定値
         "house_system": "P",       # Placidus
         "zodiac_type": "tropical",
         "node_mode": "true",

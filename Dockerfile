@@ -17,6 +17,7 @@ RUN apt-get update \
         libgdk-pixbuf-2.0-0 \
         libffi8 \
         shared-mime-info \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

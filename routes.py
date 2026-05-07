@@ -15,6 +15,7 @@ from routes_daily_card import router as daily_card_router
 from routes_daily_theme import router as daily_theme_router
 from routes_public_orders import router as public_orders_router
 from routes_public_pages import router as public_pages_router
+from routes_api_calc import router as api_calc_router
 from routes_reader import router as reader_router
 from routes_staff import router as staff_router
 from routes_shared import startup_platform_safe
@@ -38,6 +39,7 @@ def healthz():
 
 app.include_router(line_router)
 app.include_router(public_pages_router)
+app.include_router(api_calc_router)
 app.include_router(analyze_router)
 app.include_router(analyze_save_router)
 app.include_router(transit_router)

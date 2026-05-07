@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 import json
 import re
+from types import SimpleNamespace
 
 from google.cloud import storage
 
@@ -14,7 +15,7 @@ try:
 except Exception:  # pragma: no cover
     Anthropic = None  # type: ignore
 
-from models import ExternalOrder
+from models import ExternalOrder, Order
 from services.location import resolve_birth_location
 from services.location_normalizer import normalize_location, NormalizedLocation
 from services.analyze_engine import build_base_meta, build_handoff_logs, build_payload_a, run_astro_calc
@@ -80,6 +81,10 @@ def _bucket_name() -> str:
 
 def _storage_object_name(order_code: str) -> str:
     return f"external_reports/{order_code}/report.html"
+
+
+def _staff_storage_object_name(order_code: str) -> str:
+    return f"staff_reports/{order_code}/report.html"
 
 
 def _strip_code_fence(text: str) -> str:
@@ -181,6 +186,35 @@ def order_report_options(order: ExternalOrder, *, plan: str | None = None) -> di
         if val is not None:
             raw[key] = bool(val)
     return normalize_report_options(p, raw)
+
+
+REPORT_MODE_LABELS = dict(REPORT_PLAN_LABELS)
+REPORT_MODE_OPTIONS = list(REPORT_PLAN_OPTIONS)
+
+
+def _staff_order_proxy(order: Order) -> SimpleNamespace:
+    customer_email = ""
+    if getattr(order, "customer", None) and getattr(order.customer, "email", None):
+        customer_email = order.customer.email or ""
+    if not customer_email and getattr(order, "user_contact", None) and "@" in (order.user_contact or ""):
+        customer_email = order.user_contact or ""
+    return SimpleNamespace(
+        id=order.id,
+        order_code=order.order_code,
+        source_type=order.source or "staff_order",
+        customer_name=order.user_name,
+        customer_email=customer_email,
+        birth_date=order.birth_date,
+        birth_time=order.birth_time,
+        gender=order.gender,
+        prefecture=order.birth_prefecture,
+        birth_place=order.birth_place,
+        consultation_text=order.consultation_text,
+        menu_name=getattr(getattr(order, "menu", None), "name", None),
+        price=order.price,
+        staff_name=getattr(getattr(order, "assigned_reader", None), "display_name", None),
+        report_generation_plan=order.report_generation_plan,
+    )
 
 
 def build_report_calc_options(plan: str, report_options: dict[str, bool] | None = None) -> dict[str, bool]:
@@ -511,6 +545,19 @@ def save_external_report_html(order: ExternalOrder, html: str) -> str:
     return object_name
 
 
+def save_staff_order_report_html(order: Order, html: str) -> str:
+    bucket_name = _bucket_name()
+    if not bucket_name:
+        raise RuntimeError("EXTERNAL_REPORTS_BUCKET または STAFF_REPORTS_BUCKET が未設定です")
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    object_name = _staff_storage_object_name(order.order_code)
+    blob = bucket.blob(object_name)
+    blob.cache_control = "private, max-age=0, no-store"
+    blob.upload_from_string(html, content_type="text/html; charset=utf-8")
+    return object_name
+
+
 
 
 def _set_generation_step(db, order: ExternalOrder, step: str, message: str | None = None) -> None:
@@ -525,6 +572,14 @@ def _set_generation_step(db, order: ExternalOrder, step: str, message: str | Non
     order.report_generation_status = "generating"
     order.last_error = f"STEP:{step}|{msg}"[:2000]
     print(f"[external_report] order={getattr(order, 'id', None)} code={getattr(order, 'order_code', '')} step={step} message={msg}", flush=True)
+    db.commit()
+
+
+def _set_order_generation_step(db, order: Order, step: str, message: str | None = None) -> None:
+    msg = (message or step).strip()
+    order.report_generation_status = "generating"
+    order.report_last_error = f"STEP:{step}|{msg}"[:2000]
+    print(f"[staff_report] order={getattr(order, 'id', None)} code={getattr(order, 'order_code', '')} step={step} message={msg}", flush=True)
     db.commit()
 
 def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "standard", report_options: dict[str, bool] | None = None) -> ExternalOrder:
@@ -567,5 +622,53 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
         order.report_generation_status = "failed"
         order.last_error = str(exc)[:2000]
         print(f"[external_report] order={getattr(order, 'id', None)} failed error={order.last_error}", flush=True)
+        db.commit()
+        raise
+
+
+def generate_staff_order_report(
+    db,
+    order: Order,
+    *,
+    report_plan: str | None = None,
+    report_options: dict[str, bool] | None = None,
+) -> Order:
+    plan = (report_plan or getattr(order, "report_generation_plan", None) or "standard").strip().lower()
+    if plan not in REPORT_PLAN_OPTIONS:
+        plan = "standard"
+    cfg = _plan_config(plan)
+    report_options = normalize_report_options(cfg["plan"], report_options or default_report_options(cfg["plan"]))
+
+    order.report_mode = plan
+    order.report_generation_plan = cfg["plan"]
+    order.report_generation_system = cfg["astrology_system"]
+    order.report_generation_prompt_key = cfg["prompt_key"]
+    order.report_generation_model = resolve_report_claude_model()
+    _set_order_generation_step(db, order, "starting", "生成準備中")
+
+    proxy = _staff_order_proxy(order)
+    proxy.report_generation_plan = cfg["plan"]
+
+    try:
+        _set_order_generation_step(db, order, "calculating", "出生データと占術計算からhandoff YAMLを作成中")
+        handoff_yaml, _meta = build_external_order_handoff(proxy, plan=cfg["plan"], report_options=report_options)
+        _set_order_generation_step(db, order, "handoff_ready", "handoff YAML作成完了")
+
+        _set_order_generation_step(db, order, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
+        chapter_content = generate_chapter_content_with_claude(proxy, plan=cfg["plan"], handoff_yaml=handoff_yaml, report_options=report_options)
+        _set_order_generation_step(db, order, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
+        html = render_external_report_html(proxy, plan=cfg["plan"], astro_result=_meta.get("astro_result") or {}, chapter_content=chapter_content, report_options=report_options)
+        _set_order_generation_step(db, order, "uploading_html", "完成HTMLをCloud Storageへ保存中")
+        save_staff_order_report_html(order, html)
+
+        order.report_generated_at = datetime.utcnow()
+        order.report_generation_status = "completed"
+        order.report_last_error = None
+        db.commit()
+        return order
+    except Exception as exc:
+        order.report_generation_status = "failed"
+        order.report_last_error = str(exc)[:2000]
+        print(f"[staff_report] order={getattr(order, 'id', None)} failed error={order.report_last_error}", flush=True)
         db.commit()
         raise

@@ -8,8 +8,8 @@
   <a class="btn secondary" href="/logout">ログアウト</a>
 </div>
 
-{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {% if success == 'report_uploaded' %}保存済みHTMLを差し替えました。{% elif success == 'report_saved' %}鑑定書HTMLを保存し、公開URLを更新しました。{% else %}{{ success }}{% endif %}</p>{% endif %}
-{% if error %}<div class="error">{% if error == 'invalid_html' %}HTMLファイル（.html）を選択してください。{% elif error == 'no_html' %}HTMLの内容が空です。{% else %}{{ error }}{% endif %}</div>{% endif %}
+{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {% if success == 'report_uploaded' %}保存済みHTMLを差し替えました。{% elif success == 'report_saved' %}鑑定書HTMLを保存し、公開URLを更新しました。{% elif success == 'report_queued' %}AI鑑定書生成を開始しました。{% elif success == 'pdf_generated' %}PDFを生成しました。{% elif success == 'report_status_reset' %}生成状態をリセットしました。{% else %}{{ success }}{% endif %}</p>{% endif %}
+{% if error %}<div class="error">{% if error == 'invalid_html' %}HTMLファイル（.html）を選択してください。{% elif error == 'no_html' %}HTMLの内容が空です。{% elif error == 'generate_failed' %}AI鑑定書生成に失敗しました。エラー内容を確認してください。{% else %}{{ error }}{% endif %}</div>{% endif %}
 
 <div class="card">
   <h1>案件詳細</h1>
@@ -50,8 +50,8 @@
   <div style="margin-top:12px"><strong>相談内容</strong><p>{{ order.consultation_text or '未入力' }}</p></div>
 </div>
 
-<div class="workbench" style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:18px;align-items:start">
-  <div style="display:grid;gap:18px">
+<div class="workbench" style="display:grid;grid-template-columns:1fr;gap:18px;align-items:start">
+  <div style="display:grid;gap:18px;min-width:0">
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div>
@@ -292,65 +292,153 @@
       </form>
     </div>
 
+  </div>
+
+  <div style="display:grid;gap:18px;min-width:0">
+    {% set gen_status = report_generation_status or 'not_started' %}
     <div class="card">
-      <h2>3. 鑑定書HTML管理</h2>
-      <p class="muted">鑑定書を作成すると、Cloud Storage へ保存し、そのまま公開URLで開ける状態にします。</p>
-      <div class="grid" style="margin-top:10px">
-        <div><strong>保存先</strong><div class="muted" style="word-break:break-all">{{ report_storage_path }}</div></div>
-        <div><strong>公開URL</strong><div class="muted" style="word-break:break-all">{{ report_public_url }}</div></div>
-        <div><strong>保存状態</strong><div>{% if report_exists %}保存済み{% else %}未保存{% endif %}</div></div>
-        <div><strong>最終保存</strong><div>{{ result_view.report_generated_at if result_view and result_view.report_generated_at else '-' }}</div></div>
+      <h2>3. AI鑑定書生成</h2>
+      <p class="muted">外部受注詳細と同じ3プランで鑑定書HTMLを生成します。生成時にHTML保存まで行います。</p>
+      <style>
+        .report-plan-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+        .report-plan-card{display:flex;flex-direction:column;gap:8px;min-height:100%;border:1px solid #e1d7c8;border-radius:14px;padding:12px;background:#fff}
+        .report-plan-card input{margin-top:2px}
+        .report-plan-card strong{display:block;font-size:14px}
+        .report-plan-card .muted{font-size:12px;line-height:1.7}
+        .report-plan-card.light.selected{border-color:#b9d8ff;background:#f7fbff}
+        .report-plan-card.standard.selected{border-color:#d7c28c;background:#fffdf5}
+        .report-plan-card.premium.selected{border-color:#b38a3d;background:#fffaf0}
+        .report-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+        .report-meta .mini{border:1px solid #eee2d5;border-radius:12px;padding:10px 12px;background:#fff}
+        .report-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+        .report-summary{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fafafa}
+        .report-summary-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+        .report-summary-title{font-weight:700}
+        .report-summary-text{margin-top:6px;color:#666;line-height:1.7}
+        @media (max-width: 980px){ .report-plan-grid,.report-meta{grid-template-columns:1fr} }
+      </style>
+
+      <div class="report-summary" style="margin-top:12px">
+        <div class="report-summary-head">
+          <div>
+            <div class="report-summary-title" id="staff-report-status-title">
+              {% if gen_status == 'generating' %}AI鑑定書を生成中です{% elif gen_status == 'completed' %}AI鑑定書の生成が完了しました{% elif gen_status == 'failed' %}AI鑑定書の生成に失敗しました{% else %}未生成{% endif %}
+            </div>
+            <div id="staff-report-status-text" class="report-summary-text">
+              {% if gen_status == 'generating' %}{{ report_progress_message or '裏側で生成しています。完了後に画面が更新されます。' }}{% elif gen_status == 'completed' %}HTML保存まで完了しています。{% elif gen_status == 'failed' %}{{ report_real_error or '入力内容を確認して再生成してください。' }}{% else %}プランを選んで生成できます。{% endif %}
+            </div>
+          </div>
+          <span id="staff-report-status-pill" class="pill {% if gen_status == 'completed' %}success{% elif gen_status == 'failed' %}danger{% elif gen_status == 'generating' %}warning{% else %}secondary{% endif %}">{{ gen_status }}</span>
+        </div>
+        <div class="report-meta" style="margin-top:12px">
+          <div class="mini"><strong>選択中</strong><div>{{ report_plan_labels.get(report_plan, report_plan) }}</div></div>
+          <div class="mini"><strong>生成状態</strong><div id="staff-report-step">{{ report_progress_step or '-' }}</div></div>
+          <div class="mini"><strong>モデル</strong><div>{{ order.report_generation_model or '-' }}</div></div>
+          <div class="mini"><strong>生成日時</strong><div id="staff-report-generated-at">{{ order.report_generated_at or '-' }}</div></div>
+        </div>
+        <div class="report-actions">
+          {% if gen_status == 'generating' %}
+            <button type="submit" form="staff-report-generate-form" disabled>生成中...</button>
+            <button type="submit" form="staff-report-generate-form" formaction="/staff/orders/{{ order.order_code }}/reset-report-status" class="secondary">生成中を解除</button>
+          {% elif gen_status == 'completed' %}
+            <button type="submit" form="staff-report-generate-form" class="secondary" onclick="return confirm('既存のAI鑑定書を上書きして再生成します。よろしいですか？');">再生成する</button>
+          {% elif gen_status == 'failed' %}
+            <button type="submit" form="staff-report-generate-form">失敗したので再生成する</button>
+            <button type="submit" form="staff-report-generate-form" formaction="/staff/orders/{{ order.order_code }}/reset-report-status" class="secondary">未生成に戻す</button>
+          {% else %}
+            <button type="submit" form="staff-report-generate-form">AI鑑定書を生成</button>
+          {% endif %}
+        </div>
       </div>
-      <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:12px">
+
+      <form id="staff-report-generate-form" method="post" action="/staff/orders/{{ order.order_code }}/generate-ai-report" style="margin-top:14px">
+        <div style="font-weight:700;margin-bottom:10px">鑑定プラン</div>
+        <div class="report-plan-grid">
+          <label class="report-plan-card light {% if report_plan == 'light' %}selected{% endif %}">
+            <input type="radio" name="report_plan" value="light" {% if report_plan == 'light' %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}>
+            <strong>{{ report_plan_labels.get('light', 'light') }}</strong>
+            <div class="muted">図セクション + 第1章〜第4章</div>
+          </label>
+          <label class="report-plan-card standard {% if report_plan == 'standard' %}selected{% endif %}">
+            <input type="radio" name="report_plan" value="standard" {% if report_plan == 'standard' %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}>
+            <strong>{{ report_plan_labels.get('standard', 'standard') }}</strong>
+            <div class="muted">図セクション + 第1章〜第7章</div>
+          </label>
+          <label class="report-plan-card premium {% if report_plan == 'premium' %}selected{% endif %}">
+            <input type="radio" name="report_plan" value="premium" {% if report_plan == 'premium' %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}>
+            <strong>{{ report_plan_labels.get('premium', 'premium') }}</strong>
+            <div class="muted">図セクション + 第1章〜第13章</div>
+          </label>
+        </div>
+        <details style="margin-top:14px;border:1px solid #e5ddd0;border-radius:10px;padding:12px;background:#fffdf9;">
+          <summary style="cursor:pointer;font-weight:700;">詳細オプション</summary>
+          <div style="display:grid;gap:10px;margin-top:12px;font-size:13px;">
+            <label><input type="checkbox" name="option_asteroids" value="true" {% if report_options.get('option_asteroids') or report_plan == 'premium' %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> 小惑星を追加する</label>
+            <label><input type="checkbox" name="option_transit" value="true" {% if report_options.get('option_transit') or report_plan in ['standard', 'premium'] %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> トランジット時期読みを追加する</label>
+            <label><input type="checkbox" name="option_special_points" value="true" {% if report_options.get('option_special_points') or report_plan == 'premium' %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> 特殊星・隠れた才能を追加する</label>
+            <label><input type="checkbox" name="option_year_forecast" value="true" {% if report_options.get('option_year_forecast') or report_plan in ['standard', 'premium'] %}checked{% endif %} {% if gen_status == 'generating' %}disabled{% endif %}> 今年・来年の運勢を追加する</label>
+          </div>
+        </details>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>4. 鑑定書HTML管理</h2>
+      <p class="muted">生成時にHTML保存まで済みます。ここでは確認・差し替え・PDF出力だけを扱います。</p>
+      <div class="report-meta" style="margin-top:10px">
+        <div class="mini"><strong>保存先</strong><div class="muted" style="word-break:break-all">{{ report_storage_path }}</div></div>
+        <div class="mini"><strong>公開URL</strong><div class="muted" style="word-break:break-all">{{ report_public_url }}</div></div>
+        <div class="mini"><strong>保存状態</strong><div>{% if report_exists %}保存済み{% else %}未保存{% endif %}</div></div>
+        <div class="mini"><strong>最終保存</strong><div>{{ order.report_generated_at or (result_view.report_generated_at if result_view and result_view.report_generated_at else '-') }}</div></div>
+      </div>
+      <div class="report-actions">
         <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-preview" target="_blank">保存済みHTMLをプレビュー</a>
         <a class="btn secondary" href="{{ report_public_url }}" target="_blank">公開URLを開く</a>
         <button type="button" class="secondary" onclick="copyReportUrl()">URLをコピー</button>
         <a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-download">HTMLをダウンロード</a>
+        {% if report_exists %}<form method="post" action="/staff/orders/{{ order.order_code }}/generate-report-pdf"><button type="submit" class="secondary">PDF生成</button></form>{% endif %}
+        {% if report_pdf_exists %}<a class="btn secondary" href="/staff/orders/{{ order.order_code }}/report-pdf-download">PDFダウンロード</a>{% endif %}
       </div>
       <form method="post" action="/staff/orders/{{ order.order_code }}/upload-report-html" enctype="multipart/form-data" style="margin-top:14px">
         <input type="file" name="html_file" accept=".html,text/html" required>
         <div class="filter-actions" style="margin-top:14px"><button type="submit">保存済みHTMLを差し替え</button></div>
       </form>
     </div>
-
-    <div class="card">
-      <h2>4. 状態・担当の更新</h2>
-      <form method="post" action="/staff/orders/{{ order.order_code }}/update">
-        <div class="grid">
-          <div><label>担当占い師</label><select name="assigned_reader_id"><option value="">自動 / 未設定</option>{% for reader in readers %}<option value="{{ reader.id }}" {% if order.assigned_reader_id == reader.id %}selected{% endif %}>{{ reader.display_name }} ({{ reader.login_email }})</option>{% endfor %}</select></div>
-          <div><label>状態</label><select name="status">{% for s in valid_statuses %}<option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ status_labels.get(s, s) }}</option>{% endfor %}</select></div>
-          <div style="grid-column:1 / -1">
-            <label>占い師用メモ</label>
-            <textarea name="staff_memo" style="min-height:120px" placeholder="内部メモ。ユーザーには表示されません。次に見る占い師向けの引き継ぎにも使えます。">{{ order.staff_memo or '' }}</textarea>
-            <p class="muted" style="margin-top:8px">案件の注意点、引き継ぎ、未確認事項などを自由に残せます。</p>
-          </div>
-        </div>
-        <div style="margin-top:14px"><button type="submit">更新する</button></div>
-      </form>
-    </div>
-
-    <details class="card">
-      <summary><strong>内部データ（YAML）</strong> <span class="muted">必要な時だけ開いてコピーします</span></summary>
-      <div style="margin-top:12px">
-        {% if active_yaml %}
-          <div class="row" style="margin-bottom:10px;justify-content:space-between;align-items:center;flex-wrap:wrap">
-            <span class="muted">最新版 v{{ active_yaml.version_no }} / {{ active_yaml.log_type }}</span>
-            <button type="button" class="secondary" onclick="copyYamlFromDetails()">YAMLをコピー</button>
-          </div>
-          <pre id="yaml-copy-source" style="white-space:pre-wrap;max-height:420px;overflow:auto">{{ active_yaml.yaml_body }}</pre>
-        {% else %}
-          <p class="muted">まだYAMLはありません。自動鑑定または納品保存後にここからコピーできます。</p>
-        {% endif %}
-      </div>
-    </details>
-
-    <div class="card"><h2>履歴</h2>{% if order.deliveries %}{% for item in order.deliveries|sort(attribute='updated_at', reverse=True) %}<div style="border-top:1px solid #eee;padding:12px 0"><div class="pill">{% if item.is_draft %}下書き{% else %}納品{% endif %}</div><div class="muted">{{ item.updated_at }} / {{ item.reader.display_name if item.reader else '-' }}</div><div style="white-space:pre-wrap;margin-top:8px">{{ item.delivery_text }}</div></div>{% endfor %}{% else %}<p class="muted">まだ納品はありません。</p>{% endif %}</div>
   </div>
-</div>
 
-<style>
-@media (max-width: 1100px){ .workbench{ grid-template-columns:1fr !important; } }
-</style>
+  <div class="card">
+    <h2>5. 状態・担当の更新</h2>
+    <form method="post" action="/staff/orders/{{ order.order_code }}/update">
+      <div class="grid">
+        <div><label>担当占い師</label><select name="assigned_reader_id"><option value="">自動 / 未設定</option>{% for reader in readers %}<option value="{{ reader.id }}" {% if order.assigned_reader_id == reader.id %}selected{% endif %}>{{ reader.display_name }} ({{ reader.login_email }})</option>{% endfor %}</select></div>
+        <div><label>状態</label><select name="status">{% for s in valid_statuses %}<option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ status_labels.get(s, s) }}</option>{% endfor %}</select></div>
+        <div style="grid-column:1 / -1">
+          <label>占い師用メモ</label>
+          <textarea name="staff_memo" style="min-height:120px" placeholder="内部メモ。ユーザーには表示されません。次に見る占い師向けの引き継ぎにも使えます。">{{ order.staff_memo or '' }}</textarea>
+          <p class="muted" style="margin-top:8px">案件の注意点、引き継ぎ、未確認事項などを自由に残せます。</p>
+        </div>
+      </div>
+      <div style="margin-top:14px"><button type="submit">更新する</button></div>
+    </form>
+  </div>
+
+  <details class="card">
+    <summary><strong>内部データ（YAML）</strong> <span class="muted">必要な時だけ開いてコピーします</span></summary>
+    <div style="margin-top:12px">
+      {% if active_yaml %}
+        <div class="row" style="margin-bottom:10px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+          <span class="muted">最新版 v{{ active_yaml.version_no }} / {{ active_yaml.log_type }}</span>
+          <button type="button" class="secondary" onclick="copyYamlFromDetails()">YAMLをコピー</button>
+        </div>
+        <pre id="yaml-copy-source" style="white-space:pre-wrap;max-height:420px;overflow:auto">{{ active_yaml.yaml_body }}</pre>
+      {% else %}
+        <p class="muted">まだYAMLはありません。自動鑑定または納品保存後にここからコピーできます。</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <div class="card"><h2>履歴</h2>{% if order.deliveries %}{% for item in order.deliveries|sort(attribute='updated_at', reverse=True) %}<div style="border-top:1px solid #eee;padding:12px 0"><div class="pill">{% if item.is_draft %}下書き{% else %}納品{% endif %}</div><div class="muted">{{ item.updated_at }} / {{ item.reader.display_name if item.reader else '-' }}</div><div style="white-space:pre-wrap;margin-top:8px">{{ item.delivery_text }}</div></div>{% endfor %}{% else %}<p class="muted">まだ納品はありません。</p>{% endif %}</div>
+</div>
 
 <script>
 const AUTO_AI_STATUS = {{ (order.ai_status or '') | tojson }};
@@ -359,6 +447,81 @@ const AUTO_AI_READY = {{ 'true' if auto_ai_ready else 'false' }} === 'true';
 const AUTO_AI_ORDER_CODE = {{ order.order_code | tojson }};
 const AUTO_STATUS_URL = {{ ('/staff/orders/' ~ order.order_code ~ '/auto-status') | tojson }};
 const AUTO_AI_PENDING_KEY = 'auto_ai_pending_order_code';
+const STAFF_REPORT_STATUS = {{ (report_generation_status or 'not_started') | tojson }};
+const STAFF_REPORT_STATUS_URL = {{ ('/staff/orders/' ~ order.order_code ~ '/report-status') | tojson }};
+const STAFF_REPORT_PLAN = {{ (report_plan or 'standard') | tojson }};
+
+function syncStaffReportOptionsFromPlan() {
+  const planEl = document.querySelector('input[name="report_plan"]:checked');
+  const plan = planEl ? planEl.value : STAFF_REPORT_PLAN;
+  const optionAsteroids = document.querySelector('input[name="option_asteroids"]');
+  const optionTransit = document.querySelector('input[name="option_transit"]');
+  const optionSpecial = document.querySelector('input[name="option_special_points"]');
+  const optionYear = document.querySelector('input[name="option_year_forecast"]');
+  if (!optionAsteroids || !optionTransit || !optionSpecial || !optionYear) return;
+
+  if (plan === 'premium') {
+    optionAsteroids.checked = true;
+    optionTransit.checked = true;
+    optionSpecial.checked = true;
+    optionYear.checked = true;
+  } else if (plan === 'standard') {
+    optionAsteroids.checked = false;
+    optionTransit.checked = true;
+    optionSpecial.checked = false;
+    optionYear.checked = true;
+  }
+}
+
+document.querySelectorAll('input[name="report_plan"]').forEach((el) => {
+  el.addEventListener('change', syncStaffReportOptionsFromPlan);
+});
+window.addEventListener('DOMContentLoaded', syncStaffReportOptionsFromPlan);
+
+if (STAFF_REPORT_STATUS === 'generating') {
+  let reportPollCount = 0;
+  const reportMaxPollCount = 180;
+  const pollStaffReportStatus = async () => {
+    reportPollCount += 1;
+    if (reportPollCount > reportMaxPollCount) return;
+    try {
+      const res = await fetch(STAFF_REPORT_STATUS_URL, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+        cache: 'no-store'
+      });
+      if (!res.ok) throw new Error('report status error');
+      const data = await res.json();
+      const status = data.status || 'not_started';
+      const title = document.getElementById('staff-report-status-title');
+      const text = document.getElementById('staff-report-status-text');
+      const pill = document.getElementById('staff-report-status-pill');
+      const step = document.getElementById('staff-report-step');
+      const generatedAt = document.getElementById('staff-report-generated-at');
+      if (step && data.step) step.textContent = data.step;
+      if (generatedAt && data.generated_at) generatedAt.textContent = data.generated_at;
+      if (status === 'generating') {
+        if (text && data.progress_message) text.textContent = data.progress_message;
+        window.setTimeout(pollStaffReportStatus, 5000);
+        return;
+      }
+      if (status === 'completed') {
+        if (title) title.textContent = 'AI鑑定書の生成が完了しました';
+        if (text) text.textContent = 'HTML保存まで完了しています。画面を更新します。';
+        if (pill) pill.textContent = 'completed';
+      } else if (status === 'failed') {
+        if (title) title.textContent = 'AI鑑定書の生成に失敗しました';
+        if (text) text.textContent = data.last_error || '入力内容を確認して再生成してください。';
+        if (pill) pill.textContent = 'failed';
+      }
+      window.setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      window.setTimeout(pollStaffReportStatus, 8000);
+    }
+  };
+  window.setTimeout(pollStaffReportStatus, 5000);
+}
 
 function copyYamlText() {
   const el = document.getElementById('yaml-copy-source');

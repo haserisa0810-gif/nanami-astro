@@ -229,6 +229,14 @@ def _ensure_order_report_columns() -> None:
     required = {
         "primary_report_id": "ALTER TABLE orders ADD COLUMN primary_report_id INTEGER",
         "input_origin": "ALTER TABLE orders ADD COLUMN input_origin VARCHAR(30)",
+        "report_mode": "ALTER TABLE orders ADD COLUMN report_mode VARCHAR(30)",
+        "report_generation_status": "ALTER TABLE orders ADD COLUMN report_generation_status VARCHAR(30)",
+        "report_generation_plan": "ALTER TABLE orders ADD COLUMN report_generation_plan VARCHAR(30)",
+        "report_generation_system": "ALTER TABLE orders ADD COLUMN report_generation_system VARCHAR(50)",
+        "report_generation_prompt_key": "ALTER TABLE orders ADD COLUMN report_generation_prompt_key VARCHAR(100)",
+        "report_generation_model": "ALTER TABLE orders ADD COLUMN report_generation_model VARCHAR(100)",
+        "report_generated_at": "ALTER TABLE orders ADD COLUMN report_generated_at TIMESTAMP",
+        "report_last_error": "ALTER TABLE orders ADD COLUMN report_last_error TEXT",
     }
     with engine.begin() as conn:
         for name, ddl in required.items():
@@ -236,6 +244,8 @@ def _ensure_order_report_columns() -> None:
                 conn.execute(text(ddl))
         try:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_input_origin ON orders (input_origin)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_report_mode ON orders (report_mode)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_report_generation_status ON orders (report_generation_status)"))
         except Exception:
             pass
 

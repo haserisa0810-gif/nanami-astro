@@ -21,11 +21,6 @@ except Exception:
     from services.ai_report import generate_report  # type: ignore
 
 try:
-    from src.services.freeastro import call_freeastro_natal  # type: ignore
-except Exception:
-    from services.freeastro import call_freeastro_natal  # type: ignore
-
-try:
     from src.web.shared import (  # type: ignore
         _age_years,
         _attach_meta,
@@ -81,15 +76,15 @@ def build_astro_payload(
 
 def run_astro_calc(payload: dict[str, Any]) -> dict[str, Any]:
     """
-    占術計算を実行する。ローカル計算に失敗した場合は freeastro へフォールバック。
+    占術計算を実行する。
     """
     try:
         result = calc_western_from_payload(payload)
         print("LINE handler: used calc_western_from_payload")
         return result
     except Exception as calc_exc:
-        print("LINE handler: local calc failed, fallback to freeastro:", repr(calc_exc))
-        return call_freeastro_natal(payload)
+        print("LINE handler: local calc failed:", repr(calc_exc))
+        raise
 
 
 def build_report(
