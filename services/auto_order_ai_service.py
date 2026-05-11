@@ -242,12 +242,14 @@ def process_order_auto_reading(order_id: int, options: dict | None = None) -> No
                 observations_text=None,
                 analysis_type=opts.get('analysis_type', 'single'),
                 astrology_system=opts.get('astrology_system', 'western'),
+                ai_provider=opts.get('ai_provider'),
                 ai_model=opts.get('ai_model'),
                 day_change_at_23=bool(opts.get('day_change_at_23')),
                 name=order.user_name,
                 name_b=opts.get('name_b'),
                 gender=order.gender or 'female',
                 gender_b=opts.get('gender_b', 'female'),
+                reading_style=opts.get('reading_style', 'general'),
             )
             astro_result, payload_view, report_web, report_line, report_raw, report_reader, guard_meta = run_single(
                 opts.get('astrology_system', 'western'),

@@ -456,8 +456,10 @@ class TransitHubRequest(TimestampMixin, Base):
     birth_place: Mapped[Optional[str]] = mapped_column(String(255))
 
     period_label: Mapped[str] = mapped_column(String(50), nullable=False, default="3ヶ月")
+    period_months: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     period_start: Mapped[Optional[date]] = mapped_column(Date, index=True)
     period_end: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    report_variant: Mapped[str] = mapped_column(String(50), nullable=False, default="three_month_general", index=True)
     template_name: Mapped[str] = mapped_column(String(100), nullable=False, default="standard_3month")
 
     notes: Mapped[Optional[str]] = mapped_column(Text)

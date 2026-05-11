@@ -74,6 +74,22 @@ def build_free_result_payload(order: Order, report_web: str, astro_result: dict,
     }
 
 
+def _is_generation_error_text(text: str | None) -> bool:
+    value = (text or "").strip()
+    if not value:
+        return True
+    error_prefixes = (
+        "AI生成エラー",
+        "GEMINI_API_KEY が未設定です",
+        "ANTHROPIC_API_KEY が未設定です",
+        "Gemini client 初期化エラー",
+        "Claude client 初期化エラー",
+        "google-genai が読み込めません",
+        "anthropic が読み込めません",
+    )
+    return any(value.startswith(prefix) for prefix in error_prefixes)
+
+
 def process_free_reading(order_id: int) -> None:
     with db_session() as db:
         order = db.get(Order, order_id)
@@ -115,12 +131,14 @@ def process_free_reading(order_id: int) -> None:
                 observations_text=None,
                 analysis_type='single',
                 astrology_system='western',
+                ai_provider='gemini',
                 ai_model='gemini-2.5-flash-lite',
                 day_change_at_23=False,
                 name=order.user_name,
                 name_b=None,
                 gender=order.gender or '4',
                 gender_b='4',
+                reading_style='general',
             )
             base_meta["is_free_reading"] = True  # Gemini + free_reading_web.txt を使用する
             astro_result, payload_view, report_web, report_line, report_raw, report_reader, guard_meta = run_single(
@@ -129,6 +147,8 @@ def process_free_reading(order_id: int) -> None:
             report_web, report_raw, report_reader, report_line = format_reports(
                 report_web, report_raw, report_reader, report_line, 'short', 'web', False
             )
+            if _is_generation_error_text(report_web):
+                raise RuntimeError(report_web or 'AI鑑定本文が空です')
             logs = build_handoff_logs(
                 inputs_view={
                     'name': order.user_name,
@@ -182,3 +202,4 @@ def process_free_reading(order_id: int) -> None:
         except Exception as exc:
             order.ai_status = 'failed'
             order.free_result_text = f'無料鑑定の生成に失敗しました。時間をおいて再度お試しください。\n\n詳細: {exc}'
+            print(f"[free_reading] failed order_id={order_id} error={exc}", flush=True)

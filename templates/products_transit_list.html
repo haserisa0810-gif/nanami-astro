@@ -13,6 +13,35 @@
   </div>
 </div>
 <div class="card">
+  <div class="section-head">
+    <div>
+      <h2>作成するレポート種別</h2>
+      <p class="muted">3ヶ月・仕事・恋愛・6ヶ月を最初から分けておくと、後から1年版を足しやすくなります。</p>
+    </div>
+  </div>
+  <div class="variant-grid" style="margin-top:14px;">
+    {% for variant in product_variants %}
+      <div class="variant-card {% if not variant.available %}disabled{% endif %}">
+        <div class="variant-title">{{ variant.label }}</div>
+        <div class="variant-meta">
+          焦点: {{ variant.focus }}<br>
+          期間: {{ variant.period_months }}ヶ月<br>
+          プロンプト: {{ variant.prompt_file }}<br>
+          テンプレ: {{ variant.template_name }}<br>
+          {{ variant.description }}
+        </div>
+        <div class="variant-actions">
+          {% if variant.available %}
+            <a class="btn" href="/products/transit/new?variant={{ variant.key }}">この種類で作成</a>
+          {% else %}
+            <span class="btn secondary" style="pointer-events:none;">準備中</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+<div class="card">
   <form method="get" class="filter-form">
     <div class="filter-grid">
       <div><label>キーワード</label><input type="text" name="q" value="{{ filters.q }}" placeholder="受付番号・顧客名・メール"></div>
@@ -23,12 +52,16 @@
   </form>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>受付番号</th><th>顧客</th><th>期間</th><th>チャネル</th><th>状態</th><th>更新</th><th>操作</th></tr></thead>
+      <thead><tr><th>受付番号</th><th>顧客</th><th>種別</th><th>期間</th><th>チャネル</th><th>状態</th><th>更新</th><th>操作</th></tr></thead>
       <tbody>
         {% for item in requests %}
         <tr>
           <td><a href="/products/transit/{{ item.id }}">{{ item.request_code }}</a></td>
           <td>{{ item.customer_name }}<br><span class="muted">{{ item.customer_email or '-' }}</span></td>
+          <td>
+            {% set variant = product_variant_map.get(item.report_variant) %}
+            {{ variant.label if variant else item.report_variant or '-' }}
+          </td>
           <td>{{ item.period_start or '-' }}<br><span class="muted">{{ item.period_end or '-' }}</span></td>
           <td>{{ item.channel }}</td>
           <td>{{ status_labels.get(item.status, item.status) }}</td>
@@ -36,7 +69,7 @@
           <td><a class="btn secondary" href="/products/transit/{{ item.id }}">詳細</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="muted">トランジット案件はまだありません。</td></tr>
+        <tr><td colspan="8" class="muted">トランジット案件はまだありません。</td></tr>
         {% endfor %}
       </tbody>
     </table>

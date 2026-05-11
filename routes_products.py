@@ -19,9 +19,14 @@ from services.transit_hub_service import (
     CHANNEL_OPTIONS,
     STATUS_LABELS,
     create_request,
-    default_period_dates,
+    default_period_dates_for_variant,
     generate_request_code,
     generate_request_output,
+)
+from services.transit_product_catalog import (
+    DEFAULT_TRANSIT_VARIANT,
+    get_transit_product_variant,
+    list_transit_product_variants,
 )
 from services.social_daily_scenario import create_social_video, generate_daily_assets
 
@@ -136,6 +141,8 @@ def _ensure_transit_public_columns_runtime(db: Session) -> None:
             "public_token": "ALTER TABLE transit_hub_requests ADD COLUMN public_token VARCHAR(128)",
             "public_url": "ALTER TABLE transit_hub_requests ADD COLUMN public_url TEXT",
             "url_issued_at": "ALTER TABLE transit_hub_requests ADD COLUMN url_issued_at TIMESTAMP",
+            "period_months": "ALTER TABLE transit_hub_requests ADD COLUMN period_months INTEGER DEFAULT 3",
+            "report_variant": "ALTER TABLE transit_hub_requests ADD COLUMN report_variant VARCHAR(50) DEFAULT 'three_month_general'",
         }
         changed = False
         for name, ddl in ddl_map.items():
@@ -187,7 +194,9 @@ def _serialize_transit(req: TransitHubRequest) -> dict:
         "status": req.status,
         "customer_name": req.customer_name,
         "customer_email": req.customer_email,
+        "report_variant": req.report_variant,
         "period_label": req.period_label,
+        "period_months": req.period_months,
         "period_start": req.period_start.isoformat() if req.period_start else None,
         "period_end": req.period_end.isoformat() if req.period_end else None,
         "template_name": req.template_name,
@@ -280,9 +289,12 @@ def products_social_scenarios_file(filename: str, staff: dict = Depends(get_curr
 
 @router.get("/products/transit", response_class=HTMLResponse)
 def products_transit_list(request: Request, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    _ensure_transit_public_columns_runtime(db)
     q = (request.query_params.get("q") or "").strip()
     status = (request.query_params.get("status") or "").strip()
     channel = (request.query_params.get("channel") or "").strip()
+    variants = list_transit_product_variants(include_unavailable=True)
+    variant_map = {variant["key"]: variant for variant in variants}
 
     stmt = select(TransitHubRequest).order_by(TransitHubRequest.created_at.desc())
     if q:
@@ -306,16 +318,23 @@ def products_transit_list(request: Request, staff: dict = Depends(get_current_st
     return templates.TemplateResponse(request=request, name="products_transit_list.html", context={
         "request": request, "staff": staff, "requests": requests, "status_labels": STATUS_LABELS,
         "counts": counts, "filters": {"q": q, "status": status, "channel": channel}, "channel_options": CHANNEL_OPTIONS,
+        "product_variant_map": variant_map,
+        "product_variants": variants,
         "success": request.query_params.get("success"),
     })
 
 
 @router.get("/products/transit/new", response_class=HTMLResponse)
 def products_transit_new(request: Request, staff: dict = Depends(get_current_staff)):
-    start, end = default_period_dates()
+    # new 画面は DB 参照不要
+    variant_key = (request.query_params.get("variant") or "").strip() or DEFAULT_TRANSIT_VARIANT
+    variant = get_transit_product_variant(variant_key) or get_transit_product_variant(DEFAULT_TRANSIT_VARIANT)
+    start, end = default_period_dates_for_variant(variant_key)
     return templates.TemplateResponse(request=request, name="products_transit_new.html", context={
         "request": request, "staff": staff, "channel_options": CHANNEL_OPTIONS,
         "default_period_start": start.isoformat(), "default_period_end": end.isoformat(), "error": request.query_params.get("error"),
+        "product_variants": list_transit_product_variants(include_unavailable=True),
+        "selected_variant": variant,
     })
 
 
@@ -330,6 +349,7 @@ def products_transit_create(
     prefecture: str = Form(""),
     birth_place: str = Form(""),
     channel: str = Form("manual"),
+    report_variant: str = Form(DEFAULT_TRANSIT_VARIANT),
     period_label: str = Form("3ヶ月"),
     period_start: str = Form(""),
     period_end: str = Form(""),
@@ -338,8 +358,10 @@ def products_transit_create(
     staff: dict = Depends(get_current_staff),
     db: Session = Depends(get_db),
 ):
+    _ensure_transit_public_columns_runtime(db)
     if not customer_name.strip():
         return _redirect("/products/transit/new?error=required")
+    variant = get_transit_product_variant(report_variant) or get_transit_product_variant(DEFAULT_TRANSIT_VARIANT)
     req = create_request(
         db,
         request_code=generate_request_code(db),
@@ -351,10 +373,12 @@ def products_transit_create(
         prefecture=(prefecture or "").strip() or None,
         birth_place=(birth_place or "").strip() or None,
         channel=channel if channel in CHANNEL_OPTIONS else "manual",
-        period_label=(period_label or "3ヶ月").strip() or "3ヶ月",
+        period_label=str(variant["label"]),
+        period_months=int(variant.get("period_months") or 3),
         period_start=_parse_date(period_start),
         period_end=_parse_date(period_end),
-        template_name=(template_name or "standard_3month").strip() or "standard_3month",
+        report_variant=str(variant.get("key") or DEFAULT_TRANSIT_VARIANT),
+        template_name=str(variant.get("template_name") or template_name or "standard_3month").strip() or "standard_3month",
         notes=(notes or "").strip() or None,
         status="ready",
     )
@@ -363,13 +387,16 @@ def products_transit_create(
 
 @router.get("/products/transit/{request_id}", response_class=HTMLResponse)
 def products_transit_detail(request_id: int, request: Request, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    _ensure_transit_public_columns_runtime(db)
     req = db.get(TransitHubRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="not found")
     jobs = db.scalars(select(TransitHubJob).where(TransitHubJob.request_id == req.id).order_by(TransitHubJob.created_at.desc())).all()
     return templates.TemplateResponse(request=request, name="products_transit_detail.html", context={
         "request": request, "staff": staff, "item": req, "jobs": jobs, "status_labels": STATUS_LABELS,
-        "channel_options": CHANNEL_OPTIONS, "success": request.query_params.get("success"),
+        "channel_options": CHANNEL_OPTIONS, "product_variants": list_transit_product_variants(include_unavailable=True),
+        "selected_variant": get_transit_product_variant(req.report_variant),
+        "success": request.query_params.get("success"),
     })
 
 
@@ -384,6 +411,7 @@ def products_transit_update(
     prefecture: str = Form(""),
     birth_place: str = Form(""),
     channel: str = Form("manual"),
+    report_variant: str = Form(DEFAULT_TRANSIT_VARIANT),
     period_label: str = Form("3ヶ月"),
     period_start: str = Form(""),
     period_end: str = Form(""),
@@ -392,9 +420,11 @@ def products_transit_update(
     staff: dict = Depends(get_current_staff),
     db: Session = Depends(get_db),
 ):
+    _ensure_transit_public_columns_runtime(db)
     req = db.get(TransitHubRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="not found")
+    variant = get_transit_product_variant(report_variant) or get_transit_product_variant(req.report_variant)
     req.customer_name = customer_name.strip()
     req.customer_email = (customer_email or "").strip() or None
     req.birth_date = _parse_date(birth_date)
@@ -403,10 +433,12 @@ def products_transit_update(
     req.prefecture = (prefecture or "").strip() or None
     req.birth_place = (birth_place or "").strip() or None
     req.channel = channel if channel in CHANNEL_OPTIONS else "manual"
-    req.period_label = (period_label or "3ヶ月").strip() or "3ヶ月"
+    req.report_variant = str((variant or {}).get("key") or req.report_variant or DEFAULT_TRANSIT_VARIANT)
+    req.period_months = int((variant or {}).get("period_months") or req.period_months or 3)
+    req.period_label = str((variant or {}).get("label") or req.period_label or "3ヶ月運勢")
     req.period_start = _parse_date(period_start)
     req.period_end = _parse_date(period_end)
-    req.template_name = (template_name or "standard_3month").strip() or "standard_3month"
+    req.template_name = str((variant or {}).get("template_name") or template_name or "standard_3month").strip() or "standard_3month"
     req.notes = (notes or "").strip() or None
     if req.status == "draft":
         req.status = "ready"
@@ -417,6 +449,7 @@ def products_transit_update(
 
 @router.post("/products/transit/{request_id}/generate")
 def products_transit_generate(request_id: int, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    _ensure_transit_public_columns_runtime(db)
     req = db.get(TransitHubRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="not found")
@@ -488,6 +521,7 @@ def public_transit_html(token: str, db: Session = Depends(get_db)):
 
 @router.get("/api/products/transit/{request_id}")
 def api_products_transit_get(request_id: int, staff: dict = Depends(get_current_staff), db: Session = Depends(get_db)):
+    _ensure_transit_public_columns_runtime(db)
     req = db.get(TransitHubRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="not found")
@@ -502,6 +536,7 @@ async def api_products_transit_upload_html(
     staff: dict = Depends(get_current_staff),
     db: Session = Depends(get_db),
 ):
+    _ensure_transit_public_columns_runtime(db)
     req = db.get(TransitHubRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="not found")

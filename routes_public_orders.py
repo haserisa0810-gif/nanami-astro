@@ -78,6 +78,22 @@ COURSE_SLUG_PRICE_MAP = {
 }
 
 
+def _get_or_create_free_menu(db: Session) -> Menu:
+    menu = db.scalar(select(Menu).where(Menu.name == "無料鑑定"))
+    if menu:
+        return menu
+    menu = Menu(
+        name="無料鑑定",
+        description="無料の簡易鑑定",
+        price=0,
+        lead_time_hours=0,
+        is_active=True,
+    )
+    db.add(menu)
+    db.flush()
+    return menu
+
+
 def _ensure_stores_payment_table(db: Session) -> None:
     try:
         db.execute(text(STORES_PAYMENT_TABLE_SQL))
@@ -1125,9 +1141,7 @@ def free_reading_create(
             status_code=400,
         )
 
-    menu = db.scalar(select(Menu).where(Menu.name == "無料鑑定"))
-    if not menu:
-        raise HTTPException(status_code=500, detail="無料鑑定メニューが見つかりません")
+    menu = _get_or_create_free_menu(db)
 
     customer = None
     location = resolve_birth_location((birth_prefecture or "").strip() or None, (birth_place or "").strip() or None)

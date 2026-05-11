@@ -1,7 +1,11 @@
 {% extends "platform_hub_base.html" %}{% set title = "トランジット詳細" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_transit" %}{% block content %}
 <div class="card">
   <div class="section-head">
-    <div><h1>トランジット詳細</h1><p class="muted"><span class="code">{{ item.request_code }}</span> / 状態: {{ status_labels.get(item.status, item.status) }}</p></div>
+    <div>
+      <h1>トランジット詳細</h1>
+      <p class="muted"><span class="code">{{ item.request_code }}</span> / 状態: {{ status_labels.get(item.status, item.status) }}</p>
+      <p class="muted" style="margin-top:6px;">種別: {{ selected_variant.label if selected_variant else item.report_variant or '-' }} / 焦点: {{ selected_variant.focus if selected_variant else '-' }}</p>
+    </div>
     <div class="row"><form method="post" action="/products/transit/{{ item.id }}/generate"><button type="submit">生成する</button></form><a class="btn secondary" href="/products/transit">一覧へ戻る</a></div>
   </div>
   {% if success %}<div class="success">✅ {{ success }}</div>{% endif %}
@@ -37,6 +41,7 @@
     <h2>案件情報</h2>
     <form method="post" action="/products/transit/{{ item.id }}/update">
       <div class="grid">
+        <div><label>レポート種別</label><select name="report_variant">{% for variant in product_variants %}<option value="{{ variant.key }}" {% if selected_variant and selected_variant.key == variant.key %}selected{% endif %} {% if not variant.available %}disabled{% endif %}>{{ variant.label }}{% if not variant.available %}（準備中）{% endif %}</option>{% endfor %}</select></div>
         <div><label>顧客名</label><input type="text" name="customer_name" value="{{ item.customer_name }}" required></div>
         <div><label>メール</label><input type="email" name="customer_email" value="{{ item.customer_email or '' }}"></div>
         <div><label>生年月日</label><input type="date" name="birth_date" value="{{ item.birth_date or '' }}"></div>
@@ -45,10 +50,10 @@
         <div><label>都道府県</label><input type="text" name="prefecture" value="{{ item.prefecture or '' }}"></div>
         <div><label>出生地</label><input type="text" name="birth_place" value="{{ item.birth_place or '' }}"></div>
         <div><label>チャネル</label><select name="channel">{% for opt in channel_options %}<option value="{{ opt }}" {% if item.channel == opt %}selected{% endif %}>{{ opt }}</option>{% endfor %}</select></div>
-        <div><label>期間ラベル</label><input type="text" name="period_label" value="{{ item.period_label }}"></div>
+        <div><label>期間ラベル</label><input type="text" name="period_label" value="{{ item.period_label }}" readonly></div>
         <div><label>期間開始</label><input type="date" name="period_start" value="{{ item.period_start or '' }}"></div>
         <div><label>期間終了</label><input type="date" name="period_end" value="{{ item.period_end or '' }}"></div>
-        <div><label>テンプレ名</label><input type="text" name="template_name" value="{{ item.template_name }}"></div>
+        <div><label>テンプレ名</label><input type="text" name="template_name" value="{{ item.template_name }}" readonly></div>
       </div>
       <div style="margin-top:12px;"><label>メモ</label><textarea name="notes">{{ item.notes or '' }}</textarea></div>
       <div class="row" style="margin-top:16px;"><button type="submit" class="secondary">保存する</button></div>

@@ -1,9 +1,30 @@
 {% extends "platform_hub_base.html" %}{% set title = "トランジット作成" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_transit" %}{% block content %}
 <div class="card">
   <h1>トランジット作成</h1>
-  <p class="muted">ここで登録した案件は、既存の通常鑑定・外部鑑定テーブルとは分離して保存されます。</p>
+  <p class="muted">3ヶ月・仕事・恋愛・6ヶ月を先に分けておくと、あとから1年版を追加しやすくなります。</p>
+  <div class="stat" style="margin:16px 0 18px;">
+    <div class="muted">選択中の種別</div>
+    <div style="margin-top:8px;font-weight:700;font-size:18px;">{{ selected_variant.label if selected_variant else '3ヶ月運勢' }}</div>
+    <div class="muted" style="margin-top:6px;line-height:1.7;">{{ selected_variant.description if selected_variant else '' }}</div>
+  </div>
   {% if error %}<div class="error">必須項目を確認してください。</div>{% endif %}
   <form method="post" action="/products/transit">
+    <div class="grid">
+      <div>
+        <label>レポート種別</label>
+        <select name="report_variant">
+          {% for variant in product_variants %}
+            <option value="{{ variant.key }}" {% if selected_variant and selected_variant.key == variant.key %}selected{% endif %} {% if not variant.available %}disabled{% endif %}>
+              {{ variant.label }}{% if not variant.available %}（準備中）{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>テンプレ名</label>
+        <input type="text" name="template_name" value="{{ selected_variant.template_name if selected_variant else 'standard_3month' }}" readonly>
+      </div>
+    </div>
     <div class="grid">
       <div><label>顧客名</label><input type="text" name="customer_name" required></div>
       <div><label>メール</label><input type="email" name="customer_email"></div>
@@ -13,10 +34,9 @@
       <div><label>都道府県</label><input type="text" name="prefecture"></div>
       <div><label>出生地</label><input type="text" name="birth_place"></div>
       <div><label>チャネル</label><select name="channel">{% for item in channel_options %}<option value="{{ item }}">{{ item }}</option>{% endfor %}</select></div>
-      <div><label>期間ラベル</label><input type="text" name="period_label" value="3ヶ月"></div>
+      <div><label>期間ラベル</label><input type="text" name="period_label" value="{{ selected_variant.label if selected_variant else '3ヶ月運勢' }}" readonly></div>
       <div><label>期間開始</label><input type="date" name="period_start" value="{{ default_period_start }}"></div>
       <div><label>期間終了</label><input type="date" name="period_end" value="{{ default_period_end }}"></div>
-      <div><label>テンプレ名</label><input type="text" name="template_name" value="standard_3month"></div>
     </div>
     <div style="margin-top:12px;"><label>メモ</label><textarea name="notes" placeholder="商品メモ、相談文、管理用メモなど"></textarea></div>
     <div class="row" style="margin-top:16px;"><button type="submit">保存する</button><a class="btn secondary" href="/products/transit">戻る</a></div>

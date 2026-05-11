@@ -236,6 +236,7 @@ def build_base_meta(
     name_b: str | None,
     gender: str,
     gender_b: str,
+    reading_style: str | None = None,
 ) -> dict[str, Any]:
     today = date.today().isoformat()
     return {
@@ -269,6 +270,7 @@ def build_base_meta(
         "name_b": name_b,
         "gender": gender,
         "gender_b": gender_b,
+        "style": reading_style or "general",
         "age_mode": detect_age_mode(birth_date),
     }
 
