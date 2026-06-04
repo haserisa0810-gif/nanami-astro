@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import os
+import time
 
 from dotenv import load_dotenv
 from sqlalchemy import inspect, select, text
@@ -312,6 +314,13 @@ def _backfill_reports_from_orders() -> None:
         db.commit()
 
 
+def run_backfill_reports() -> None:
+    print("backfill reports start")
+    started_at = time.perf_counter()
+    _backfill_reports_from_orders()
+    print(f"backfill reports end ({time.perf_counter() - started_at:.3f}s)")
+
+
 
 def _ensure_transit_hub_tables() -> None:
     inspector = inspect(engine)
@@ -373,7 +382,7 @@ def _ensure_transit_hub_columns() -> None:
         except Exception:
             pass
 
-def init_db() -> None:
+def init_db(*, run_backfill: bool = True) -> None:
     Base.metadata.create_all(bind=engine)
     ensure_daily_card_indexes(engine)
     _ensure_order_free_columns()
@@ -390,7 +399,8 @@ def init_db() -> None:
     _ensure_order_result_view_columns()
     _ensure_transit_hub_tables()
     _ensure_transit_hub_columns()
-    _backfill_reports_from_orders()
+    if run_backfill:
+        _backfill_reports_from_orders()
 
 
 def seed_defaults(db: Session) -> None:
@@ -469,10 +479,31 @@ def seed_defaults(db: Session) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--backfill-reports",
+        action="store_true",
+        help="Run only the legacy reports backfill job and exit.",
+    )
+    args = parser.parse_args()
+
+    if args.backfill_reports:
+        run_backfill_reports()
+        return
+
     print(f"[bootstrap] DATABASE_URL={os.getenv('DATABASE_URL', '').split('@')[0] if os.getenv('DATABASE_URL') else 'env-not-set'}")
+
+    init_started_at = time.perf_counter()
+    print("bootstrap: init_db start")
     init_db()
+    print(f"bootstrap: init_db end ({time.perf_counter() - init_started_at:.3f}s)")
+
+    seed_started_at = time.perf_counter()
+    print("bootstrap: seed_defaults start")
     with SessionLocal() as db:
         seed_defaults(db)
+    print(f"bootstrap: seed_defaults end ({time.perf_counter() - seed_started_at:.3f}s)")
+
     print("bootstrap completed")
 
 

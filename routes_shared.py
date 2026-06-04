@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import traceback
 from typing import Any
 
@@ -38,6 +39,7 @@ DEFAULT_INDEX_CONTEXT: dict[str, Any] = {
 
 
 def startup_platform_safe() -> None:
+    overall_started_at = time.perf_counter()
     mode = (os.getenv("BOOTSTRAP_ON_STARTUP") or "safe").strip().lower()
     if mode in {"", "0", "false", "off", "skip", "disabled"}:
         print("startup bootstrap skipped")
@@ -46,10 +48,18 @@ def startup_platform_safe() -> None:
         from bootstrap_platform import init_db, seed_defaults
         from db import db_session
 
-        init_db()
+        init_db_started_at = time.perf_counter()
+        print("startup bootstrap: init_db start")
+        init_db(run_backfill=False)
+        print(f"startup bootstrap: init_db end ({time.perf_counter() - init_db_started_at:.3f}s)")
+
+        seed_started_at = time.perf_counter()
+        print("startup bootstrap: seed_defaults start")
         with db_session() as db:
             seed_defaults(db)
-        print("startup bootstrap completed")
+        print(f"startup bootstrap: seed_defaults end ({time.perf_counter() - seed_started_at:.3f}s)")
+
+        print(f"startup bootstrap completed ({time.perf_counter() - overall_started_at:.3f}s)")
     except Exception:
         print("startup bootstrap failed")
         traceback.print_exc()
