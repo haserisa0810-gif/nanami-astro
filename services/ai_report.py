@@ -709,7 +709,7 @@ def generate_report(
             return f"Claude client 初期化エラー: {e}"
 
         model_name, model_source = _resolve_claude_model_name(meta2, astrology_system)
-        max_tokens = 3000 if ("line" in rt or output_style == "line") else 8192
+        max_tokens = 3000 if ("line" in rt or output_style == "line") else 16000
         model_candidates = [model_name]
         provider_name = "claude"
         dynamic_system_prompt = (_CLAUDE_SYSTEM_PROMPT + "\n\n" + ctx.get("age_system_prompt", "") + "\n\n" + ctx.get("role_prompt", "")).strip()
