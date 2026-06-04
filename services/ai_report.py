@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -44,6 +45,20 @@ CLAUDE_SONNET_MODEL = "claude-sonnet-4-6"
 CLAUDE_ALLOWED_MODEL_NAMES = {"claude-haiku-4-5-20251001", "claude-4-5-haiku-latest", "claude-sonnet-4-5", "claude-sonnet-4-6"}
 
 _PROMPTS_DIR = (Path(__file__).resolve().parents[1] / "prompts").resolve()
+logger = logging.getLogger(__name__)
+
+PUBLIC_AI_UNAVAILABLE_MESSAGE = (
+    "AI鑑定本文は現在生成できません。時間をおいて再試行してください。"
+    "計算結果とYAMLログは利用できます。"
+)
+
+
+def _public_ai_unavailable(reason: str, exc: Exception | None = None) -> str:
+    if exc is None:
+        logger.error("ai_generation_unavailable reason=%s", reason)
+    else:
+        logger.exception("ai_generation_unavailable reason=%s error=%r", reason, exc)
+    return PUBLIC_AI_UNAVAILABLE_MESSAGE
 
 
 def _read_prompt_file(name: str) -> str:
@@ -700,13 +715,13 @@ def generate_report(
     if use_claude:
         api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
         if not api_key:
-            return "ANTHROPIC_API_KEY が未設定です"
+            return _public_ai_unavailable("missing_anthropic_api_key")
         if Anthropic is None:
-            return "anthropic が読み込めません（requirements.txt を確認）"
+            return _public_ai_unavailable("anthropic_module_unavailable")
         try:
             client = Anthropic(api_key=api_key)
         except Exception as e:
-            return f"Claude client 初期化エラー: {e}"
+            return _public_ai_unavailable("anthropic_client_init_failed", e)
 
         model_name, model_source = _resolve_claude_model_name(meta2, astrology_system)
         max_tokens = 3000 if ("line" in rt or output_style == "line") else 16000
@@ -716,13 +731,13 @@ def generate_report(
     else:
         api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
         if not api_key:
-            return "GEMINI_API_KEY が未設定です"
+            return _public_ai_unavailable("missing_gemini_api_key")
         if genai is None or types is None:
-            return "google-genai が読み込めません（requirements.txt を確認）"
+            return _public_ai_unavailable("google_genai_module_unavailable")
         try:
             client = genai.Client(api_key=api_key)
         except Exception as e:
-            return f"Gemini client 初期化エラー: {e}"
+            return _public_ai_unavailable("gemini_client_init_failed", e)
 
         model_name, model_source = _resolve_model_name(meta2, astrology_system)
         max_tokens = 3000 if ("line" in rt or output_style == "line") else (8192 if model_name == PRO_MODEL else 5000)
@@ -759,4 +774,7 @@ def generate_report(
         if candidate != model_name:
             fallback_used = True
 
-    return f"AI生成エラー: {last_error} / {_debug_model_info(model_name, model_source, fallback_used=fallback_used, provider=provider_name)}"
+    return _public_ai_unavailable(
+        f"generation_failed provider={provider_name} model={model_name} source={model_source} fallback_used={fallback_used}",
+        last_error,
+    )

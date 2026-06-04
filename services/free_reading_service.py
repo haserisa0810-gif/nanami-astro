@@ -86,6 +86,7 @@ def _is_generation_error_text(text: str | None) -> bool:
         "Claude client 初期化エラー",
         "google-genai が読み込めません",
         "anthropic が読み込めません",
+        "AI鑑定本文は現在生成できません",
     )
     return any(value.startswith(prefix) for prefix in error_prefixes)
 

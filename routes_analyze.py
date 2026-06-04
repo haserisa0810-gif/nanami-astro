@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import traceback
 from typing import Any, Literal
 
@@ -9,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from routes_shared import templates
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3", "integrated_w_shichu"]
 AnalysisType = Literal["single", "compatibility"]
@@ -516,4 +518,5 @@ def analyze(
         raise
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=502, detail=str(e))
+        logger.exception("analyze_failed error=%r", e)
+        raise HTTPException(status_code=502, detail="鑑定処理に失敗しました。時間をおいて再試行してください。")
