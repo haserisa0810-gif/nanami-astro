@@ -5,7 +5,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from prefs import PREF_LABELS
 from routes_shared import DEFAULT_INDEX_CONTEXT, build_full_astrologer_summary, templates
@@ -88,6 +88,14 @@ def guide_page(request: Request):
 @router.get("/about", response_class=HTMLResponse)
 def about_page(request: Request):
     return templates.TemplateResponse(request=request, name="about.html", context={"request": request})
+
+
+@router.get("/legal")
+@router.get("/terms")
+@router.get("/privacy")
+@router.get("/contact")
+def about_redirect():
+    return RedirectResponse("/about", status_code=302)
 
 
 @router.post("/astrologer-result", response_class=HTMLResponse)
