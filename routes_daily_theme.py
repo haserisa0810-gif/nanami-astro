@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import os
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -1148,7 +1149,7 @@ def daily_theme_page(request: Request):
         name="daily_theme.html",
         context={
             "request": request,
-            "initial_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "initial_date": datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d"),
         },
     )
 

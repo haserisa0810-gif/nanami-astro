@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,7 @@ def default_period_dates(months: int = 3, start: date | None = None) -> tuple[da
 
 
 def default_period_dates_for_variant(variant_key: str | None, start: date | None = None) -> tuple[date, date]:
-    resolved = resolve_variant_period_range(variant_key, start_date=start or date.today())
+    resolved = resolve_variant_period_range(variant_key, start_date=start or datetime.now(ZoneInfo("Asia/Tokyo")).date())
     return resolved["period_start"], resolved["period_end"]
 
 

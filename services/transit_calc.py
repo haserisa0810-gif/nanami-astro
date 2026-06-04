@@ -4,11 +4,14 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any
 from itertools import combinations
 
 from services.western_calc import calc_western_from_payload, angle_diff
+
+TRANSIT_TIMEZONE = ZoneInfo("Asia/Tokyo")
 
 # 外惑星は動きが遅いのでORBを絞る
 TRANSIT_ORB_BY_PLANET: dict[str, float] = {
@@ -47,18 +50,28 @@ NATAL_BODIES = {
 }
 
 
+def _target_datetime(target_date: datetime | None = None) -> datetime:
+    if target_date is None:
+        return datetime.now(TRANSIT_TIMEZONE)
+    if target_date.tzinfo is None:
+        return target_date.replace(tzinfo=TRANSIT_TIMEZONE)
+    return target_date.astimezone(TRANSIT_TIMEZONE)
+
+
 def _calc_today_planets(
     target_date: datetime | None = None,
     lat: float = 35.6895,
     lng: float = 139.6917,
 ) -> list[dict[str, Any]]:
-    """今日（または指定日）の天体位置を計算して返す。"""
-    now = target_date or datetime.now(timezone.utc)
+    """今日（または指定日）の天体位置を日本時間基準で計算して返す。"""
+    now = _target_datetime(target_date)
+    offset = now.utcoffset()
+    tz_offset_hours = offset.total_seconds() / 3600 if offset is not None else 9
     payload = {
         "year": now.year, "month": now.month, "day": now.day,
         "hour": now.hour, "minute": now.minute,
         "lat": lat, "lng": lng,
-        "tz_offset_hours": 0,
+        "tz_offset_hours": tz_offset_hours,
         "include_asteroids": False,
         "include_chiron": False,
         "include_lilith": False,
@@ -135,7 +148,7 @@ def calc_global_transit_snapshot(
     """個人出生図を使わず、その日の全体トランジットだけを返す。"""
     today_planets = _calc_today_planets(target_date, lat, lng)
     aspects = _match_transit_to_transit_aspects(today_planets)
-    transit_date = (target_date or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    transit_date = _target_datetime(target_date).strftime("%Y-%m-%d")
 
     return {
         "transit_date": transit_date,
@@ -156,7 +169,7 @@ def calc_transits_single(
     """1人分のトランジット計算。handoff_logのtransitセクションに入れる形式で返す。"""
     today_planets = _calc_today_planets(target_date, lat, lng)
     aspects = _match_aspects(today_planets, natal_planets, label_prefix="transit→natal")
-    transit_date = (target_date or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    transit_date = _target_datetime(target_date).strftime("%Y-%m-%d")
 
     return {
         "transit_date": transit_date,
@@ -182,7 +195,7 @@ def calc_transits_synastry(
     - layer_shared: AとBに同時にかかってるアスペクト（transit_planet一致）
     """
     today_planets = _calc_today_planets(target_date, lat, lng)
-    transit_date = (target_date or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    transit_date = _target_datetime(target_date).strftime("%Y-%m-%d")
 
     aspects_a = _match_aspects(today_planets, natal_a, label_prefix="transit→A")
     aspects_b = _match_aspects(today_planets, natal_b, label_prefix="transit→B")
@@ -236,7 +249,7 @@ def calc_transits_long_term(
         "Uranus": 2.0,  "Neptune": 2.0, "Pluto": 2.0,
     }
 
-    today = date.today()
+    today = datetime.now(TRANSIT_TIMEZONE).date()
     end_date = today + timedelta(days=months_ahead * 30)
 
     scan_dates: list[date] = []
@@ -247,7 +260,7 @@ def calc_transits_long_term(
 
     date_planets: list[tuple[date, list[dict[str, Any]]]] = []
     for sd in scan_dates:
-        dt = datetime(sd.year, sd.month, sd.day, 12, 0, tzinfo=timezone.utc)
+        dt = datetime(sd.year, sd.month, sd.day, 12, 0, tzinfo=TRANSIT_TIMEZONE)
         planets = _calc_today_planets(dt, lat, lng)
         date_planets.append((sd, planets))
 

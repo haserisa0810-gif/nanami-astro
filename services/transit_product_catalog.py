@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +90,7 @@ def resolve_period_range(
     *,
     start_date: date | None = None,
 ) -> tuple[date, date]:
-    start = start_date or date.today()
+    start = start_date or datetime.now(ZoneInfo("Asia/Tokyo")).date()
     return start, _add_months(start, months)
 
 
@@ -99,7 +100,7 @@ def resolve_variant_period_range(
     start_date: date | None = None,
 ) -> dict[str, Any]:
     variant = get_transit_product_variant(variant_key) or TRANSIT_PRODUCT_VARIANT_MAP[DEFAULT_TRANSIT_VARIANT]
-    start = start_date or date.today()
+    start = start_date or datetime.now(ZoneInfo("Asia/Tokyo")).date()
     end = _add_months(start, int(variant.get("period_months") or 3))
     return {
         "variant": dict(variant),
