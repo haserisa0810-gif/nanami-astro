@@ -132,120 +132,78 @@ section, article, .section, .chapter, .card, .report-section {
   overflow-wrap: anywhere !important;
 }
 #charts {
-  break-inside: avoid-page !important;
-  page-break-inside: avoid !important;
-  padding-top: 24px !important;
-  padding-bottom: 18px !important;
+  break-inside: auto !important;
+  page-break-inside: auto !important;
+  padding-top: 42px !important;
+  padding-bottom: 42px !important;
 }
 #charts > .chapter-inner-wide,
 #charts > .chart-inner {
-  max-width: 650px !important;
+  max-width: 720px !important;
   margin-left: auto !important;
   margin-right: auto !important;
 }
 #charts .chapter-eyebrow {
-  margin-bottom: 12px !important;
-}
-#charts .chapter-num {
-  font-size: 30px !important;
-}
-#charts .chapter-label {
-  font-size: 9px !important;
-  letter-spacing: .22em !important;
-}
-#charts .chapter-title {
-  font-size: 24px !important;
-  line-height: 1.15 !important;
+  margin-bottom: 22px !important;
 }
 #charts .chapter-divider {
-  margin-bottom: 14px !important;
+  margin-bottom: 26px !important;
+}
+#charts .chart-page {
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+  padding-top: 18px !important;
+  padding-bottom: 18px !important;
+}
+#charts .chart-page + .chart-page {
+  break-before: page !important;
+  page-break-before: always !important;
 }
 #charts .chart-section-label {
-  margin-top: 8px !important;
-  margin-bottom: 8px !important;
-  font-size: 9px !important;
-  line-height: 1.35 !important;
-  letter-spacing: .14em !important;
+  margin-top: 0 !important;
+  margin-bottom: 18px !important;
+  line-height: 1.5 !important;
 }
 #charts .chart-frame,
 #charts .chart-svg-wrap {
-  max-width: 430px !important;
+  max-width: 540px !important;
   margin-top: 0 !important;
-  margin-bottom: 12px !important;
-  padding: 8px !important;
-  border-radius: 8px !important;
-  box-shadow: none !important;
+  margin-bottom: 24px !important;
   break-inside: avoid-page !important;
   page-break-inside: avoid !important;
 }
 #charts .chart-frame svg,
 #charts .chart-svg-wrap svg {
   width: 100% !important;
-  max-height: 410px !important;
   height: auto !important;
   display: block !important;
 }
-#charts .shichu-wrap {
-  margin-top: 0 !important;
-  margin-bottom: 10px !important;
-  overflow: visible !important;
+#charts .shichu-wrap,
+#charts .shichu-table,
+#charts .element-bars {
   break-inside: avoid-page !important;
   page-break-inside: avoid !important;
+}
+#charts .shichu-wrap {
+  margin-bottom: 28px !important;
+  overflow: visible !important;
 }
 #charts .shichu-table {
-  max-width: 520px !important;
+  max-width: 580px !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
-  break-inside: avoid-page !important;
-  page-break-inside: avoid !important;
 }
-#charts .shichu-table th,
-#charts .shichu-table td {
-  padding: 5px 9px !important;
-  font-size: 11px !important;
-  line-height: 1.25 !important;
-}
-#charts .shichu-table th {
-  padding-top: 4px !important;
-  padding-bottom: 4px !important;
-  font-size: 9px !important;
-  letter-spacing: .08em !important;
-}
-#charts .shichu-table .stem,
-#charts .shichu-table .branch,
-#charts .shichu-kanshi {
-  font-size: 20px !important;
-  line-height: 1.05 !important;
-}
-#charts .shichu-table .jingod,
-#charts .shichu-ten-god {
-  font-size: 10px !important;
-  line-height: 1.2 !important;
+#charts .chart-section-label-five {
+  margin-top: 30px !important;
 }
 #charts .element-bars {
-  max-width: 500px !important;
-  margin: 6px auto 0 !important;
-  gap: 5px !important;
-  break-inside: avoid-page !important;
-  page-break-inside: avoid !important;
-}
-#charts .element-row {
-  gap: 8px !important;
-}
-#charts .element-name {
-  width: 28px !important;
-  font-size: 10px !important;
-}
-#charts .element-bar-bg {
-  height: 4px !important;
-}
-#charts .element-count {
-  width: 22px !important;
-  font-size: 10px !important;
+  max-width: 560px !important;
+  margin: 16px auto 0 !important;
 }
 </style>
 '''
     html = _normalize_cover_info_tables_for_pdf(html)
+    html = _normalize_chart_pages_for_pdf(html)
     if "nanami-pdf-export-css" not in html:
         if "</head>" in html:
             return html.replace("</head>", css + "</head>", 1)
@@ -309,6 +267,45 @@ def _normalize_cover_info_tables_for_pdf(html: str) -> str:
     normalized = div_re.sub(repl, html)
     if converted:
         print(f"[external_pdf][cover] normalized_cover_info_tables={converted}", flush=True)
+    return normalized
+
+
+def _normalize_chart_pages_for_pdf(html: str) -> str:
+    """Add chart-page wrappers to older stored report HTML before PDF export."""
+    if not html or "id=\"charts\"" not in html and "id='charts'" not in html:
+        return html
+    if "chart-page-western" in html or "chart-page-shichu" in html:
+        return html
+
+    western_marker = '<div class="chart-section-label">Natal Chart'
+    shichu_marker = '<div class="chart-section-label" style="margin-top:2.5rem;">Four Pillars of Destiny'
+    if western_marker not in html or shichu_marker not in html:
+        return html
+
+    normalized = html.replace(
+        western_marker,
+        '<div class="chart-page chart-page-western">\n    ' + western_marker,
+        1,
+    )
+    normalized = normalized.replace(
+        shichu_marker,
+        '</div>\n    <div class="chart-page chart-page-shichu">\n    ' + shichu_marker.replace(' style="margin-top:2.5rem;"', ''),
+        1,
+    )
+
+    shichu_pos = normalized.find("chart-page-shichu")
+    if shichu_pos < 0:
+        return html
+    close_marker = "\n  </div>\n</section>"
+    close_pos = normalized.find(close_marker, shichu_pos)
+    if close_pos < 0:
+        close_marker = "\n  </div>\n</div>"
+        close_pos = normalized.find(close_marker, shichu_pos)
+    if close_pos < 0:
+        return html
+
+    normalized = normalized[:close_pos] + "\n    </div>" + normalized[close_pos:]
+    print("[external_pdf][charts] normalized_legacy_chart_pages=2", flush=True)
     return normalized
 
 

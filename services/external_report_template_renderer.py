@@ -7,7 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from services.result_builder import _chart_svg  # existing static SVG renderer
+from services.result_builder import _chart_svg, _vedic_chart_svg  # existing static SVG renderers
 from services.shichu_formatter import extract_shichu_data
 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
@@ -538,23 +538,42 @@ def _charts(raw: dict[str, Any], shichu: dict[str, Any], premium: bool) -> str:
         svg = _chart_svg(raw, size=560 if not premium else 600)
     except Exception:
         svg = ""
+    try:
+        vedic_svg = _vedic_chart_svg(raw, size=560) if premium else ""
+    except Exception:
+        vedic_svg = ""
     chart_wrap_class = "chart-svg-wrap" if premium else "chart-frame"
     section_class = "chart-section" if premium else "chapter"
     inner_class = "chart-inner" if premium else "chapter-inner-wide"
     label = "Natal Chart — Western Astrology"
     shichu_table = _render_shichu_table(shichu, premium=premium)
     five = _render_five_elements(shichu, raw)
+    vedic_page = (
+        f"""
+    <div class="chart-page chart-page-vedic">
+      <div class="chart-section-label">Vedic Astrology — Rashi Chart</div>
+      <div class="{chart_wrap_class} vedic-chart-frame">{vedic_svg}</div>
+    </div>
+"""
+        if vedic_svg
+        else ""
+    )
     return f"""
 <section class="{section_class}" id="charts">
   <div class="{inner_class}">
     <div class="chapter-eyebrow"><div class="chapter-num" style="font-size:32px;">図</div><div><span class="chapter-label">Charts</span><h2 class="chapter-title">ホロスコープ図・命式一覧</h2></div></div>
     <div class="chapter-divider"></div>
-    <div class="chart-section-label">{label}</div>
-    <div class="{chart_wrap_class}">{svg}</div>
-    <div class="chart-section-label" style="margin-top:2.5rem;">Four Pillars of Destiny — 四柱推命命式</div>
-    {shichu_table}
-    <div class="chart-section-label" style="margin-top:2.5rem;">Five Elements — 五行バランス</div>
-    {five}
+    <div class="chart-page chart-page-western">
+      <div class="chart-section-label">{label}</div>
+      <div class="{chart_wrap_class}">{svg}</div>
+    </div>
+    <div class="chart-page chart-page-shichu">
+      <div class="chart-section-label">Four Pillars of Destiny — 四柱推命命式</div>
+      {shichu_table}
+      <div class="chart-section-label chart-section-label-five">Five Elements — 五行バランス</div>
+      {five}
+    </div>
+{vedic_page}
   </div>
 </section>
 """
