@@ -61,7 +61,7 @@ section, article, .section, .chapter, .card, .report-section {
 .cover-info,
 .cover-info > div,
 .cover-info-table {
-  width: min(100%, 680px) !important;
+  width: 680px !important;
   max-width: 680px !important;
   margin-left: auto !important;
   margin-right: auto !important;
@@ -82,26 +82,122 @@ section, article, .section, .chapter, .card, .report-section {
   text-orientation: mixed !important;
   white-space: normal !important;
   word-break: normal !important;
-  overflow-wrap: anywhere !important;
   line-height: 1.65 !important;
 }
 .cover-label,
 .cit-label {
   min-width: 6.5em !important;
   white-space: nowrap !important;
+  overflow-wrap: normal !important;
   letter-spacing: .08em !important;
 }
 .cover-value,
 .cit-val {
   min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+.cover-info-table.nanami-pdf-cover-info-table {
+  display: table !important;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 7px !important;
+  text-align: left !important;
+}
+.cover-info-table.nanami-pdf-cover-info-table th,
+.cover-info-table.nanami-pdf-cover-info-table td {
+  display: table-cell !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  word-break: normal !important;
+  line-height: 1.65 !important;
+  vertical-align: top !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+.cover-info-table.nanami-pdf-cover-info-table th {
+  width: 9em !important;
+  min-width: 9em !important;
+  max-width: 9em !important;
+  padding-left: 0 !important;
+  padding-right: 18px !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  font-weight: inherit !important;
+}
+.cover-info-table.nanami-pdf-cover-info-table td {
+  width: auto !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
 }
 </style>
 '''
-    if "nanami-pdf-export-css" in html:
+    html = _normalize_cover_info_tables_for_pdf(html)
+    if "nanami-pdf-export-css" not in html:
+        if "</head>" in html:
+            return html.replace("</head>", css + "</head>", 1)
+        return css + html
+    return html
+
+
+def _normalize_cover_info_tables_for_pdf(html: str) -> str:
+    """Convert the cover profile span grid to a real table for WeasyPrint.
+
+    WeasyPrint's CSS grid support is limited enough that the original inline
+    grid can shrink to a narrow column, causing Japanese labels to wrap one
+    character per line. A table is more predictable for this fixed metadata
+    block and still leaves the stored customer-facing HTML unchanged.
+    """
+    if not html or "cover-info-table" not in html:
         return html
-    if "</head>" in html:
-        return html.replace("</head>", css + "</head>", 1)
-    return css + html
+    if "nanami-pdf-cover-info-table" in html:
+        return html
+
+    div_re = re.compile(
+        r"<div\b(?P<attrs>[^>]*class=(?P<quote>['\"])[^'\"]*\bcover-info-table\b[^'\"]*(?P=quote)[^>]*)>"
+        r"(?P<body>.*?)</div>",
+        flags=re.I | re.S,
+    )
+    span_pair_re = re.compile(
+        r"<span\b[^>]*class=(?P<lq>['\"])(?P<label_class>[^'\"]*(?:cover-label|cit-label)[^'\"]*)(?P=lq)[^>]*>"
+        r"(?P<label>.*?)</span>\s*"
+        r"<span\b[^>]*class=(?P<vq>['\"])(?P<value_class>[^'\"]*(?:cover-value|cit-val)[^'\"]*)(?P=vq)[^>]*>"
+        r"(?P<value>.*?)</span>",
+        flags=re.I | re.S,
+    )
+
+    converted = 0
+
+    def repl(match: re.Match[str]) -> str:
+        nonlocal converted
+        body = match.group("body")
+        rows: list[str] = []
+        for pair in span_pair_re.finditer(body):
+            label_class = pair.group("label_class")
+            value_class = pair.group("value_class")
+            label = pair.group("label").strip()
+            value = pair.group("value").strip()
+            rows.append(
+                "<tr>"
+                f"<th class=\"{label_class}\">{label}</th>"
+                f"<td class=\"{value_class}\">{value}</td>"
+                "</tr>"
+            )
+        if not rows:
+            return match.group(0)
+        converted += 1
+        return (
+            "<table class=\"cover-info-table nanami-pdf-cover-info-table\">"
+            "<tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+
+    normalized = div_re.sub(repl, html)
+    if converted:
+        print(f"[external_pdf][cover] normalized_cover_info_tables={converted}", flush=True)
+    return normalized
 
 
 def generate_pdf_from_html_to_storage(
@@ -129,6 +225,13 @@ def generate_pdf_from_html_to_storage(
         ) from exc
 
     html_for_pdf = _inject_pdf_css(html)
+    print(
+        f"[external_pdf][cover] order_code={order_code} "
+        f"pdf_css={'yes' if 'nanami-pdf-export-css' in html_for_pdf else 'no'} "
+        f"table_normalized={'yes' if 'nanami-pdf-cover-info-table' in html_for_pdf else 'no'} "
+        f"cover_label_count={html_for_pdf.count('cover-label') + html_for_pdf.count('cit-label')}",
+        flush=True,
+    )
     object_name = pdf_object_name(order_code)
     total_started = perf_counter()
     last_mark = total_started
