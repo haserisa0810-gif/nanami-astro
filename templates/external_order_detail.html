@@ -336,7 +336,7 @@
   async function pollReportStatus() {
     pollCount += 1;
     if (pollCount > maxPollCount) {
-      setStatusUi('failed', {last_error: '15分以上経過したため自動確認を停止しました。画面を手動更新して状態を確認してください。'});
+      setStatusUi('failed', {last_error: '生成が長時間完了していません。画面を更新し、失敗状態を確認してから再生成してください。'});
       return;
     }
 

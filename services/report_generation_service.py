@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 import json
+import logging
 import re
 from time import perf_counter
 from types import SimpleNamespace
@@ -50,6 +51,9 @@ REPORT_OPTION_DEFAULTS = {
 PREMIUM_ALL_INCLUDED_OPTIONS = dict(REPORT_OPTION_DEFAULTS["premium"])
 
 DEFAULT_CLAUDE_REPORT_MODEL = "claude-sonnet-4-6"
+DEFAULT_EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS = 600
+CLAUDE_STREAM_PROGRESS_INTERVAL_SECONDS = 30
+logger = logging.getLogger(__name__)
 
 
 def resolve_report_claude_model() -> str:
@@ -488,6 +492,14 @@ def _resolve_external_report_max_tokens(model: str) -> int:
     return min(requested, max_allowed)
 
 
+def _external_report_claude_timeout_seconds() -> int:
+    raw = (os.getenv("EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS") or str(DEFAULT_EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS)).strip()
+    try:
+        return max(60, min(int(raw), DEFAULT_EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS))
+    except ValueError:
+        return DEFAULT_EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS
+
+
 def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> str:
     api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     if not api_key:
@@ -497,21 +509,49 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
 
     model = resolve_report_claude_model()
     resolved_max = max_tokens or min(_resolve_external_report_max_tokens(model), 32000)
-    client = Anthropic(api_key=api_key)
+    timeout_seconds = _external_report_claude_timeout_seconds()
+    client = Anthropic(api_key=api_key, timeout=timeout_seconds, max_retries=0)
 
-    print(f"[external_report][claude] start model={model} max_tokens={resolved_max} prompt_chars={len(prompt)}", flush=True)
+    logger.info(
+        "[REPORT_CLAUDE_CALL_START] model=%s max_tokens=%s prompt_chars=%s timeout_seconds=%s",
+        model,
+        resolved_max,
+        len(prompt),
+        timeout_seconds,
+    )
     chunks: list[str] = []
+    stream_started = perf_counter()
+    last_progress = stream_started
+    received_chars = 0
+
+    def append_chunk(text: str) -> None:
+        nonlocal last_progress, received_chars
+        now = perf_counter()
+        if now - stream_started > timeout_seconds:
+            raise TimeoutError(f"Claude stream exceeded {timeout_seconds} seconds")
+        chunks.append(text)
+        received_chars += len(text)
+        if now - last_progress >= CLAUDE_STREAM_PROGRESS_INTERVAL_SECONDS:
+            logger.info(
+                "[REPORT_CLAUDE_STREAM_PROGRESS] model=%s elapsed_sec=%.2f received_chars=%s",
+                model,
+                now - stream_started,
+                received_chars,
+            )
+            last_progress = now
+
     with client.messages.stream(
         model=model,
         max_tokens=resolved_max,
         system="あなたは星月七海の鑑定書制作担当です。必ず指定形式のJSONだけを返してください。",
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
+        logger.info("[REPORT_CLAUDE_STREAM_START] model=%s", model)
         text_stream = getattr(stream, "text_stream", None)
         if text_stream is not None:
             for text in text_stream:
                 if isinstance(text, str):
-                    chunks.append(text)
+                    append_chunk(text)
         else:
             for event in stream:
                 if getattr(event, "type", "") == "content_block_delta":
@@ -519,10 +559,16 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
                     if getattr(delta, "type", "") == "text_delta":
                         text = getattr(delta, "text", "")
                         if isinstance(text, str):
-                            chunks.append(text)
+                            append_chunk(text)
 
     out = _strip_code_fence("".join(chunks))
-    print(f"[external_report][claude] end model={model} output_chars={len(out)}", flush=True)
+    logger.info(
+        "[REPORT_CLAUDE_STREAM_END] model=%s elapsed_sec=%.2f output_chars=%s",
+        model,
+        perf_counter() - stream_started,
+        len(out),
+    )
+    logger.info("[REPORT_CLAUDE_CALL_END] model=%s output_chars=%s", model, len(out))
     return out
 
 
@@ -572,7 +618,13 @@ def _set_generation_step(db, order: ExternalOrder, step: str, message: str | Non
     msg = (message or step).strip()
     order.report_generation_status = "generating"
     order.last_error = f"STEP:{step}|{msg}"[:2000]
-    print(f"[external_report] order={getattr(order, 'id', None)} code={getattr(order, 'order_code', '')} step={step} message={msg}", flush=True)
+    logger.info(
+        "[REPORT_GENERATION_STEP] order_id=%s code=%s step=%s message=%s",
+        getattr(order, "id", None),
+        getattr(order, "order_code", ""),
+        step,
+        msg,
+    )
     db.commit()
 
 
@@ -586,15 +638,18 @@ def _set_order_generation_step(db, order: Order, step: str, message: str | None 
 def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "standard", report_options: dict[str, bool] | None = None) -> ExternalOrder:
     total_started = perf_counter()
     last_mark = total_started
+    current_step = "starting"
 
     def log_timing(step: str) -> None:
         nonlocal last_mark
         now = perf_counter()
-        print(
-            f"[external_report][timing] order={getattr(order, 'id', None)} "
-            f"code={getattr(order, 'order_code', '')} step={step} "
-            f"elapsed_sec={now - last_mark:.2f} total_sec={now - total_started:.2f}",
-            flush=True,
+        logger.info(
+            "[REPORT_GENERATION_TIMING] order_id=%s code=%s step=%s elapsed_sec=%.2f total_sec=%.2f",
+            getattr(order, "id", None),
+            getattr(order, "order_code", ""),
+            step,
+            now - last_mark,
+            now - total_started,
         )
         last_mark = now
 
@@ -610,23 +665,30 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
     _set_generation_step(db, order, "starting", "生成準備中")
 
     try:
+        current_step = "calculating"
         _set_generation_step(db, order, "calculating", "出生データと占術計算からhandoff YAMLを作成中")
         handoff_yaml, _meta = build_external_order_handoff(order, plan=cfg["plan"], report_options=report_options)
         log_timing("calculate_handoff")
         order.yaml_log_text = handoff_yaml
+        current_step = "handoff_ready"
         _set_generation_step(db, order, "handoff_ready", "handoff YAML作成完了")
 
+        current_step = "prompt_building"
         _set_generation_step(db, order, "prompt_building", "本文生成用プロンプトを組み立て中")
+        current_step = "calling_claude"
         _set_generation_step(db, order, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
         chapter_content = generate_chapter_content_with_claude(order, plan=cfg["plan"], handoff_yaml=handoff_yaml, report_options=report_options)
         log_timing("claude_chapter_generation")
+        current_step = "template_rendering"
         _set_generation_step(db, order, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
         html = render_external_report_html(order, plan=cfg["plan"], astro_result=_meta.get("astro_result") or {}, chapter_content=chapter_content, report_options=report_options)
         log_timing("template_rendering")
+        current_step = "uploading_html"
         _set_generation_step(db, order, "uploading_html", "完成HTMLをCloud Storageへ保存中")
         object_name = save_external_report_html(order, html)
         log_timing("upload_html")
 
+        current_step = "db_commit_completed"
         order.html_storage_path = object_name
         order.html_original_name = f"{order.order_code}_generated.html"
         order.html_uploaded_at = datetime.utcnow()
@@ -640,9 +702,18 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
         return order
     except Exception as exc:
         order.report_generation_status = "failed"
-        order.last_error = str(exc)[:2000]
-        print(f"[external_report] order={getattr(order, 'id', None)} failed error={order.last_error}", flush=True)
-        db.commit()
+        order.last_error = f"{current_step}: {type(exc).__name__}: {exc}"[:2000]
+        logger.exception(
+            "[REPORT_GENERATION_SERVICE_FAILED] order_id=%s step=%s",
+            getattr(order, "id", None),
+            current_step,
+        )
+        try:
+            db.commit()
+            logger.info("[REPORT_GENERATION_SERVICE_FAILED_UPDATE_SUCCESS] order_id=%s", getattr(order, "id", None))
+        except Exception:
+            logger.exception("[REPORT_GENERATION_SERVICE_FAILED_UPDATE_ERROR] order_id=%s", getattr(order, "id", None))
+            db.rollback()
         raise
 
 
