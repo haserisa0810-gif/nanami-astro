@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 import json
 import logging
 import re
@@ -54,6 +54,12 @@ DEFAULT_CLAUDE_REPORT_MODEL = "claude-sonnet-4-6"
 DEFAULT_EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS = 600
 CLAUDE_STREAM_PROGRESS_INTERVAL_SECONDS = 30
 logger = logging.getLogger(__name__)
+
+
+def _log_report_milestone(event: str, **values: Any) -> None:
+    details = " ".join(f"{key}={value}" for key, value in values.items())
+    # Cloud Run本番ではアプリloggerのINFOが収集されていないため、生成追跡用イベントはWARNINGで出す。
+    logger.warning("[REPORT_GENERATION_%s] %s", event, details)
 
 
 def resolve_report_claude_model() -> str:
@@ -240,7 +246,13 @@ def build_single_transit_data_for_report(payload_a: dict[str, Any]) -> dict[str,
     return {**today_transit, "long_term": long_term}
 
 
-def build_external_order_handoff(order: ExternalOrder, *, plan: str = "standard", report_options: dict[str, bool] | None = None) -> tuple[str, dict[str, Any]]:
+def build_external_order_handoff(
+    order: ExternalOrder,
+    *,
+    plan: str = "standard",
+    report_options: dict[str, bool] | None = None,
+    progress_callback: Callable[[str, str], None] | None = None,
+) -> tuple[str, dict[str, Any]]:
     if not order.birth_date:
         raise ValueError("生年月日が未入力です")
 
@@ -314,7 +326,9 @@ def build_external_order_handoff(order: ExternalOrder, *, plan: str = "standard"
     # ここで run_single() を呼ぶと通常鑑定AIが先に走り、
     # Claude鑑定書HTML生成まで到達しない／タイムアウトする原因になる。
     # 必要なのは計算結果とhandoff YAMLだけなので run_astro_calc() に限定する。
+    _log_report_milestone("ASTRO_CALC_START", order_id=getattr(order, "id", None))
     astro_result = run_astro_calc(cfg["astrology_system"], payload_a, day_change_at_23=False)
+    _log_report_milestone("ASTRO_CALC_END", order_id=getattr(order, "id", None))
     if isinstance(astro_result, dict):
         astro_result.setdefault("_meta", {}).update(base_meta)
         if isinstance(transit_data, dict):
@@ -325,6 +339,9 @@ def build_external_order_handoff(order: ExternalOrder, *, plan: str = "standard"
     report_raw = ""
     report_reader = ""
     guard_meta: dict[str, Any] = {"status": "skipped", "ok": True, "issues": [], "reason": "external_report_handoff_only"}
+    if progress_callback:
+        progress_callback("structure_summary_start", "構造要約とhandoff YAMLを構築中")
+    _log_report_milestone("STRUCTURE_SUMMARY_START", order_id=getattr(order, "id", None))
     logs = build_handoff_logs(
         inputs_view={
             "source": "external",
@@ -359,6 +376,9 @@ def build_external_order_handoff(order: ExternalOrder, *, plan: str = "standard"
         bias_guard_obj=guard_meta if isinstance(guard_meta, dict) else {},
         transit=transit_data,
     )
+    _log_report_milestone("STRUCTURE_SUMMARY_END", order_id=getattr(order, "id", None))
+    if progress_callback:
+        progress_callback("structure_summary_end", "構造要約とhandoff YAMLの構築完了")
     yaml_body = logs.get("handoff_yaml_full") or logs.get("handoff_yaml") or ""
     if not yaml_body.strip():
         raise RuntimeError("handoff YAMLを生成できませんでした")
@@ -510,14 +530,15 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
     model = resolve_report_claude_model()
     resolved_max = max_tokens or min(_resolve_external_report_max_tokens(model), 32000)
     timeout_seconds = _external_report_claude_timeout_seconds()
+    _log_report_milestone("CLAUDE_CLIENT_CREATE_START", model=model, timeout_seconds=timeout_seconds)
     client = Anthropic(api_key=api_key, timeout=timeout_seconds, max_retries=0)
 
-    logger.info(
-        "[REPORT_CLAUDE_CALL_START] model=%s max_tokens=%s prompt_chars=%s timeout_seconds=%s",
-        model,
-        resolved_max,
-        len(prompt),
-        timeout_seconds,
+    _log_report_milestone(
+        "CALLING_CLAUDE",
+        model=model,
+        max_tokens=resolved_max,
+        prompt_chars=len(prompt),
+        timeout_seconds=timeout_seconds,
     )
     chunks: list[str] = []
     stream_started = perf_counter()
@@ -532,11 +553,11 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
         chunks.append(text)
         received_chars += len(text)
         if now - last_progress >= CLAUDE_STREAM_PROGRESS_INTERVAL_SECONDS:
-            logger.info(
-                "[REPORT_CLAUDE_STREAM_PROGRESS] model=%s elapsed_sec=%.2f received_chars=%s",
-                model,
-                now - stream_started,
-                received_chars,
+            _log_report_milestone(
+                "CLAUDE_STREAM_PROGRESS",
+                model=model,
+                elapsed_sec=f"{now - stream_started:.2f}",
+                received_chars=received_chars,
             )
             last_progress = now
 
@@ -546,7 +567,7 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
         system="あなたは星月七海の鑑定書制作担当です。必ず指定形式のJSONだけを返してください。",
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
-        logger.info("[REPORT_CLAUDE_STREAM_START] model=%s", model)
+        _log_report_milestone("CLAUDE_STREAM_START", model=model)
         text_stream = getattr(stream, "text_stream", None)
         if text_stream is not None:
             for text in text_stream:
@@ -562,13 +583,12 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
                             append_chunk(text)
 
     out = _strip_code_fence("".join(chunks))
-    logger.info(
-        "[REPORT_CLAUDE_STREAM_END] model=%s elapsed_sec=%.2f output_chars=%s",
-        model,
-        perf_counter() - stream_started,
-        len(out),
+    _log_report_milestone(
+        "CLAUDE_STREAM_END",
+        model=model,
+        elapsed_sec=f"{perf_counter() - stream_started:.2f}",
+        output_chars=len(out),
     )
-    logger.info("[REPORT_CLAUDE_CALL_END] model=%s output_chars=%s", model, len(out))
     return out
 
 
@@ -618,12 +638,12 @@ def _set_generation_step(db, order: ExternalOrder, step: str, message: str | Non
     msg = (message or step).strip()
     order.report_generation_status = "generating"
     order.last_error = f"STEP:{step}|{msg}"[:2000]
-    logger.info(
-        "[REPORT_GENERATION_STEP] order_id=%s code=%s step=%s message=%s",
-        getattr(order, "id", None),
-        getattr(order, "order_code", ""),
-        step,
-        msg,
+    _log_report_milestone(
+        "STEP",
+        order_id=getattr(order, "id", None),
+        code=getattr(order, "order_code", ""),
+        step=step,
+        message=msg,
     )
     db.commit()
 
@@ -643,15 +663,20 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
     def log_timing(step: str) -> None:
         nonlocal last_mark
         now = perf_counter()
-        logger.info(
-            "[REPORT_GENERATION_TIMING] order_id=%s code=%s step=%s elapsed_sec=%.2f total_sec=%.2f",
-            getattr(order, "id", None),
-            getattr(order, "order_code", ""),
-            step,
-            now - last_mark,
-            now - total_started,
+        _log_report_milestone(
+            "TIMING",
+            order_id=getattr(order, "id", None),
+            code=getattr(order, "order_code", ""),
+            step=step,
+            elapsed_sec=f"{now - last_mark:.2f}",
+            total_sec=f"{now - total_started:.2f}",
         )
         last_mark = now
+
+    def update_progress(step: str, message: str) -> None:
+        nonlocal current_step
+        current_step = step
+        _set_generation_step(db, order, step, message)
 
     cfg = _plan_config(plan)
     report_options = normalize_report_options(cfg["plan"], report_options or order_report_options(order, plan=cfg["plan"]))
@@ -665,27 +690,44 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
     _set_generation_step(db, order, "starting", "生成準備中")
 
     try:
-        current_step = "calculating"
-        _set_generation_step(db, order, "calculating", "出生データと占術計算からhandoff YAMLを作成中")
-        handoff_yaml, _meta = build_external_order_handoff(order, plan=cfg["plan"], report_options=report_options)
-        log_timing("calculate_handoff")
+        current_step = "calculate_handoff_start"
+        _set_generation_step(db, order, current_step, "出生データと占術計算からhandoff YAMLを作成中")
+        _log_report_milestone("CALCULATE_HANDOFF_START", order_id=getattr(order, "id", None))
+        handoff_yaml, _meta = build_external_order_handoff(
+            order,
+            plan=cfg["plan"],
+            report_options=report_options,
+            progress_callback=update_progress,
+        )
+        _log_report_milestone("CALCULATE_HANDOFF_END", order_id=getattr(order, "id", None))
+        log_timing("calculate_handoff_end")
         order.yaml_log_text = handoff_yaml
         current_step = "handoff_ready"
         _set_generation_step(db, order, "handoff_ready", "handoff YAML作成完了")
 
-        current_step = "prompt_building"
-        _set_generation_step(db, order, "prompt_building", "本文生成用プロンプトを組み立て中")
+        current_step = "prompt_build_start"
+        _set_generation_step(db, order, current_step, "本文生成用プロンプトを組み立て中")
+        _log_report_milestone("PROMPT_BUILD_START", order_id=getattr(order, "id", None))
+        prompt = build_chapter_json_prompt(order, plan=cfg["plan"], handoff_yaml=handoff_yaml, report_options=report_options)
+        chapter_spec = chapter_specs(cfg["plan"], report_options)
+        max_tokens = 14000 if cfg["plan"] == "light" else (22000 if cfg["plan"] == "standard" else 32000)
+        _log_report_milestone("PROMPT_BUILD_END", order_id=getattr(order, "id", None), prompt_chars=len(prompt))
         current_step = "calling_claude"
         _set_generation_step(db, order, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
-        chapter_content = generate_chapter_content_with_claude(order, plan=cfg["plan"], handoff_yaml=handoff_yaml, report_options=report_options)
+        text = generate_text_with_claude(prompt, max_tokens=max_tokens)
+        chapter_content = parse_chapter_json(text, chapter_spec)
         log_timing("claude_chapter_generation")
         current_step = "template_rendering"
         _set_generation_step(db, order, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
+        _log_report_milestone("TEMPLATE_RENDERING_START", order_id=getattr(order, "id", None))
         html = render_external_report_html(order, plan=cfg["plan"], astro_result=_meta.get("astro_result") or {}, chapter_content=chapter_content, report_options=report_options)
+        _log_report_milestone("TEMPLATE_RENDERING_END", order_id=getattr(order, "id", None))
         log_timing("template_rendering")
         current_step = "uploading_html"
         _set_generation_step(db, order, "uploading_html", "完成HTMLをCloud Storageへ保存中")
+        _log_report_milestone("UPLOAD_HTML_START", order_id=getattr(order, "id", None))
         object_name = save_external_report_html(order, html)
+        _log_report_milestone("UPLOAD_HTML_END", order_id=getattr(order, "id", None))
         log_timing("upload_html")
 
         current_step = "db_commit_completed"
@@ -698,6 +740,7 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
         if order.status == "draft":
             order.status = "html_uploaded"
         db.commit()
+        _log_report_milestone("DB_COMMIT_COMPLETED", order_id=getattr(order, "id", None))
         log_timing("db_commit_completed")
         return order
     except Exception as exc:
@@ -710,7 +753,7 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
         )
         try:
             db.commit()
-            logger.info("[REPORT_GENERATION_SERVICE_FAILED_UPDATE_SUCCESS] order_id=%s", getattr(order, "id", None))
+            _log_report_milestone("FAILED_UPDATE_SUCCESS", order_id=getattr(order, "id", None), step=current_step)
         except Exception:
             logger.exception("[REPORT_GENERATION_SERVICE_FAILED_UPDATE_ERROR] order_id=%s", getattr(order, "id", None))
             db.rollback()

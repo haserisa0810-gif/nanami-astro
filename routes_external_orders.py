@@ -279,7 +279,7 @@ def _extract_generation_progress(raw: str | None) -> tuple[str, str, str]:
 def _run_external_report_generation_background(order_id: int, plan: str, report_options: dict[str, bool]) -> None:
     """外部受注鑑定書をレスポンス後に生成します。"""
     step = "background_start"
-    logger.info("[REPORT_GENERATION_START] order_id=%s plan=%s options=%s", order_id, plan, report_options)
+    logger.warning("[REPORT_GENERATION_BACKGROUND_START] order_id=%s plan=%s options=%s", order_id, plan, report_options)
     try:
         step = "db_session_open"
         with db_session() as bg_db:
@@ -290,9 +290,9 @@ def _run_external_report_generation_background(order_id: int, plan: str, report_
                 return
             step = "generate_external_order_report"
             generate_external_order_report(bg_db, order, plan=plan, report_options=report_options)
-            logger.info("[REPORT_GENERATION_COMPLETED] order_id=%s", order_id)
+            logger.warning("[REPORT_GENERATION_BACKGROUND_COMPLETED] order_id=%s", order_id)
     except Exception as exc:
-        logger.exception("[REPORT_GENERATION_FAILED] order_id=%s step=%s", order_id, step)
+        logger.exception("[REPORT_GENERATION_BACKGROUND_FAILED] order_id=%s step=%s", order_id, step)
         try:
             step_summary = f"{step}: {type(exc).__name__}: {exc}"[:2000]
             with db_session() as fail_db:
@@ -305,7 +305,7 @@ def _run_external_report_generation_background(order_id: int, plan: str, report_
                 if not existing_error or existing_error.startswith("STEP:"):
                     failed_order.last_error = step_summary
                 fail_db.commit()
-                logger.info("[REPORT_GENERATION_FAILED_UPDATE_SUCCESS] order_id=%s step=%s", order_id, step)
+                logger.warning("[REPORT_GENERATION_FAILED_UPDATE_SUCCESS] order_id=%s step=%s", order_id, step)
         except Exception:
             logger.exception("[REPORT_GENERATION_FAILED_UPDATE_ERROR] order_id=%s step=%s", order_id, step)
 
@@ -663,9 +663,9 @@ def external_order_generate_report(
         _apply_report_options(order, options)
         db.commit()
 
-        logger.info("[REPORT_GENERATION_ENQUEUE] order_id=%s plan=%s", order.id, plan)
+        logger.warning("[REPORT_GENERATION_ENQUEUE] order_id=%s plan=%s", order.id, plan)
         background_tasks.add_task(_run_external_report_generation_background, order.id, plan, dict(options))
-        logger.info("[REPORT_GENERATION_ENQUEUED] order_id=%s plan=%s", order.id, plan)
+        logger.warning("[REPORT_GENERATION_ENQUEUED] order_id=%s plan=%s", order.id, plan)
         return _redirect(f"/staff/external-orders/{order.id}?success=report_queued")
     except Exception as exc:
         logger.exception("[REPORT_GENERATION_ENQUEUE_FAILED] order_id=%s", order_id)
@@ -673,7 +673,7 @@ def external_order_generate_report(
         order.report_generation_status = "failed"
         try:
             db.commit()
-            logger.info("[REPORT_GENERATION_ENQUEUE_FAILED_UPDATE_SUCCESS] order_id=%s", order_id)
+            logger.warning("[REPORT_GENERATION_ENQUEUE_FAILED_UPDATE_SUCCESS] order_id=%s", order_id)
         except Exception:
             db.rollback()
             logger.exception("[REPORT_GENERATION_ENQUEUE_FAILED_UPDATE_ERROR] order_id=%s", order_id)
@@ -696,7 +696,8 @@ def external_order_report_status(order_id: int, db: Session = Depends(get_db), s
     _mark_stale_generation_if_needed(db, order)
     status = order.report_generation_status or "not_started"
     progress_step, progress_message, real_error = _extract_generation_progress(order.last_error)
-    has_html = _html_exists(order)
+    # ポーリングAPIではGCSへ問い合わせない。保存済みDB項目だけで完了物の有無を返す。
+    has_html = bool(order.html_storage_path and order.html_uploaded_at)
     return JSONResponse({
         "status": status,
         "step": progress_step,
