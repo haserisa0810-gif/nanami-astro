@@ -281,16 +281,9 @@ def _run_external_report_generation_background(order_id: int, plan: str, report_
     step = "background_start"
     logger.warning("[REPORT_GENERATION_BACKGROUND_START] order_id=%s plan=%s options=%s", order_id, plan, report_options)
     try:
-        step = "db_session_open"
-        with db_session() as bg_db:
-            step = "order_load"
-            order = bg_db.get(ExternalOrder, order_id)
-            if not order:
-                logger.error("[REPORT_GENERATION_ORDER_NOT_FOUND] order_id=%s", order_id)
-                return
-            step = "generate_external_order_report"
-            generate_external_order_report(bg_db, order, plan=plan, report_options=report_options)
-            logger.warning("[REPORT_GENERATION_BACKGROUND_COMPLETED] order_id=%s", order_id)
+        step = "generate_external_order_report"
+        generate_external_order_report(order_id, plan=plan, report_options=report_options)
+        logger.warning("[REPORT_GENERATION_BACKGROUND_COMPLETED] order_id=%s", order_id)
     except Exception as exc:
         logger.exception("[REPORT_GENERATION_BACKGROUND_FAILED] order_id=%s step=%s", order_id, step)
         try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from contextlib import contextmanager
 import os
 from pathlib import Path
 from typing import Any, Callable
@@ -18,6 +19,7 @@ except Exception:  # pragma: no cover
     Anthropic = None  # type: ignore
 
 from models import ExternalOrder, Order
+from db import SessionLocal
 from services.location import resolve_birth_location
 from services.location_normalizer import normalize_location, NormalizedLocation
 from services.analyze_engine import build_base_meta, build_handoff_logs, build_payload_a, run_astro_calc
@@ -84,6 +86,130 @@ def _read_prompt(name: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Prompt template not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def _external_order_generation_snapshot(order: ExternalOrder) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=order.id,
+        order_code=order.order_code,
+        source_type=order.source_type,
+        customer_name=order.customer_name,
+        customer_email=order.customer_email,
+        birth_date=order.birth_date,
+        birth_time=order.birth_time,
+        gender=order.gender,
+        prefecture=order.prefecture,
+        birth_place=order.birth_place,
+        consultation_text=order.consultation_text,
+        menu_name=order.menu_name,
+        price=order.price,
+        staff_name=order.staff_name,
+        status=order.status,
+        yaml_log_text=order.yaml_log_text,
+        html_storage_path=order.html_storage_path,
+        html_original_name=order.html_original_name,
+        html_uploaded_at=order.html_uploaded_at,
+        report_generated_at=order.report_generated_at,
+        report_generation_status=order.report_generation_status,
+        report_generation_plan=order.report_generation_plan,
+        report_generation_system=order.report_generation_system,
+        report_generation_prompt_key=order.report_generation_prompt_key,
+        report_generation_model=order.report_generation_model,
+        last_error=order.last_error,
+    )
+
+
+@contextmanager
+def _generation_session(phase: str, order_id: int | None):
+    logger.warning("[REPORT_GENERATION_SESSION_OPEN] phase=%s order_id=%s", phase, order_id)
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+        logger.warning("[REPORT_GENERATION_SESSION_CLOSE] phase=%s order_id=%s", phase, order_id)
+
+
+def _load_external_order_snapshot(order_id: int) -> SimpleNamespace:
+    with _generation_session("load_snapshot", order_id) as db:
+        order = db.get(ExternalOrder, order_id)
+        if not order:
+            raise ValueError(f"external order not found: {order_id}")
+        return _external_order_generation_snapshot(order)
+
+
+def _set_generation_step(order_id: int, order_code: str, step: str, message: str | None = None) -> bool:
+    msg = (message or step).strip()
+    with _generation_session("step_update", order_id) as db:
+        order = db.get(ExternalOrder, order_id)
+        if not order:
+            logger.error("[REPORT_GENERATION_STEP_ORDER_NOT_FOUND] order_id=%s step=%s", order_id, step)
+            return False
+        order.report_generation_status = "generating"
+        order.last_error = f"STEP:{step}|{msg}"[:2000]
+        _log_report_milestone(
+            "STEP",
+            order_id=order_id,
+            code=order_code or getattr(order, "order_code", ""),
+            step=step,
+            message=msg,
+        )
+        return True
+
+
+def _save_external_order_result(order_id: int, order_code: str, snapshot: Any, object_name: str, step: str = "db_commit_completed") -> bool:
+    logger.warning("[REPORT_GENERATION_SAVE_RESULT_START] order_id=%s step=%s", order_id, step)
+    try:
+        with _generation_session("save_result", order_id) as db:
+            order = db.get(ExternalOrder, order_id)
+            if not order:
+                logger.error("[REPORT_GENERATION_SAVE_RESULT_ORDER_NOT_FOUND] order_id=%s", order_id)
+                return False
+            order.report_generation_plan = getattr(snapshot, "report_generation_plan", None)
+            order.report_generation_system = getattr(snapshot, "report_generation_system", None)
+            order.report_generation_prompt_key = getattr(snapshot, "report_generation_prompt_key", None)
+            order.report_generation_model = getattr(snapshot, "report_generation_model", None)
+            order.yaml_log_text = getattr(snapshot, "yaml_log_text", None)
+            order.html_storage_path = object_name
+            order.html_original_name = f"{order_code}_generated.html"
+            order.html_uploaded_at = datetime.utcnow()
+            order.report_generated_at = datetime.utcnow()
+            order.report_generation_status = "completed"
+            order.last_error = None
+            if order.status == "draft":
+                order.status = "html_uploaded"
+        logger.warning("[REPORT_GENERATION_SAVE_RESULT_END] order_id=%s step=%s", order_id, step)
+        return True
+    except Exception:
+        logger.exception("[REPORT_GENERATION_SAVE_RESULT_ERROR] order_id=%s step=%s", order_id, step)
+        return False
+
+
+def _save_external_order_failure(order_id: int, order_code: str, step: str, exc: Exception) -> bool:
+    logger.warning("[REPORT_GENERATION_SAVE_FAILED_START] order_id=%s step=%s", order_id, step)
+    try:
+        with _generation_session("save_failed", order_id) as db:
+            order = db.get(ExternalOrder, order_id)
+            if not order:
+                logger.error("[REPORT_GENERATION_SAVE_FAILED_ORDER_NOT_FOUND] order_id=%s", order_id)
+                return False
+            order.report_generation_status = "failed"
+            order.last_error = f"{step}: {type(exc).__name__}: {exc}"[:2000]
+            _log_report_milestone(
+                "FAILED_UPDATE_SUCCESS",
+                order_id=order_id,
+                code=order_code or getattr(order, "order_code", ""),
+                step=step,
+            )
+        logger.warning("[REPORT_GENERATION_SAVE_FAILED_END] order_id=%s step=%s", order_id, step)
+        return True
+    except Exception:
+        logger.exception("[REPORT_GENERATION_SAVE_FAILED_ERROR] order_id=%s step=%s", order_id, step)
+        return False
 
 
 def _bucket_name() -> str:
@@ -623,31 +749,6 @@ def save_staff_order_report_html(order: Order, html: str) -> str:
     blob.cache_control = "private, max-age=0, no-store"
     blob.upload_from_string(html, content_type="text/html; charset=utf-8")
     return object_name
-
-
-
-
-def _set_generation_step(db, order: ExternalOrder, step: str, message: str | None = None) -> None:
-    """Record lightweight progress without requiring a DB migration.
-
-    Existing screens already read report_generation_status and last_error.
-    While status is generating, last_error is used as a progress carrier:
-    STEP:<step>|<message>
-    On real failure it is replaced with the actual error message.
-    """
-    msg = (message or step).strip()
-    order.report_generation_status = "generating"
-    order.last_error = f"STEP:{step}|{msg}"[:2000]
-    _log_report_milestone(
-        "STEP",
-        order_id=getattr(order, "id", None),
-        code=getattr(order, "order_code", ""),
-        step=step,
-        message=msg,
-    )
-    db.commit()
-
-
 def _set_order_generation_step(db, order: Order, step: str, message: str | None = None) -> None:
     msg = (message or step).strip()
     order.report_generation_status = "generating"
@@ -655,18 +756,21 @@ def _set_order_generation_step(db, order: Order, step: str, message: str | None 
     print(f"[staff_report] order={getattr(order, 'id', None)} code={getattr(order, 'order_code', '')} step={step} message={msg}", flush=True)
     db.commit()
 
-def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "standard", report_options: dict[str, bool] | None = None) -> ExternalOrder:
+def generate_external_order_report(order_id: int, *, plan: str = "standard", report_options: dict[str, bool] | None = None) -> SimpleNamespace:
     total_started = perf_counter()
     last_mark = total_started
     current_step = "starting"
+
+    order = _load_external_order_snapshot(order_id)
+    order_code = getattr(order, "order_code", "")
 
     def log_timing(step: str) -> None:
         nonlocal last_mark
         now = perf_counter()
         _log_report_milestone(
             "TIMING",
-            order_id=getattr(order, "id", None),
-            code=getattr(order, "order_code", ""),
+            order_id=order_id,
+            code=order_code,
             step=step,
             elapsed_sec=f"{now - last_mark:.2f}",
             total_sec=f"{now - total_started:.2f}",
@@ -676,7 +780,7 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
     def update_progress(step: str, message: str) -> None:
         nonlocal current_step
         current_step = step
-        _set_generation_step(db, order, step, message)
+        _set_generation_step(order_id, order_code, step, message)
 
     cfg = _plan_config(plan)
     report_options = normalize_report_options(cfg["plan"], report_options or order_report_options(order, plan=cfg["plan"]))
@@ -687,76 +791,63 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
         if key in REPORT_OPTION_LABELS:
             setattr(order, key, bool(value))
     order.report_generation_model = resolve_report_claude_model()
-    _set_generation_step(db, order, "starting", "生成準備中")
+    _set_generation_step(order_id, order_code, "starting", "生成準備中")
 
     try:
         current_step = "calculate_handoff_start"
-        _set_generation_step(db, order, current_step, "出生データと占術計算からhandoff YAMLを作成中")
-        _log_report_milestone("CALCULATE_HANDOFF_START", order_id=getattr(order, "id", None))
+        _set_generation_step(order_id, order_code, current_step, "出生データと占術計算からhandoff YAMLを作成中")
+        _log_report_milestone("CALCULATE_HANDOFF_START", order_id=order_id)
         handoff_yaml, _meta = build_external_order_handoff(
             order,
             plan=cfg["plan"],
             report_options=report_options,
             progress_callback=update_progress,
         )
-        _log_report_milestone("CALCULATE_HANDOFF_END", order_id=getattr(order, "id", None))
+        _log_report_milestone("CALCULATE_HANDOFF_END", order_id=order_id)
         log_timing("calculate_handoff_end")
         order.yaml_log_text = handoff_yaml
         current_step = "handoff_ready"
-        _set_generation_step(db, order, "handoff_ready", "handoff YAML作成完了")
+        _set_generation_step(order_id, order_code, "handoff_ready", "handoff YAML作成完了")
 
         current_step = "prompt_build_start"
-        _set_generation_step(db, order, current_step, "本文生成用プロンプトを組み立て中")
-        _log_report_milestone("PROMPT_BUILD_START", order_id=getattr(order, "id", None))
+        _set_generation_step(order_id, order_code, current_step, "本文生成用プロンプトを組み立て中")
+        _log_report_milestone("PROMPT_BUILD_START", order_id=order_id)
         prompt = build_chapter_json_prompt(order, plan=cfg["plan"], handoff_yaml=handoff_yaml, report_options=report_options)
         chapter_spec = chapter_specs(cfg["plan"], report_options)
         max_tokens = 14000 if cfg["plan"] == "light" else (22000 if cfg["plan"] == "standard" else 32000)
-        _log_report_milestone("PROMPT_BUILD_END", order_id=getattr(order, "id", None), prompt_chars=len(prompt))
+        _log_report_milestone("PROMPT_BUILD_END", order_id=order_id, prompt_chars=len(prompt))
         current_step = "calling_claude"
-        _set_generation_step(db, order, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
+        _set_generation_step(order_id, order_code, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
         text = generate_text_with_claude(prompt, max_tokens=max_tokens)
         chapter_content = parse_chapter_json(text, chapter_spec)
         log_timing("claude_chapter_generation")
         current_step = "template_rendering"
-        _set_generation_step(db, order, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
-        _log_report_milestone("TEMPLATE_RENDERING_START", order_id=getattr(order, "id", None))
+        _set_generation_step(order_id, order_code, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
+        _log_report_milestone("TEMPLATE_RENDERING_START", order_id=order_id)
         html = render_external_report_html(order, plan=cfg["plan"], astro_result=_meta.get("astro_result") or {}, chapter_content=chapter_content, report_options=report_options)
-        _log_report_milestone("TEMPLATE_RENDERING_END", order_id=getattr(order, "id", None))
+        _log_report_milestone("TEMPLATE_RENDERING_END", order_id=order_id)
         log_timing("template_rendering")
         current_step = "uploading_html"
-        _set_generation_step(db, order, "uploading_html", "完成HTMLをCloud Storageへ保存中")
-        _log_report_milestone("UPLOAD_HTML_START", order_id=getattr(order, "id", None))
+        _set_generation_step(order_id, order_code, "uploading_html", "完成HTMLをCloud Storageへ保存中")
+        _log_report_milestone("UPLOAD_HTML_START", order_id=order_id)
         object_name = save_external_report_html(order, html)
-        _log_report_milestone("UPLOAD_HTML_END", order_id=getattr(order, "id", None))
+        _log_report_milestone("UPLOAD_HTML_END", order_id=order_id)
         log_timing("upload_html")
 
         current_step = "db_commit_completed"
-        order.html_storage_path = object_name
-        order.html_original_name = f"{order.order_code}_generated.html"
-        order.html_uploaded_at = datetime.utcnow()
-        order.report_generated_at = datetime.utcnow()
-        order.report_generation_status = "completed"
-        order.last_error = None
-        if order.status == "draft":
-            order.status = "html_uploaded"
-        db.commit()
-        _log_report_milestone("DB_COMMIT_COMPLETED", order_id=getattr(order, "id", None))
+        if not _save_external_order_result(order_id, order_code, order, object_name, step=current_step):
+            raise RuntimeError("save_result_failed")
+        _log_report_milestone("DB_COMMIT_COMPLETED", order_id=order_id)
         log_timing("db_commit_completed")
         return order
     except Exception as exc:
-        order.report_generation_status = "failed"
-        order.last_error = f"{current_step}: {type(exc).__name__}: {exc}"[:2000]
         logger.exception(
             "[REPORT_GENERATION_SERVICE_FAILED] order_id=%s step=%s",
-            getattr(order, "id", None),
+            order_id,
             current_step,
         )
-        try:
-            db.commit()
-            _log_report_milestone("FAILED_UPDATE_SUCCESS", order_id=getattr(order, "id", None), step=current_step)
-        except Exception:
-            logger.exception("[REPORT_GENERATION_SERVICE_FAILED_UPDATE_ERROR] order_id=%s", getattr(order, "id", None))
-            db.rollback()
+        if not _save_external_order_failure(order_id, order_code, current_step, exc):
+            logger.error("[REPORT_GENERATION_SERVICE_FAILED_UPDATE_ERROR] order_id=%s step=%s", order_id, current_step)
         raise
 
 
