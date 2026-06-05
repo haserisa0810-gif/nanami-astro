@@ -6,6 +6,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 
 from google.cloud import storage
 
@@ -57,6 +58,43 @@ section, article, .section, .chapter, .card, .report-section {
   page-break-inside: avoid;
 }
 .page-break, .pdf-page-break { break-before: page; page-break-before: always; }
+.cover-info,
+.cover-info > div,
+.cover-info-table {
+  width: min(100%, 680px) !important;
+  max-width: 680px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+.cover-info-table {
+  display: grid !important;
+  grid-template-columns: minmax(6.5em, 9em) minmax(0, 1fr) !important;
+  gap: 7px 18px !important;
+  text-align: left !important;
+  align-items: start !important;
+}
+.cover-label,
+.cover-value,
+.cit-label,
+.cit-val {
+  display: block !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.65 !important;
+}
+.cover-label,
+.cit-label {
+  min-width: 6.5em !important;
+  white-space: nowrap !important;
+  letter-spacing: .08em !important;
+}
+.cover-value,
+.cit-val {
+  min-width: 0 !important;
+}
 </style>
 '''
     if "nanami-pdf-export-css" in html:
@@ -92,6 +130,18 @@ def generate_pdf_from_html_to_storage(
 
     html_for_pdf = _inject_pdf_css(html)
     object_name = pdf_object_name(order_code)
+    total_started = perf_counter()
+    last_mark = total_started
+
+    def log_timing(step: str) -> None:
+        nonlocal last_mark
+        now = perf_counter()
+        print(
+            f"[external_pdf][timing] order_code={order_code} step={step} "
+            f"elapsed_sec={now - last_mark:.2f} total_sec={now - total_started:.2f}",
+            flush=True,
+        )
+        last_mark = now
 
     with tempfile.TemporaryDirectory() as tmpdir:
         out_path = Path(tmpdir) / "report.pdf"
@@ -99,6 +149,7 @@ def generate_pdf_from_html_to_storage(
             HTML(string=html_for_pdf, base_url=base_url or os.getcwd()).write_pdf(str(out_path))
         except Exception as exc:
             raise RuntimeError(f"PDFレンダリングに失敗しました: {exc}") from exc
+        log_timing("weasyprint_render")
 
         size = out_path.stat().st_size if out_path.exists() else 0
         if size <= 0:
@@ -114,6 +165,7 @@ def generate_pdf_from_html_to_storage(
             blob.upload_from_filename(str(out_path), content_type="application/pdf")
         except Exception as exc:
             raise RuntimeError(f"PDFのCloud Storage保存に失敗しました: {exc}") from exc
+        log_timing("cloud_storage_upload")
 
     return PdfResult(bucket_name=bucket_name, object_name=object_name, size_bytes=size)
 

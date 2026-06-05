@@ -8,6 +8,7 @@ import json
 import os
 import urllib.parse
 import secrets
+from time import perf_counter
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
@@ -785,10 +786,16 @@ def external_order_mark_delivered(order_id: int, db: Session = Depends(get_db), 
 
 @router.post("/staff/external-orders/{order_id}/generate-pdf")
 def external_order_generate_pdf(order_id: int, request: Request, db: Session = Depends(get_db), staff: dict = Depends(get_current_staff)):
+    total_started = perf_counter()
     order = db.get(ExternalOrder, order_id)
     if not order:
         raise HTTPException(status_code=404)
     html = _download_html(order)
+    print(
+        f"[external_pdf][timing] order={order_id} code={order.order_code} "
+        f"step=download_html elapsed_sec={perf_counter() - total_started:.2f}",
+        flush=True,
+    )
     if not html:
         return _redirect(f"/staff/external-orders/{order.id}?error=no_html")
     try:
@@ -800,6 +807,11 @@ def external_order_generate_pdf(order_id: int, request: Request, db: Session = D
         )
         order.last_error = None
         db.commit()
+        print(
+            f"[external_pdf][timing] order={order_id} code={order.order_code} "
+            f"step=route_total total_sec={perf_counter() - total_started:.2f}",
+            flush=True,
+        )
         return _redirect(f"/staff/external-orders/{order.id}?success=pdf_generated")
     except Exception as exc:
         order.last_error = f"PDF生成に失敗しました: {exc}"

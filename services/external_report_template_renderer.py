@@ -53,6 +53,48 @@ def _template_css(filename: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def _external_report_layout_css() -> str:
+    return """
+.cover-info,
+.cover-info > div,
+.cover-info-table {
+  width: min(100%, 680px);
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.cover-info-table {
+  display: grid !important;
+  grid-template-columns: minmax(6.5em, 9em) minmax(0, 1fr) !important;
+  gap: 7px 18px !important;
+  text-align: left !important;
+  align-items: start !important;
+}
+.cover-label,
+.cover-value,
+.cit-label,
+.cit-val {
+  display: block !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.65 !important;
+}
+.cover-label,
+.cit-label {
+  min-width: 6.5em;
+  white-space: nowrap !important;
+  letter-spacing: .08em !important;
+}
+.cover-value,
+.cit-val {
+  min-width: 0;
+}
+""".strip()
+
+
 def _safe(value: Any) -> str:
     return html.escape("" if value is None else str(value))
 
@@ -544,7 +586,7 @@ def _chapter_html(ch: dict[str, Any], premium: bool) -> str:
 def render_external_report_html(order: Any, *, plan: str, astro_result: dict[str, Any], chapter_content: dict[str, Any], report_options: dict[str, bool]) -> str:
     premium = plan == "premium"
     css_file = "sample_kanteisho_premium_template.html" if premium else "report_black_w_shichu_template.html"
-    css = _template_css(css_file)
+    css = f"{_template_css(css_file)}\n\n{_external_report_layout_css()}"
     specs = chapter_specs(plan, report_options)
     shichu = _shichu_data(astro_result)
     chapters = chapter_content.get("chapters") or []

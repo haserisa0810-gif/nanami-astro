@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 import json
 import re
+from time import perf_counter
 from types import SimpleNamespace
 
 from google.cloud import storage
@@ -583,6 +584,20 @@ def _set_order_generation_step(db, order: Order, step: str, message: str | None 
     db.commit()
 
 def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "standard", report_options: dict[str, bool] | None = None) -> ExternalOrder:
+    total_started = perf_counter()
+    last_mark = total_started
+
+    def log_timing(step: str) -> None:
+        nonlocal last_mark
+        now = perf_counter()
+        print(
+            f"[external_report][timing] order={getattr(order, 'id', None)} "
+            f"code={getattr(order, 'order_code', '')} step={step} "
+            f"elapsed_sec={now - last_mark:.2f} total_sec={now - total_started:.2f}",
+            flush=True,
+        )
+        last_mark = now
+
     cfg = _plan_config(plan)
     report_options = normalize_report_options(cfg["plan"], report_options or order_report_options(order, plan=cfg["plan"]))
     order.report_generation_plan = cfg["plan"]
@@ -597,16 +612,20 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
     try:
         _set_generation_step(db, order, "calculating", "出生データと占術計算からhandoff YAMLを作成中")
         handoff_yaml, _meta = build_external_order_handoff(order, plan=cfg["plan"], report_options=report_options)
+        log_timing("calculate_handoff")
         order.yaml_log_text = handoff_yaml
         _set_generation_step(db, order, "handoff_ready", "handoff YAML作成完了")
 
         _set_generation_step(db, order, "prompt_building", "本文生成用プロンプトを組み立て中")
         _set_generation_step(db, order, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
         chapter_content = generate_chapter_content_with_claude(order, plan=cfg["plan"], handoff_yaml=handoff_yaml, report_options=report_options)
+        log_timing("claude_chapter_generation")
         _set_generation_step(db, order, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
         html = render_external_report_html(order, plan=cfg["plan"], astro_result=_meta.get("astro_result") or {}, chapter_content=chapter_content, report_options=report_options)
+        log_timing("template_rendering")
         _set_generation_step(db, order, "uploading_html", "完成HTMLをCloud Storageへ保存中")
         object_name = save_external_report_html(order, html)
+        log_timing("upload_html")
 
         order.html_storage_path = object_name
         order.html_original_name = f"{order.order_code}_generated.html"
@@ -617,6 +636,7 @@ def generate_external_order_report(db, order: ExternalOrder, *, plan: str = "sta
         if order.status == "draft":
             order.status = "html_uploaded"
         db.commit()
+        log_timing("db_commit_completed")
         return order
     except Exception as exc:
         order.report_generation_status = "failed"
