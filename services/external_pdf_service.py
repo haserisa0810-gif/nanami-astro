@@ -131,6 +131,118 @@ section, article, .section, .chapter, .card, .report-section {
   white-space: normal !important;
   overflow-wrap: anywhere !important;
 }
+#charts {
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+  padding-top: 24px !important;
+  padding-bottom: 18px !important;
+}
+#charts > .chapter-inner-wide,
+#charts > .chart-inner {
+  max-width: 650px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+#charts .chapter-eyebrow {
+  margin-bottom: 12px !important;
+}
+#charts .chapter-num {
+  font-size: 30px !important;
+}
+#charts .chapter-label {
+  font-size: 9px !important;
+  letter-spacing: .22em !important;
+}
+#charts .chapter-title {
+  font-size: 24px !important;
+  line-height: 1.15 !important;
+}
+#charts .chapter-divider {
+  margin-bottom: 14px !important;
+}
+#charts .chart-section-label {
+  margin-top: 8px !important;
+  margin-bottom: 8px !important;
+  font-size: 9px !important;
+  line-height: 1.35 !important;
+  letter-spacing: .14em !important;
+}
+#charts .chart-frame,
+#charts .chart-svg-wrap {
+  max-width: 430px !important;
+  margin-top: 0 !important;
+  margin-bottom: 12px !important;
+  padding: 8px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+}
+#charts .chart-frame svg,
+#charts .chart-svg-wrap svg {
+  width: 100% !important;
+  max-height: 410px !important;
+  height: auto !important;
+  display: block !important;
+}
+#charts .shichu-wrap {
+  margin-top: 0 !important;
+  margin-bottom: 10px !important;
+  overflow: visible !important;
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+}
+#charts .shichu-table {
+  max-width: 520px !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+}
+#charts .shichu-table th,
+#charts .shichu-table td {
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+}
+#charts .shichu-table th {
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  font-size: 9px !important;
+  letter-spacing: .08em !important;
+}
+#charts .shichu-table .stem,
+#charts .shichu-table .branch,
+#charts .shichu-kanshi {
+  font-size: 20px !important;
+  line-height: 1.05 !important;
+}
+#charts .shichu-table .jingod,
+#charts .shichu-ten-god {
+  font-size: 10px !important;
+  line-height: 1.2 !important;
+}
+#charts .element-bars {
+  max-width: 500px !important;
+  margin: 6px auto 0 !important;
+  gap: 5px !important;
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+}
+#charts .element-row {
+  gap: 8px !important;
+}
+#charts .element-name {
+  width: 28px !important;
+  font-size: 10px !important;
+}
+#charts .element-bar-bg {
+  height: 4px !important;
+}
+#charts .element-count {
+  width: 22px !important;
+  font-size: 10px !important;
+}
 </style>
 '''
     html = _normalize_cover_info_tables_for_pdf(html)
