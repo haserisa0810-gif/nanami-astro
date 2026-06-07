@@ -68,40 +68,10 @@ section, article, .section, .chapter, .card, .report-section {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
-.report-body-page.section,
-.report-body-page.chapter {
-  break-inside: auto !important;
-  page-break-inside: auto !important;
-}
 .report-body-page > .chapter-inner,
 .report-body-page > .section-inner {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
-}
-.report-body-page .chapter-eyebrow,
-.report-body-page .chapter-divider,
-.report-body-page .naming {
-  break-inside: avoid !important;
-  page-break-inside: avoid !important;
-}
-.report-body-page .chapter-body {
-  break-inside: auto !important;
-  page-break-inside: auto !important;
-}
-.report-body-page .chapter-body p {
-  break-inside: auto !important;
-  page-break-inside: auto !important;
-  orphans: 3;
-  widows: 3;
-}
-.report-body-page .closer {
-  break-inside: avoid !important;
-  page-break-inside: avoid !important;
-  margin-top: 2rem !important;
-  padding-top: 1.25rem !important;
-}
-.report-body-page .chapter {
-  padding: 3.5rem 2rem 4rem !important;
 }
 .page-break, .pdf-page-break { break-before: page; page-break-before: always; }
 .cover-info,
