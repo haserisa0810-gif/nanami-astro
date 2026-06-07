@@ -73,11 +73,6 @@ section, article, .section, .chapter, .card, .report-section {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
-#charts + section[id^="ch"],
-section[id^="ch"] + section[id^="ch"] {
-  break-before: page !important;
-  page-break-before: always !important;
-}
 .page-break, .pdf-page-break { break-before: page; page-break-before: always; }
 .cover-info,
 .cover-info > div,
