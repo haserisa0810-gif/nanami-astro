@@ -68,6 +68,11 @@ section, article, .section, .chapter, .card, .report-section {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
+.report-body-page + .report-body-page,
+#charts + .report-body-page {
+  break-before: page !important;
+  page-break-before: always !important;
+}
 .report-body-page > .chapter-inner,
 .report-body-page > .section-inner {
   padding-top: 0 !important;
