@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Float
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Float, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -437,6 +437,27 @@ class ExternalOrder(TimestampMixin, Base):
     report_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     last_error: Mapped[Optional[str]] = mapped_column(Text)
+    report_edits: Mapped[list["ExternalOrderReportEdit"]] = relationship(back_populates="order", cascade="all, delete-orphan")
+
+
+class ExternalOrderReportEdit(TimestampMixin, Base):
+    __tablename__ = "external_order_report_edits"
+    __table_args__ = (
+        UniqueConstraint("external_order_id", "chapter_key", name="uq_external_order_report_edits_order_chapter"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_order_id: Mapped[int] = mapped_column(ForeignKey("external_orders.id"), nullable=False, index=True)
+    chapter_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    chapter_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_body_html: Mapped[Optional[str]] = mapped_column(Text)
+    manual_body_html: Mapped[Optional[str]] = mapped_column(Text)
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_by_type: Mapped[Optional[str]] = mapped_column(String(20))
+    updated_by_id: Mapped[Optional[int]] = mapped_column(Integer)
+    revision_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    order: Mapped[ExternalOrder] = relationship(back_populates="report_edits")
 
 
 class TransitHubRequest(TimestampMixin, Base):

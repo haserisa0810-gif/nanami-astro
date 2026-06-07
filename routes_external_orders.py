@@ -20,9 +20,10 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_staff
 from db import get_db, db_session
-from models import ExternalOrder, Order, OrderResultView
+from models import ExternalOrder, ExternalOrderReportEdit, Order, OrderResultView
 from services.notification_service import send_mail
-from services.report_generation_service import REPORT_OPTION_LABELS, REPORT_PLAN_LABELS, REPORT_PLAN_OPTIONS, default_report_options, generate_external_order_report, normalize_report_options, order_report_options
+from services.external_order_report_edit_service import ensure_external_order_report_edit_rows, load_external_order_report_chapters, normalize_chapter_key, replace_chapter_body_in_html, reset_external_order_report_edit, save_external_order_report_edit
+from services.report_generation_service import REPORT_OPTION_LABELS, REPORT_PLAN_LABELS, REPORT_PLAN_OPTIONS, default_report_options, generate_external_order_report, normalize_report_options, order_report_options, save_external_report_html
 from services.external_pdf_service import download_pdf_bytes, generate_pdf_from_html_to_storage, pdf_exists, pdf_filename
 
 router = APIRouter()
@@ -496,6 +497,30 @@ def external_order_detail(order_id: int, request: Request, staff: dict = Depends
     if not order.mail_body:
         order.mail_body = _default_body(order)
         db.commit()
+    has_report_edit_rows = db.scalar(
+        select(func.count())
+        .select_from(ExternalOrderReportEdit)
+        .where(ExternalOrderReportEdit.external_order_id == order.id)
+    )
+    report_chapters = []
+    if has_html:
+        if not has_report_edit_rows:
+            html_text = _download_html(order)
+            if html_text:
+                report_chapters = ensure_external_order_report_edit_rows(
+                    db,
+                    order,
+                    html_text=html_text,
+                    plan=order.report_generation_plan or "standard",
+                    report_options=order_report_options(order),
+                )
+        if not report_chapters:
+            report_chapters = load_external_order_report_chapters(
+                db,
+                order,
+                plan=order.report_generation_plan or "standard",
+                report_options=order_report_options(order),
+            )
     return templates.TemplateResponse(
         request=request,
         name="external_order_detail.html",
@@ -510,6 +535,7 @@ def external_order_detail(order_id: int, request: Request, staff: dict = Depends
             "report_plan_labels": REPORT_PLAN_LABELS,
             "report_option_labels": REPORT_OPTION_LABELS,
             "report_options": order_report_options(order),
+            "report_chapters": report_chapters,
             "success": request.query_params.get("success"),
             "error": request.query_params.get("error"),
             "has_html": _html_exists(order),
@@ -701,6 +727,123 @@ def external_order_report_status(order_id: int, db: Session = Depends(get_db), s
         "generated_at": order.report_generated_at.isoformat() if order.report_generated_at else "",
         "html_uploaded_at": order.html_uploaded_at.isoformat() if order.html_uploaded_at else "",
     })
+
+
+@router.post("/staff/external-orders/{order_id}/report-chapters/{chapter_key}/save")
+def external_order_save_report_chapter(
+    order_id: int,
+    chapter_key: str,
+    chapter_title: str = Form(""),
+    manual_body_html: str = Form(""),
+    db: Session = Depends(get_db),
+    staff: dict = Depends(get_current_staff),
+):
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+    if not _html_exists(order):
+        return _redirect(f"/staff/external-orders/{order.id}?error=no_html")
+
+    save_external_order_report_edit(
+        db,
+        order_id=order.id,
+        chapter_key=chapter_key,
+        chapter_title=chapter_title or chapter_key,
+        manual_body_html=manual_body_html,
+        updated_by_type=staff.get("role") or "staff",
+        updated_by_id=staff.get("id"),
+    )
+    db.commit()
+
+    current_html = _download_html(order)
+    if not current_html:
+        return _redirect(f"/staff/external-orders/{order.id}?error=no_html")
+
+    chapter_key_norm = normalize_chapter_key(chapter_key)
+    current_chapters = load_external_order_report_chapters(
+        db,
+        order,
+        html_text=current_html,
+        plan=order.report_generation_plan or "standard",
+        report_options=order_report_options(order),
+    )
+    current_card = next((c for c in current_chapters if c.get("chapter_key") == chapter_key_norm), None)
+    render_body = (manual_body_html or "").strip()
+    if not render_body and current_card:
+        render_body = (current_card.get("original_body_html") or "").strip()
+    if not render_body:
+        row = db.scalar(
+            select(ExternalOrderReportEdit).where(
+                ExternalOrderReportEdit.external_order_id == order.id,
+                ExternalOrderReportEdit.chapter_key == chapter_key_norm,
+            )
+        )
+        render_body = (row.manual_body_html or "").strip() if row and row.is_manual else (row.original_body_html or "") if row else ""
+    try:
+        updated_html = replace_chapter_body_in_html(current_html, chapter_key_norm, render_body)
+        object_name = save_external_report_html(order, updated_html)
+        order.html_storage_path = object_name
+        order.html_uploaded_at = datetime.utcnow()
+        if order.status == "draft":
+            order.status = "html_uploaded"
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?success=report_chapter_saved")
+    except Exception as exc:
+        logger.exception("[REPORT_CHAPTER_SAVE_FAILED] order_id=%s chapter_key=%s", order.id, chapter_key)
+        order.last_error = f"章編集のHTML反映に失敗しました: {type(exc).__name__}: {exc}"[:2000]
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?error=report_chapter_save_failed")
+
+
+@router.post("/staff/external-orders/{order_id}/report-chapters/{chapter_key}/reset")
+def external_order_reset_report_chapter(
+    order_id: int,
+    chapter_key: str,
+    db: Session = Depends(get_db),
+    staff: dict = Depends(get_current_staff),
+):
+    order = db.get(ExternalOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+    if not _html_exists(order):
+        return _redirect(f"/staff/external-orders/{order.id}?error=no_html")
+
+    chapter_key_norm = normalize_chapter_key(chapter_key)
+    row = db.scalar(
+        select(ExternalOrderReportEdit).where(
+            ExternalOrderReportEdit.external_order_id == order.id,
+            ExternalOrderReportEdit.chapter_key == chapter_key_norm,
+        )
+    )
+    if not row:
+        return _redirect(f"/staff/external-orders/{order.id}?error=report_chapter_not_found")
+
+    reset_external_order_report_edit(
+        db,
+        order_id=order.id,
+        chapter_key=chapter_key,
+        updated_by_type=staff.get("role") or "staff",
+        updated_by_id=staff.get("id"),
+    )
+    db.commit()
+
+    try:
+        current_html = _download_html(order)
+        if not current_html:
+            return _redirect(f"/staff/external-orders/{order.id}?error=no_html")
+        updated_html = replace_chapter_body_in_html(current_html, chapter_key_norm, row.original_body_html or "")
+        object_name = save_external_report_html(order, updated_html)
+        order.html_storage_path = object_name
+        order.html_uploaded_at = datetime.utcnow()
+        if order.status == "draft":
+            order.status = "html_uploaded"
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?success=report_chapter_reset")
+    except Exception as exc:
+        logger.exception("[REPORT_CHAPTER_RESET_FAILED] order_id=%s chapter_key=%s", order.id, chapter_key)
+        order.last_error = f"章本文の復元に失敗しました: {type(exc).__name__}: {exc}"[:2000]
+        db.commit()
+        return _redirect(f"/staff/external-orders/{order.id}?error=report_chapter_reset_failed")
 
 @router.post("/staff/external-orders/{order_id}/reset-report-status")
 def external_order_reset_report_status(order_id: int, db: Session = Depends(get_db), staff: dict = Depends(get_current_staff)):

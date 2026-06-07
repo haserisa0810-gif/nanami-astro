@@ -1,7 +1,7 @@
 {% extends "platform_hub_base.html" %}{% set title = "外部受注詳細" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_external" %}{% block content %}
 
-{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {% if success == 'report_queued' %}AI鑑定書生成を開始しました。生成中はこの画面が自動更新されます。{% elif success == 'report_generated' %}AI鑑定書を生成しました。{% elif success == 'report_status_reset' %}生成状態を未生成に戻しました。{% else %}{{ success }}{% endif %}</p>{% endif %}
-{% if error %}<div class="error">{% if error == 'no_html' %}HTML未登録です。{% elif error == 'no_public_url' %}先に公開URLを発行してください。{% elif error == 'mail_failed' %}メール送信に失敗しました。SMTP設定を確認してください。{% elif error == 'generate_failed' %}AI鑑定書生成に失敗しました。下部のエラー内容を確認してください。{% elif error == 'generate_not_confirmed' %}生成ボタンのクリックが確認できなかったため、生成は開始しませんでした。{% else %}{{ error }}{% endif %}</div>{% endif %}
+{% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {% if success == 'report_queued' %}AI鑑定書生成を開始しました。生成中はこの画面が自動更新されます。{% elif success == 'report_generated' %}AI鑑定書を生成しました。{% elif success == 'report_status_reset' %}生成状態を未生成に戻しました。{% elif success == 'report_chapter_saved' %}章本文を保存しました。HTML/PDFへ反映済みです。{% elif success == 'report_chapter_reset' %}章本文をAI生成本文へ戻しました。{% else %}{{ success }}{% endif %}</p>{% endif %}
+{% if error %}<div class="error">{% if error == 'no_html' %}HTML未登録です。{% elif error == 'no_public_url' %}先に公開URLを発行してください。{% elif error == 'mail_failed' %}メール送信に失敗しました。SMTP設定を確認してください。{% elif error == 'generate_failed' %}AI鑑定書生成に失敗しました。下部のエラー内容を確認してください。{% elif error == 'generate_not_confirmed' %}生成ボタンのクリックが確認できなかったため、生成は開始しませんでした。{% elif error == 'report_chapter_save_failed' %}章本文の保存に失敗しました。{% elif error == 'report_chapter_reset_failed' %}AI生成本文への復元に失敗しました。{% elif error == 'report_chapter_not_found' %}対象の章が見つかりません。{% else %}{{ error }}{% endif %}</div>{% endif %}
 {% set gen_status = order.report_generation_status or 'not_started' %}
 {% set gen_progress_is_step = order.last_error and order.last_error.startswith('STEP:') %}
 <style>
@@ -21,6 +21,17 @@
 @keyframes reportSpin{to{transform:rotate(360deg)}}
 .report-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center;}
 .report-error-detail{margin-top:12px;padding:10px 12px;background:#fff;border:1px solid #f0b8b8;border-radius:10px;color:#9f2f2f;font-size:12px;white-space:pre-wrap;}
+.report-chapter-edit-box{margin-top:18px;border:1px solid #e5ddd0;border-radius:14px;padding:16px;background:#fffdf9;}
+.report-chapter-edit-header{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;}
+.report-chapter-edit-list{display:grid;gap:14px;margin-top:16px;}
+.report-chapter-card{border:1px solid #e7dfd2;border-radius:12px;padding:14px;background:#fff;}
+.report-chapter-card-head{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px;}
+.report-chapter-badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#f0eaff;color:#6a4db5;}
+.report-chapter-badge.manual{background:#ffe7ce;color:#a35f12;}
+.report-chapter-textarea{width:100%;min-height:220px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;}
+.report-chapter-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center;}
+.report-chapter-original{margin-top:10px;padding:10px 12px;border:1px dashed #d9c9af;border-radius:10px;background:#fff;font-size:12px;color:#5f6470;}
+.report-chapter-original pre{margin:8px 0 0;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;line-height:1.6;color:#4b4f57;}
 </style>
 <div class="card">
   <div class="section-head">
@@ -161,6 +172,52 @@
     </div>
   </form>
 </div>
+
+{% if report_chapters %}
+<div class="card report-chapter-edit-box">
+  <div class="report-chapter-edit-header">
+    <div>
+      <h2>鑑定本文を編集</h2>
+      <p class="muted">章ごとにAI生成本文を確認し、必要ならHTML断片をそのまま編集できます。保存するとHTML/PDFへ反映されます。</p>
+    </div>
+    <div class="report-status-pill completed">章数 {{ report_chapters|length }}</div>
+  </div>
+  <div class="report-chapter-edit-list">
+    {% for chapter in report_chapters %}
+    <article class="report-chapter-card">
+      <div class="report-chapter-card-head">
+        <div>
+          <div style="font-size:12px;color:#7a7368;font-weight:700;">{{ chapter.chapter_key }}</div>
+          <h3 style="margin:4px 0 0;">{{ chapter.chapter_title }}</h3>
+        </div>
+        <div class="report-chapter-badge {% if chapter.is_manual %}manual{% endif %}">{% if chapter.is_manual %}手動編集済み{% else %}AI生成{% endif %}</div>
+      </div>
+      <form method="post" action="/staff/external-orders/{{ order.id }}/report-chapters/{{ chapter.chapter_key }}/save">
+        <input type="hidden" name="chapter_title" value="{{ chapter.chapter_title }}">
+        <textarea class="report-chapter-textarea" name="manual_body_html">{{ chapter.display_body_html | e }}</textarea>
+        <div class="report-chapter-actions">
+          <button type="submit">保存</button>
+        </div>
+      </form>
+      <div class="report-chapter-actions">
+        {% if chapter.is_manual %}
+        <form method="post" action="/staff/external-orders/{{ order.id }}/report-chapters/{{ chapter.chapter_key }}/reset" onsubmit="return confirm('この章をAI生成本文に戻します。よろしいですか？');">
+          <button type="submit" class="secondary">AI生成本文に戻す</button>
+        </form>
+        {% else %}
+        <button type="button" class="secondary" disabled>AI生成本文に戻す</button>
+        {% endif %}
+      </div>
+      <details class="report-chapter-original">
+        <summary>AI生成本文を見る</summary>
+        <pre>{{ chapter.original_body_html | e }}</pre>
+      </details>
+    </article>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="grid">
   <div class="card">
     <h2>HTML管理</h2>

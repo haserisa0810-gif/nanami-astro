@@ -23,6 +23,7 @@ from db import SessionLocal
 from services.location import resolve_birth_location
 from services.location_normalizer import normalize_location, NormalizedLocation
 from services.analyze_engine import build_base_meta, build_handoff_logs, build_payload_a, run_astro_calc
+from services.external_order_report_edit_service import sync_generated_external_order_report_chapters
 from services.transit_calc import calc_transits_long_term, calc_transits_single
 from services.western_calc import calc_western_from_payload
 from services.external_report_template_renderer import build_chapter_json_prompt, chapter_specs, parse_chapter_json, render_external_report_html
@@ -820,6 +821,12 @@ def generate_external_order_report(order_id: int, *, plan: str = "standard", rep
         _set_generation_step(order_id, order_code, "calling_claude", "Claude Sonnet 4.6 APIへ本文JSONを送信中")
         text = generate_text_with_claude(prompt, max_tokens=max_tokens)
         chapter_content = parse_chapter_json(text, chapter_spec)
+        chapter_content = sync_generated_external_order_report_chapters(
+            order.id,
+            chapter_content,
+            updated_by_type="system",
+            updated_by_id=None,
+        )
         log_timing("claude_chapter_generation")
         current_step = "template_rendering"
         _set_generation_step(order_id, order_code, "template_rendering", "固定テンプレートへ本文・図表を差し込み中")
