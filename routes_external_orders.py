@@ -492,6 +492,7 @@ def external_order_detail(order_id: int, request: Request, staff: dict = Depends
     if not order:
         raise HTTPException(status_code=404)
     _mark_stale_generation_if_needed(db, order)
+    has_html = _html_exists(order)
     if not order.mail_subject:
         order.mail_subject = _default_subject()
     if not order.mail_body:
