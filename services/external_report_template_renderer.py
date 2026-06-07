@@ -590,7 +590,7 @@ def _chapter_html(ch: dict[str, Any], premium: bool) -> str:
     closer = ch.get("closer") or ""
     closer_html = f"<div class='closer'><p>{_safe(closer)}</p></div>" if not premium else f"<div class='closer'>{_safe(closer)}</div>"
     return f"""
-<section class="{section_class}" id="{ch_id}">
+<section class="{section_class} report-body-page" id="{ch_id}">
   <div class="{inner_class}">
     <div class="chapter-eyebrow"><div class="chapter-num">{num}</div><div><span class="chapter-label">Chapter</span><h2 class="chapter-title">{title}</h2></div></div>
     <div class="chapter-divider"></div>
