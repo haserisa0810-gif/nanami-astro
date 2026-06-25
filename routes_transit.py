@@ -1,3 +1,6 @@
+# LEGACY
+# 旧導線・互換維持の可能性あり
+# 削除注意
 from __future__ import annotations
 
 import traceback

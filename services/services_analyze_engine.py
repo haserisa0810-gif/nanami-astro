@@ -1,3 +1,4 @@
+# LEGACY_DUPLICATE_CANDIDATE
 """
 analyze_engine.py
 占術計算・レポート生成・バイアスガード・YAMLログ構築を担当するモジュール。
@@ -6,7 +7,8 @@ analyze_engine.py
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from fastapi import HTTPException
@@ -251,7 +253,7 @@ def build_base_meta(
     gender: str,
     gender_b: str,
 ) -> dict[str, Any]:
-    today = date.today().isoformat()
+    today = datetime.now(ZoneInfo("Asia/Tokyo")).date().isoformat()
     return {
         "birth_date": birth_date,
         "today": today,

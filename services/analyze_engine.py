@@ -1,3 +1,4 @@
+# ACTIVE_MAIN_ENGINE
 """
 analyze_engine.py
 占術計算・レポート生成・バイアスガード・YAMLログ構築を担当するモジュール。

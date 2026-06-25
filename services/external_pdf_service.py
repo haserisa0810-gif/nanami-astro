@@ -35,10 +35,6 @@ def _inject_pdf_css(html: str) -> str:
     css = r'''
 <style id="nanami-pdf-export-css">
 @page { size: A4; margin: 0; }
-@page external-report-body {
-  size: A4;
-  margin: 18mm 16mm 20mm 16mm;
-}
 html, body {
   margin: 0 !important;
   padding: 0 !important;
@@ -62,7 +58,6 @@ section, article, .section, .chapter, .card, .report-section {
   page-break-inside: avoid;
 }
 .report-body-page {
-  page: external-report-body;
   break-inside: auto !important;
   page-break-inside: auto !important;
   padding-top: 0 !important;

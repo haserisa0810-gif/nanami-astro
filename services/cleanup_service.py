@@ -1,3 +1,7 @@
+# UNUSED_CANDIDATE
+# 調査日: 2026-05-24
+# import参照なし
+# 削除前に運用確認必要
 from __future__ import annotations
 
 from datetime import datetime, timedelta
