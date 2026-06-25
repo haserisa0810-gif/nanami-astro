@@ -1,0 +1,171 @@
+{% extends "platform_hub_base.html" %}{% set title = "note記事" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_note_articles" %}{% block content %}
+<style>
+  .note-layout{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:18px;align-items:start}
+  .note-form{position:sticky;top:112px}
+  .form-stack{display:grid;gap:14px}
+  .result-stack{display:grid;gap:16px}
+  .output-box{white-space:pre-wrap;line-height:1.85;background:#faf8f5;border:1px solid #eee2d5;border-radius:12px;padding:16px;max-height:640px;overflow:auto}
+  .output-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+  .theme-list{margin:0;padding-left:22px;line-height:1.8}
+  .transit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .transit-box{background:#faf8f5;border:1px solid #eee2d5;border-radius:12px;padding:14px}
+  .transit-box ul{margin:8px 0 0;padding-left:20px;line-height:1.65}
+  .copy-feedback{font-size:12px;color:#2e7d32;min-width:48px}
+  @media (max-width: 860px){.note-layout{grid-template-columns:1fr}.note-form{position:static}}
+</style>
+
+<div class="section-head">
+  <div>
+    <h1>note記事</h1>
+    <p class="muted">対象月の全体トランジットをPythonで抽出してから、Claudeへ下書きを依頼します。既存の鑑定・商品データは変更しません。</p>
+  </div>
+</div>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+<div class="note-layout">
+  <aside class="note-form">
+    <div class="card">
+      <h2>生成条件</h2>
+      <form class="form-stack" method="post" action="/products/note-articles/generate">
+        <div>
+          <label for="target_month">対象月</label>
+          <input id="target_month" type="month" name="target_month" value="{{ target_month }}" required>
+        </div>
+        <div>
+          <label for="article_type">記事タイプ</label>
+          <select id="article_type" name="article_type" required>
+            {% for key, label in article_types.items() %}
+              <option value="{{ key }}" {% if key == article_type %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="custom_theme">任意テーマ</label>
+          <textarea id="custom_theme" name="custom_theme" placeholder="例：春から環境が変わった人へ">{{ custom_theme }}</textarea>
+        </div>
+        <div>
+          <label for="model_key">Claudeモデル</label>
+          <select id="model_key" name="model_key" required>
+            {% for key, item in claude_models.items() %}
+              <option value="{{ key }}" {% if key == model_key %}selected{% endif %}>{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">トランジットを抽出して生成</button>
+        <p class="muted">保存・履歴管理は行いません。生成結果は必要な箇所をコピーしてください。</p>
+      </form>
+    </div>
+  </aside>
+
+  <main class="result-stack">
+    {% if result %}
+      <section class="card">
+        <h2>{{ result.target_month }} / {{ result.article_type_label }}</h2>
+        <p class="muted">{{ result.model_label }}{% if result.custom_theme %} / 任意テーマ: {{ result.custom_theme }}{% endif %}</p>
+      </section>
+
+      <section class="card">
+        <div class="output-head">
+          <h2>テーマ候補</h2>
+          <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="theme-candidates">コピー</button></div>
+        </div>
+        <ol id="theme-candidates" class="theme-list">
+          {% for item in result.transit_context.theme_candidates %}<li>{{ item }}</li>{% endfor %}
+        </ol>
+      </section>
+
+      <section class="card">
+        <div class="output-head">
+          <h2>{{ result.title or "note本文下書き" }}</h2>
+          <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="article-body">コピー</button></div>
+        </div>
+        <div id="article-body" class="output-box">{{ result.article_body }}</div>
+      </section>
+
+      {% if result.zodiac_fortunes %}
+        <section class="card">
+          <div class="output-head">
+            <h2>12星座別運勢</h2>
+            <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="zodiac-fortunes">コピー</button></div>
+          </div>
+          <div id="zodiac-fortunes" class="output-box">{{ result.zodiac_fortunes }}</div>
+        </section>
+      {% endif %}
+
+      <section class="card">
+        <div class="output-head">
+          <h2>SNS告知文</h2>
+          <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="sns-copy">コピー</button></div>
+        </div>
+        <div id="sns-copy" class="output-box">{{ result.sns_copy }}</div>
+      </section>
+
+      <section class="card">
+        <h2>Pythonで抽出した根拠</h2>
+        <p class="muted">{{ result.transit_context.snapshot_count }}日分を確認。Claudeには以下の抽出結果だけを渡しています。</p>
+        <div class="transit-grid">
+          <div class="transit-box">
+            <strong>タイトなアスペクト</strong>
+            <ul>
+              {% for item in result.transit_context.tight_aspects[:5] %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+          <div class="transit-box">
+            <strong>注意日候補</strong>
+            <ul>
+              {% for item in result.transit_context.caution_dates %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+          <div class="transit-box">
+            <strong>動きやすい日候補</strong>
+            <ul>
+              {% for item in result.transit_context.movement_dates %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+        </div>
+      </section>
+    {% else %}
+      <section class="card">
+        <h2>生成結果</h2>
+        <p class="muted">左の条件を選び、生成ボタンを押してください。テーマ候補、本文下書き、必要に応じた12星座別運勢、SNS告知文を表示します。</p>
+      </section>
+    {% endif %}
+  </main>
+</div>
+
+<script>
+  async function copyText(target, button) {
+    const element = document.getElementById(target);
+    if (!element) return;
+    const text = (element.innerText || element.textContent || "").trim();
+    const feedback = button.parentElement.querySelector(".copy-feedback");
+    try {
+      await navigator.clipboard.writeText(text);
+      feedback.textContent = "コピー済み";
+    } catch (error) {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+      feedback.textContent = "コピー済み";
+    }
+    window.setTimeout(() => { feedback.textContent = ""; }, 1800);
+  }
+  document.querySelectorAll(".copy-btn").forEach((button) => {
+    button.addEventListener("click", () => copyText(button.dataset.copyTarget, button));
+  });
+</script>
+{% endblock %}

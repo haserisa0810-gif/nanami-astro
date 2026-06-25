@@ -21,6 +21,7 @@ from routes_staff import router as staff_router
 from routes_shared import startup_platform_safe
 from routes_transit import router as transit_router
 from routes_external_orders import router as external_orders_router
+from routes_note_articles import router as note_articles_router
 from routes_products import router as products_router
 
 app = FastAPI()
@@ -51,3 +52,4 @@ app.include_router(external_orders_router)
 app.include_router(daily_theme_router)
 app.include_router(daily_card_router)
 app.include_router(products_router)
+app.include_router(note_articles_router)
