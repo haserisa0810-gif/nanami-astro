@@ -75,19 +75,6 @@
         {% endif %}
       </section>
 
-      {% if result.yaml_preview %}
-        <section class="card">
-          <div class="output-head">
-            <div>
-              <h2>YAMLプレビュー</h2>
-              <p class="muted">Claudeへ貼り付けやすい形式です。取得済みの占術データだけを含めています。</p>
-            </div>
-            <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="yaml-preview">YAMLをコピー</button></div>
-          </div>
-          <pre id="yaml-preview" class="output-box yaml-box">{{ result.yaml_preview }}</pre>
-        </section>
-      {% endif %}
-
       <section class="card">
         <div class="output-head">
           <h2>テーマ候補</h2>
@@ -162,6 +149,22 @@
           </div>
         </div>
       </section>
+
+      {% if result.yaml_preview %}
+        <section class="card">
+          <div class="output-head">
+            <div>
+              <h2>YAMLコピー</h2>
+              <p class="muted">記事本文とは別枠です。Claudeへ貼り付ける計算済みデータだけをコピーできます。</p>
+            </div>
+            <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="yaml-preview">YAMLをコピー</button></div>
+          </div>
+          <details>
+            <summary>YAMLプレビューを表示</summary>
+            <pre id="yaml-preview" class="output-box yaml-box">{{ result.yaml_preview }}</pre>
+          </details>
+        </section>
+      {% endif %}
     {% else %}
       <section class="card">
         <h2>生成結果</h2>
