@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from services.note_article_service import extract_monthly_transit_context, generate_note_article
+from services.note_article_service import _parse_json_response, extract_monthly_transit_context, generate_note_article
 from services.type_catalog import get_type_definitions_for_prompt
 
 
@@ -131,3 +131,47 @@ def test_type_catalog_contains_public_type_ids():
     assert len(rows) == 10
     assert {"backstage_leader", "ideal_first", "solo_fighter"} <= ids
     assert all(row["type_name"] and row["summary_for_reference_only"] for row in rows)
+
+
+def test_parse_json_response_accepts_markdown_fenced_json():
+    raw = """```json
+{
+  "title": "6月のタイプ別運勢",
+  "article_body": "## 裏方リーダー型の今月のテーマ\n整えやすい流れです。",
+  "zodiac_fortunes": "",
+  "sns_copy": "公開しました。"
+}
+```"""
+
+    result = _parse_json_response(raw)
+
+    assert result["title"] == "6月のタイプ別運勢"
+    assert "裏方リーダー型" in result["article_body"]
+    assert result["sns_copy"] == "公開しました。"
+
+
+def test_parse_json_response_extracts_json_with_surrounding_text():
+    raw = """承知しました。以下です。
+
+{
+  "title": "タイプ別運勢",
+  "body": "本文キーが崩れても拾います。",
+  "sns": "SNS文です。"
+}
+
+以上です。"""
+
+    result = _parse_json_response(raw)
+
+    assert result["article_body"] == "本文キーが崩れても拾います。"
+    assert result["sns_copy"] == "SNS文です。"
+
+
+def test_parse_json_response_falls_back_to_raw_text_when_not_json():
+    raw = "## 裏方リーダー型の今月のテーマ\n今月は整えやすい流れです。"
+
+    result = _parse_json_response(raw)
+
+    assert result["title"] == ""
+    assert result["article_body"].startswith("## 裏方リーダー型")
+    assert result["zodiac_fortunes"] == ""

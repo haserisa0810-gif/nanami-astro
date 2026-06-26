@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from calendar import monthrange
 from datetime import date, datetime
@@ -20,6 +21,7 @@ from services.type_catalog import get_type_definitions_for_prompt
 
 
 JST = ZoneInfo("Asia/Tokyo")
+logger = logging.getLogger(__name__)
 
 ARTICLE_TYPES = {
     "monthly_themes": "今月のテーマ候補",
@@ -435,7 +437,12 @@ def _build_user_prompt(
 {_context_for_prompt(context)}
 {type_fortune_instruction}
 
-出力は次のJSONオブジェクトだけにしてください。Markdownコードフェンスは付けません。
+# 出力形式（厳守）
+必ず次のJSONオブジェクトだけを返してください。
+JSONの前後に説明文、挨拶、注釈、Markdownコードフェンス、```json、``` を付けないでください。
+キー名は必ず title, article_body, zodiac_fortunes, sns_copy の4つにしてください。
+値はすべて文字列にしてください。改行は文字列内に含めて構いません。
+
 {{
   "title": "note記事タイトル",
   "article_body": "note本文下書き。見出しを含めてよい",
@@ -448,6 +455,7 @@ article_body は記事タイプに合う十分な長さで、一文を短くし�
 配置に触れる場合は「金星 × 土星 トライン（orb 0.55°）」の順序で書き、
 直後に生活レベルの感覚へ翻訳してください。
 入力にない配置、日付、orb、度数は追加しないでください。
+もう一度確認します。返答はJSONのみです。JSON以外の文章を前後に付けないでください。
 """
 
 
@@ -461,39 +469,109 @@ def _extract_response_text(response: Any) -> str:
     return "\n".join(parts).strip()
 
 
-def _parse_json_response(raw: str) -> dict[str, str]:
-    cleaned = (raw or "").strip()
+def _strip_markdown_fence(text: str) -> str:
+    cleaned = (text or "").strip()
     if cleaned.startswith("```json"):
         cleaned = cleaned[7:]
     elif cleaned.startswith("```"):
         cleaned = cleaned[3:]
     if cleaned.endswith("```"):
         cleaned = cleaned[:-3]
-    cleaned = cleaned.strip()
+    return cleaned.strip()
 
-    candidates = [cleaned]
+
+def _json_candidates(raw: str) -> list[str]:
+    cleaned = (raw or "").strip()
+    unfenced = _strip_markdown_fence(cleaned)
+    candidates = [unfenced]
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start >= 0 and end > start:
         candidates.append(cleaned[start : end + 1])
+    start = unfenced.find("{")
+    end = unfenced.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(unfenced[start : end + 1])
+    return [candidate.strip() for candidate in candidates if candidate and candidate.strip()]
+
+
+def _decode_first_json_object(text: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _normalize_article_payload(parsed: dict[str, Any]) -> dict[str, str]:
+    aliases = {
+        "title": ("title", "タイトル"),
+        "article_body": ("article_body", "body", "本文", "content", "article"),
+        "zodiac_fortunes": ("zodiac_fortunes", "zodiac", "12星座別運勢"),
+        "sns_copy": ("sns_copy", "sns", "SNS告知文", "announcement"),
+    }
+    result = {}
+    for key, names in aliases.items():
+        value = ""
+        for name in names:
+            if name in parsed:
+                value = parsed.get(name, "")
+                break
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False, indent=2)
+        result[key] = normalize_layout(fix_punctuation(str(value or "")))
+    return result
+
+
+def _fallback_article_payload(raw: str) -> dict[str, str] | None:
+    body = normalize_layout(fix_punctuation(_strip_markdown_fence(raw)))
+    if not body:
+        return None
+    return {
+        "title": "",
+        "article_body": body,
+        "zodiac_fortunes": "",
+        "sns_copy": "",
+    }
+
+
+def _parse_json_response(raw: str) -> dict[str, str]:
+    logger.info("Claude note article raw response length=%s", len(raw or ""))
+    logger.debug("Claude note article raw response:\n%s", raw)
+    if not (raw or "").strip():
+        raise NoteArticleError("Claudeから空の応答が返りました。もう一度生成してください。")
 
     parsed: dict[str, Any] | None = None
-    for candidate in candidates:
+    for candidate in _json_candidates(raw):
         try:
             value = json.loads(candidate)
         except json.JSONDecodeError:
-            continue
+            value = _decode_first_json_object(candidate)
         if isinstance(value, dict):
             parsed = value
             break
     if parsed is None:
+        logger.warning("Claude note article JSON parse failed. Falling back to raw text. raw=%r", raw[:2000])
+        fallback = _fallback_article_payload(raw)
+        if fallback:
+            return fallback
         raise NoteArticleError("Claudeの応答を記事データとして読み取れませんでした。もう一度生成してください。")
 
-    result = {}
-    for key in ("title", "article_body", "zodiac_fortunes", "sns_copy"):
-        value = parsed.get(key, "")
-        result[key] = normalize_layout(fix_punctuation(str(value or "")))
+    result = _normalize_article_payload(parsed)
     if not result["article_body"]:
+        logger.warning("Claude note article JSON had no article_body. Falling back to raw text. keys=%s", sorted(parsed.keys()))
+        fallback = _fallback_article_payload(raw)
+        if fallback:
+            fallback["title"] = result.get("title", "")
+            fallback["zodiac_fortunes"] = result.get("zodiac_fortunes", "")
+            fallback["sns_copy"] = result.get("sns_copy", "")
+            return fallback
         raise NoteArticleError("Claudeからnote本文を取得できませんでした。")
     return result
 
