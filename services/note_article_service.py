@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+import yaml
+
 try:
     from anthropic import Anthropic
 except Exception:  # pragma: no cover - optional dependency failure is reported at runtime
@@ -170,6 +172,38 @@ def _dedupe_dates(events: list[dict[str, Any]], limit: int = 5) -> list[dict[str
     return rows
 
 
+def _prune_empty(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned = {
+            key: _prune_empty(item)
+            for key, item in value.items()
+            if item not in (None, "", [], {})
+        }
+        return {
+            key: item
+            for key, item in cleaned.items()
+            if item not in (None, "", [], {})
+        }
+    if isinstance(value, list):
+        return [
+            item
+            for item in (_prune_empty(item) for item in value)
+            if item not in (None, "", [], {})
+        ]
+    return value
+
+
+def _snapshot_for_yaml(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return _prune_empty(
+        {
+            "date": snapshot.get("transit_date"),
+            "planet_positions": snapshot.get("today_planets"),
+            "aspects": snapshot.get("aspects"),
+            "aspect_count": snapshot.get("aspect_count"),
+        }
+    )
+
+
 def _period_summary(events: list[dict[str, Any]], year: int, month: int) -> list[dict[str, Any]]:
     last_day = monthrange(year, month)[1]
     periods = [
@@ -312,6 +346,7 @@ def extract_monthly_transit_context(
     return {
         "target_month": target_month,
         "month_label": f"{year}年{month}月",
+        "daily_snapshots": [_snapshot_for_yaml(snapshot) for snapshot in snapshots],
         "major_aspects": major,
         "tight_aspects": tight,
         "love_aspects": love,
@@ -331,6 +366,63 @@ def extract_monthly_transit_context(
         ),
         "snapshot_count": len(snapshots),
     }
+
+
+def build_note_article_yaml(result: dict[str, Any]) -> str:
+    context = result.get("transit_context") or {}
+    article = _prune_empty(
+        {
+            "title": result.get("title"),
+            "article_body": result.get("article_body"),
+            "zodiac_fortunes": result.get("zodiac_fortunes"),
+            "sns_copy": result.get("sns_copy"),
+        }
+    )
+    western = _prune_empty(
+        {
+            "transits": {
+                "target_month": context.get("target_month"),
+                "month_label": context.get("month_label"),
+                "snapshot_count": context.get("snapshot_count"),
+                "theme_candidates": context.get("theme_candidates"),
+                "theme_profile": context.get("theme_profile"),
+                "major_aspects": context.get("major_aspects"),
+                "tight_aspects": context.get("tight_aspects"),
+                "love_aspects": context.get("love_aspects"),
+                "work_aspects": context.get("work_aspects"),
+                "change_aspects": context.get("change_aspects"),
+                "inner_review_aspects": context.get("inner_review_aspects"),
+                "month_flow": context.get("month_flow"),
+                "caution_dates": context.get("caution_dates"),
+                "movement_dates": context.get("movement_dates"),
+                "daily_snapshots": context.get("daily_snapshots"),
+            }
+        }
+    )
+    payload = _prune_empty(
+        {
+            "version": "note-article-yaml-v1",
+            "purpose": "Claudeでnote記事を作成・加筆するための計算済み占術データ",
+            "note_article": {
+                "target_month": result.get("target_month"),
+                "article_type": result.get("article_type"),
+                "article_type_label": result.get("article_type_label"),
+                "custom_theme": result.get("custom_theme"),
+                "model_label": result.get("model_label"),
+                "generated_article": article,
+                "warnings": result.get("warnings"),
+            },
+            "astrology_data": {
+                "western_astrology": western,
+            },
+            "writing_instruction": {
+                "use_only_provided_data": True,
+                "do_not_recalculate": True,
+                "missing_sections_mean_not_available": True,
+            },
+        }
+    )
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False, width=120)
 
 
 def _context_for_prompt(context: dict[str, Any]) -> str:
@@ -711,7 +803,7 @@ def generate_note_article(
             context=context,
             custom_theme=custom_theme,
         )
-        return {
+        result = {
             "target_month": target_month,
             "article_type": article_type,
             "article_type_label": ARTICLE_TYPES[article_type],
@@ -721,6 +813,8 @@ def generate_note_article(
             "transit_context": context,
             **generated,
         }
+        result["yaml_preview"] = build_note_article_yaml(result)
+        return result
 
     response = client.messages.create(
         model=model,
@@ -740,7 +834,7 @@ def generate_note_article(
     )
     warnings = _response_warnings(response)
     generated = _parse_json_response(_extract_response_text(response))
-    return {
+    result = {
         "target_month": target_month,
         "article_type": article_type,
         "article_type_label": ARTICLE_TYPES[article_type],
@@ -751,3 +845,5 @@ def generate_note_article(
         "warnings": warnings,
         **generated,
     }
+    result["yaml_preview"] = build_note_article_yaml(result)
+    return result

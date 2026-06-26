@@ -11,7 +11,10 @@
   .transit-box{background:#faf8f5;border:1px solid #eee2d5;border-radius:12px;padding:14px}
   .transit-box ul{margin:8px 0 0;padding-left:20px;line-height:1.65}
   .copy-feedback{font-size:12px;color:#2e7d32;min-width:48px}
-  @media (max-width: 860px){.note-layout{grid-template-columns:1fr}.note-form{position:static}}
+  .copy-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .copy-actions .copy-btn{min-height:40px;padding:10px 14px}
+  .yaml-box{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px;line-height:1.65}
+  @media (max-width: 860px){.note-layout{grid-template-columns:1fr}.note-form{position:static}.output-head{align-items:flex-start;flex-direction:column}.copy-actions{width:100%;justify-content:stretch}.copy-actions .copy-btn{width:100%}}
 </style>
 
 <div class="section-head">
@@ -72,10 +75,23 @@
         {% endif %}
       </section>
 
+      {% if result.yaml_preview %}
+        <section class="card">
+          <div class="output-head">
+            <div>
+              <h2>YAMLプレビュー</h2>
+              <p class="muted">Claudeへ貼り付けやすい形式です。取得済みの占術データだけを含めています。</p>
+            </div>
+            <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="yaml-preview">YAMLをコピー</button></div>
+          </div>
+          <pre id="yaml-preview" class="output-box yaml-box">{{ result.yaml_preview }}</pre>
+        </section>
+      {% endif %}
+
       <section class="card">
         <div class="output-head">
           <h2>テーマ候補</h2>
-          <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="theme-candidates">コピー</button></div>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="theme-candidates">コピー</button></div>
         </div>
         <ol id="theme-candidates" class="theme-list">
           {% for item in result.transit_context.theme_candidates %}<li>{{ item }}</li>{% endfor %}
@@ -85,7 +101,7 @@
       <section class="card">
         <div class="output-head">
           <h2>{{ result.title or "note本文下書き" }}</h2>
-          <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="article-body">コピー</button></div>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="article-body">コピー</button></div>
         </div>
         <div id="article-body" class="output-box">{{ result.article_body }}</div>
       </section>
@@ -94,7 +110,7 @@
         <section class="card">
           <div class="output-head">
             <h2>12星座別運勢</h2>
-            <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="zodiac-fortunes">コピー</button></div>
+            <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="zodiac-fortunes">コピー</button></div>
           </div>
           <div id="zodiac-fortunes" class="output-box">{{ result.zodiac_fortunes }}</div>
         </section>
@@ -103,7 +119,7 @@
       <section class="card">
         <div class="output-head">
           <h2>SNS告知文</h2>
-          <div><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="sns-copy">コピー</button></div>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="sns-copy">コピー</button></div>
         </div>
         <div id="sns-copy" class="output-box">{{ result.sns_copy }}</div>
       </section>
@@ -163,7 +179,7 @@
     const feedback = button.parentElement.querySelector(".copy-feedback");
     try {
       await navigator.clipboard.writeText(text);
-      feedback.textContent = "コピー済み";
+      feedback.textContent = "コピーしました";
     } catch (error) {
       const area = document.createElement("textarea");
       area.value = text;
@@ -173,7 +189,7 @@
       area.select();
       document.execCommand("copy");
       area.remove();
-      feedback.textContent = "コピー済み";
+      feedback.textContent = "コピーしました";
     }
     window.setTimeout(() => { feedback.textContent = ""; }, 1800);
   }

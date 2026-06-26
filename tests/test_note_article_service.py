@@ -3,7 +3,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from services.note_article_service import _parse_json_response, extract_monthly_transit_context, generate_note_article
+import yaml
+
+from services.note_article_service import (
+    _parse_json_response,
+    build_note_article_yaml,
+    extract_monthly_transit_context,
+    generate_note_article,
+)
 from services.type_catalog import get_type_definitions_for_prompt, get_type_subtype_combinations_for_prompt
 
 
@@ -39,6 +46,8 @@ def test_extract_monthly_transit_context_classifies_aspects():
     result = extract_monthly_transit_context("2026-06", snapshot_loader=_snapshot_loader)
 
     assert result["snapshot_count"] == 30
+    assert "planet_positions" not in result["daily_snapshots"][0]
+    assert result["daily_snapshots"][0]["aspects"]
     assert result["tight_aspects"][0]["orb"] == 0
     assert result["love_aspects"]
     assert result["work_aspects"]
@@ -83,6 +92,37 @@ def test_generate_note_article_uses_claude_only_after_transit_extraction():
     assert "主要アスペクト" in calls[0]["messages"][0]["content"]
     assert result["article_body"].endswith("ですよ。")
     assert result["sns_copy"].endswith("。")
+    assert "western_astrology:" in result["yaml_preview"]
+    assert "daily_snapshots:" in result["yaml_preview"]
+
+
+def test_build_note_article_yaml_contains_only_available_astrology_data():
+    context = extract_monthly_transit_context("2026-06", snapshot_loader=_snapshot_loader)
+    payload = {
+        "target_month": "2026-06",
+        "article_type": "monthly_reading",
+        "article_type_label": "今月の星読み記事",
+        "model_label": "Claude Haiku（高速）",
+        "custom_theme": "",
+        "transit_context": context,
+        "warnings": [],
+        "title": "6月の星読み",
+        "article_body": "本文です。",
+        "zodiac_fortunes": "",
+        "sns_copy": "SNS文です。",
+    }
+
+    dumped = build_note_article_yaml(payload)
+    loaded = yaml.safe_load(dumped)
+
+    assert loaded["version"] == "note-article-yaml-v1"
+    assert loaded["note_article"]["generated_article"]["article_body"] == "本文です。"
+    assert "zodiac_fortunes" not in loaded["note_article"]["generated_article"]
+    assert "western_astrology" in loaded["astrology_data"]
+    assert "vedic_astrology" not in loaded["astrology_data"]
+    assert "shichusuimei" not in loaded["astrology_data"]
+    assert "natal_chart" not in loaded["astrology_data"]["western_astrology"]
+    assert loaded["astrology_data"]["western_astrology"]["transits"]["daily_snapshots"][0]["aspects"]
 
 
 def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
