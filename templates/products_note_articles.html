@@ -44,7 +44,7 @@
         </div>
         <div>
           <label for="custom_theme">任意テーマ</label>
-          <textarea id="custom_theme" name="custom_theme" placeholder="例：春から環境が変わった人へ">{{ custom_theme }}</textarea>
+          <textarea id="custom_theme" name="custom_theme" placeholder="例：恋愛 / 仕事 / 人間関係 / 春から環境が変わった人へ">{{ custom_theme }}</textarea>
         </div>
         <div>
           <label for="model_key">Claudeモデル</label>
@@ -127,6 +127,14 @@
             <strong>動きやすい日候補</strong>
             <ul>
               {% for item in result.transit_context.movement_dates %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+          <div class="transit-box">
+            <strong>変化・見直し候補</strong>
+            <ul>
+              {% for item in (result.transit_context.change_aspects + result.transit_context.inner_review_aspects)[:5] %}
                 <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
               {% else %}<li>該当なし</li>{% endfor %}
             </ul>

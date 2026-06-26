@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover - optional dependency failure is reported 
 from services.ai_dispatcher import CLAUDE_HAIKU_MODEL, CLAUDE_SONNET_MODEL
 from services.text_formatter import fix_punctuation, normalize_layout
 from services.transit_calc import calc_global_transit_snapshot
+from services.type_catalog import get_type_definitions_for_prompt
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -27,6 +28,7 @@ ARTICLE_TYPES = {
     "love_column": "恋愛コラム",
     "work_column": "仕事コラム",
     "sns_announcement": "SNS告知文",
+    "type_monthly_fortunes": "タイプ別運勢",
 }
 
 CLAUDE_MODELS = {
@@ -57,6 +59,8 @@ ASPECT_JA = {
 
 LOVE_PLANETS = {"Moon", "Venus", "Mars"}
 WORK_PLANETS = {"Sun", "Mercury", "Saturn"}
+CHANGE_PLANETS = {"Uranus", "Neptune", "Pluto"}
+INNER_REVIEW_PLANETS = {"Moon", "Mercury", "Saturn"}
 HARD_ASPECTS = {"square", "opposition"}
 FLOW_ASPECTS = {"trine", "sextile"}
 
@@ -187,6 +191,8 @@ def _theme_candidates(
     major: list[dict[str, Any]],
     love: list[dict[str, Any]],
     work: list[dict[str, Any]],
+    change: list[dict[str, Any]] | None = None,
+    inner_review: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     candidates: list[str] = []
     if major:
@@ -195,10 +201,69 @@ def _theme_candidates(
         candidates.append(f"{love[0]['label']}から読む、心の距離と関係の整え方")
     if work:
         candidates.append(f"{work[0]['label']}から読む、働き方と判断のタイミング")
+    if change:
+        candidates.append(f"{change[0]['label']}から読む、変化や切り替えの受け止め方")
+    if inner_review:
+        candidates.append(f"{inner_review[0]['label']}から読む、内面整理と見直しの進め方")
     if len(major) > 1:
         candidates.append(f"{major[1]['label']}を味方につけるための小さな選択")
     candidates.append("今月を前半・後半に分けて読む、動く時と整える時")
     return candidates[:5]
+
+
+def _theme_score(events: list[dict[str, Any]], planets: set[str], *, tight_orb: float = 1.0) -> int:
+    score = 0
+    for event in events:
+        if not ({event["planet_a"], event["planet_b"]} & planets):
+            continue
+        score += 2 if event["orb"] <= tight_orb else 1
+        if event["days_active"] >= 5:
+            score += 1
+    return score
+
+
+def _theme_profile(
+    *,
+    events: list[dict[str, Any]],
+    love: list[dict[str, Any]],
+    work: list[dict[str, Any]],
+    change: list[dict[str, Any]],
+    inner_review: list[dict[str, Any]],
+    custom_theme: str = "",
+) -> dict[str, Any]:
+    scores = {
+        "love_relationships": _theme_score(events, LOVE_PLANETS),
+        "work_activity": _theme_score(events, WORK_PLANETS),
+        "change_turning_point": _theme_score(events, CHANGE_PLANETS),
+        "inner_review": _theme_score(events, INNER_REVIEW_PLANETS),
+    }
+    if custom_theme.strip():
+        selected = "custom"
+    else:
+        selected = max(scores, key=scores.get) if any(scores.values()) else "monthly_flow"
+    labels = {
+        "love_relationships": "恋愛・対人",
+        "work_activity": "仕事・活動",
+        "change_turning_point": "変化・転機",
+        "inner_review": "内面整理・見直し",
+        "monthly_flow": "月全体の流れ",
+        "custom": custom_theme.strip(),
+    }
+    evidence_map = {
+        "love_relationships": love[:5],
+        "work_activity": work[:5],
+        "change_turning_point": change[:5],
+        "inner_review": inner_review[:5],
+        "monthly_flow": events[:5],
+        "custom": events[:8],
+    }
+    return {
+        "selected": selected,
+        "label": labels.get(selected, selected),
+        "scores": scores,
+        "evidence": evidence_map.get(selected, []) or events[:5],
+        "custom_theme": custom_theme.strip(),
+    }
 
 
 def extract_monthly_transit_context(
@@ -221,6 +286,16 @@ def extract_monthly_transit_context(
         for event in events
         if {event["planet_a"], event["planet_b"]} & WORK_PLANETS
     ][:8]
+    change = [
+        event
+        for event in events
+        if {event["planet_a"], event["planet_b"]} & CHANGE_PLANETS
+    ][:8]
+    inner_review = [
+        event
+        for event in events
+        if {event["planet_a"], event["planet_b"]} & INNER_REVIEW_PLANETS
+    ][:8]
     caution = _dedupe_dates(
         [event for event in events if event["aspect"] in HARD_ASPECTS and event["orb"] <= 1.25]
     )
@@ -235,10 +310,19 @@ def extract_monthly_transit_context(
         "tight_aspects": tight,
         "love_aspects": love,
         "work_aspects": work,
+        "change_aspects": change,
+        "inner_review_aspects": inner_review,
         "month_flow": _period_summary(events, year, month),
         "caution_dates": caution,
         "movement_dates": movement,
-        "theme_candidates": _theme_candidates(major, love, work),
+        "theme_candidates": _theme_candidates(major, love, work, change, inner_review),
+        "theme_profile": _theme_profile(
+            events=events,
+            love=love,
+            work=work,
+            change=change,
+            inner_review=inner_review,
+        ),
         "snapshot_count": len(snapshots),
     }
 
@@ -252,6 +336,8 @@ def _context_for_prompt(context: dict[str, Any]) -> str:
     for row in context.get("month_flow", []) or []:
         aspects = row.get("aspects") or ["主要アスペクトなし"]
         flow_lines.append(f"- {row.get('period')}: {' / '.join(aspects)}")
+    theme_profile = context.get("theme_profile") or {}
+    theme_evidence = "\n".join(f"- {_event_line(item)}" for item in theme_profile.get("evidence", []) or []) or "- 該当なし"
 
     return f"""対象月: {context['month_label']}
 
@@ -267,6 +353,12 @@ def _context_for_prompt(context: dict[str, Any]) -> str:
 仕事テーマに使える配置:
 {lines('work_aspects')}
 
+変化・転機テーマに使える配置:
+{lines('change_aspects')}
+
+内面整理・見直しテーマに使える配置:
+{lines('inner_review_aspects')}
+
 月全体の流れ:
 {chr(10).join(flow_lines)}
 
@@ -278,7 +370,17 @@ def _context_for_prompt(context: dict[str, Any]) -> str:
 
 Python抽出のテーマ候補:
 {chr(10).join(f"- {item}" for item in context['theme_candidates'])}
+
+Python判定の中心テーマ:
+- {theme_profile.get('label') or '月全体の流れ'}
+
+中心テーマの根拠:
+{theme_evidence}
 """
+
+
+def _type_definitions_for_prompt() -> str:
+    return json.dumps(get_type_definitions_for_prompt(), ensure_ascii=False, indent=2)
 
 
 def _load_system_prompt() -> str:
@@ -294,6 +396,32 @@ def _build_user_prompt(
 ) -> str:
     type_label = ARTICLE_TYPES[article_type]
     custom_line = custom_theme.strip() or "指定なし。配置データから自然なテーマを選ぶ。"
+    type_fortune_instruction = ""
+    if article_type == "type_monthly_fortunes":
+        type_fortune_instruction = f"""
+
+# タイプ別運勢の追加条件
+これは無料の /type 診断本文ではなく、有料note向けの「タイプ × 今月の星」の読みです。
+タイプの本質説明、基本性格、強み、苦手傾向の説明だけで終わらせないでください。
+各タイプについて、必ず次の見出し構成で書いてください。
+
+## ○○タイプの今月のテーマ
+## 今月の星の流れが、このタイプにどう作用しやすいか
+## 仕事・活動
+## 恋愛・人間関係
+## 今月やるとよいこと
+## 気をつけたいこと
+## ひとこと
+
+タイプ一覧と定義:
+{_type_definitions_for_prompt()}
+
+禁止:
+- タイプ定義にない性質を断定しない。
+- 西洋占星術・インド占星術・四柱推命の診断計算を再計算しない。
+- 無料診断の summary を言い換えるだけの記事にしない。
+- 入力にない天体配置、日付、orb、度数を追加しない。
+"""
     zodiac_instruction = (
         "zodiac_fortunes には牡羊座から魚座まで12星座を順番に、各80〜140字で必ず含める。"
         if article_type == "zodiac_fortunes"
@@ -305,6 +433,7 @@ def _build_user_prompt(
 任意テーマ: {custom_line}
 
 {_context_for_prompt(context)}
+{type_fortune_instruction}
 
 出力は次のJSONオブジェクトだけにしてください。Markdownコードフェンスは付けません。
 {{
@@ -392,12 +521,20 @@ def generate_note_article(
         raise NoteArticleError("Anthropic SDKを読み込めません。note記事生成の依存関係を確認してください。")
 
     context = extract_monthly_transit_context(target_month, snapshot_loader=snapshot_loader)
+    context["theme_profile"] = _theme_profile(
+        events=context.get("major_aspects", []) or [],
+        love=context.get("love_aspects", []) or [],
+        work=context.get("work_aspects", []) or [],
+        change=context.get("change_aspects", []) or [],
+        inner_review=context.get("inner_review_aspects", []) or [],
+        custom_theme=custom_theme,
+    )
     factory = client_factory or Anthropic
     client = factory(api_key=api_key)
     model = CLAUDE_MODELS[model_key]["model"]
     response = client.messages.create(
         model=model,
-        max_tokens=7000 if article_type == "zodiac_fortunes" else 5000,
+        max_tokens=9000 if article_type == "type_monthly_fortunes" else 7000 if article_type == "zodiac_fortunes" else 5000,
         temperature=0.65,
         system=_load_system_prompt(),
         messages=[

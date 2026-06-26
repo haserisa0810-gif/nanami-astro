@@ -15,4 +15,5 @@ def test_note_page_context_defaults_to_monthly_reading():
 
     assert context["article_type"] == "monthly_reading"
     assert "zodiac_fortunes" in context["article_types"]
+    assert context["article_types"]["type_monthly_fortunes"] == "タイプ別運勢"
     assert set(context["claude_models"]) == {"haiku", "sonnet"}
