@@ -173,3 +173,34 @@ def get_type_subtype_combinations_for_prompt() -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def get_type_subtype_groups_for_prompt() -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for type_id, item in TYPE_CATALOG.items():
+        combinations = []
+        for subtype_id, subtype_label in item["subtypes"].items():
+            combinations.append(
+                {
+                    "type_id": type_id,
+                    "type_name": item["label"],
+                    "subtype_id": subtype_id,
+                    "subtype_name": subtype_label,
+                    "display_name": f"{item['label']} × {subtype_label}",
+                    "parent_keywords": item["keywords"],
+                    "parent_tendencies": item["tendencies"],
+                    "parent_cautions": item["cautions"],
+                }
+            )
+        groups.append(
+            {
+                "type_id": type_id,
+                "type_name": item["label"],
+                "parent_summary_for_reference_only": item["summary"],
+                "parent_keywords": item["keywords"],
+                "parent_tendencies": item["tendencies"],
+                "parent_cautions": item["cautions"],
+                "combinations": combinations,
+            }
+        )
+    return groups

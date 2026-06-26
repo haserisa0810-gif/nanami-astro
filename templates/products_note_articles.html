@@ -65,6 +65,11 @@
       <section class="card">
         <h2>{{ result.target_month }} / {{ result.article_type_label }}</h2>
         <p class="muted">{{ result.model_label }}{% if result.custom_theme %} / 任意テーマ: {{ result.custom_theme }}{% endif %}</p>
+        {% if result.warnings %}
+          <div class="error" style="margin-top:12px">
+            {% for warning in result.warnings %}<div>{{ warning }}</div>{% endfor %}
+          </div>
+        {% endif %}
       </section>
 
       <section class="card">

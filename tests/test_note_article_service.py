@@ -62,7 +62,8 @@ def test_generate_note_article_uses_claude_only_after_transit_extraction():
                 "sns_copy": "6月の星読みを公開しました｡",
             }
             return SimpleNamespace(
-                content=[SimpleNamespace(type="text", text=__import__("json").dumps(payload, ensure_ascii=False))]
+                content=[SimpleNamespace(type="text", text=__import__("json").dumps(payload, ensure_ascii=False))],
+                stop_reason="max_tokens" if len(calls) == 1 else "end_turn",
             )
 
     class FakeClient:
@@ -117,16 +118,19 @@ def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
     prompt = calls[0]["messages"][0]["content"]
     assert "タイプ別運勢の追加条件" in prompt
     assert "無料の /type 診断本文ではなく" in prompt
-    assert "親タイプ × サブタイプの全組み合わせ" in prompt
+    assert "今回出力する親タイプ × サブタイプ" in prompt
     assert "backstage_leader" in prompt
     assert "裏方リーダー型" in prompt
-    assert "breakthrough_burnout" in prompt
-    assert "sprint_fullpower" in prompt
-    assert "突破集中型（燃焼タイプ） × 短距離全力" in prompt
-    assert "各組み合わせは「根拠1〜3個」と「今月の読み2〜3行」まで" in prompt
+    assert "各組み合わせは「根拠2個まで」と「今月の読み2〜3文」まで" in prompt
     assert "仕事" in prompt
-    assert calls[0]["max_tokens"] == 9000
+    assert len(calls) == 10
+    assert all(call["max_tokens"] == 1800 for call in calls)
+    assert any("breakthrough_burnout" in call["messages"][0]["content"] for call in calls)
+    assert any("sprint_fullpower" in call["messages"][0]["content"] for call in calls)
+    assert any("突破集中型（燃焼タイプ） × 短距離全力" in call["messages"][0]["content"] for call in calls)
     assert result["article_type_label"] == "タイプ別運勢"
+    assert result["article_body"].startswith("# 2026年6月 タイプ別運勢素材")
+    assert result["warnings"] == ["出力が途中で切れた可能性があります。Claudeのmax_tokens上限に到達しました。"]
 
 
 def test_type_catalog_contains_public_type_ids():

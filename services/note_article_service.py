@@ -17,7 +17,11 @@ except Exception:  # pragma: no cover - optional dependency failure is reported 
 from services.ai_dispatcher import CLAUDE_HAIKU_MODEL, CLAUDE_SONNET_MODEL
 from services.text_formatter import fix_punctuation, normalize_layout
 from services.transit_calc import calc_global_transit_snapshot
-from services.type_catalog import get_type_definitions_for_prompt, get_type_subtype_combinations_for_prompt
+from services.type_catalog import (
+    get_type_definitions_for_prompt,
+    get_type_subtype_combinations_for_prompt,
+    get_type_subtype_groups_for_prompt,
+)
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -389,6 +393,12 @@ def _type_subtype_combinations_for_prompt() -> str:
     return json.dumps(get_type_subtype_combinations_for_prompt(), ensure_ascii=False, indent=2)
 
 
+def _type_group_for_prompt(type_group: dict[str, Any] | None) -> str:
+    if not type_group:
+        return _type_subtype_combinations_for_prompt()
+    return json.dumps(type_group, ensure_ascii=False, indent=2)
+
+
 def _load_system_prompt() -> str:
     path = Path(__file__).resolve().parents[1] / "prompts" / "note_article_system.txt"
     return path.read_text(encoding="utf-8").strip()
@@ -399,6 +409,7 @@ def _build_user_prompt(
     context: dict[str, Any],
     article_type: str,
     custom_theme: str,
+    type_group: dict[str, Any] | None = None,
 ) -> str:
     type_label = ARTICLE_TYPES[article_type]
     custom_line = custom_theme.strip() or "指定なし。配置データから自然なテーマを選ぶ。"
@@ -409,17 +420,17 @@ def _build_user_prompt(
 # タイプ別運勢の追加条件
 これは完成済みの長文記事ではなく、有料noteや別のClaude AIで肉付けするための「鑑定素材」です。
 無料の /type 診断本文ではなく、「親タイプ × サブタイプ × 今月の星」の読みの素材として作成してください。
-article_body には、親タイプ × サブタイプの組み合わせごとの短いMarkdown素材だけを書いてください。
+article_body には、指定された親タイプ × サブタイプの短いMarkdown素材だけを書いてください。
 
-必ず全30組み合わせを、次の見出し形式で出力してください。
+必ず指定された全組み合わせを、次の見出し形式で出力してください。
 
 ## 親タイプ名 × サブタイプ名
 
 根拠：
-- 入力トランジットから1〜3個
+- 入力トランジットから最大2個
 
 今月の読み：
-2〜3行。長文にしない。
+2〜3文。長文にしない。1文は短くする。
 
 出力してよい内容:
 - そのタイプ × サブタイプに、今月の星の流れがどう出やすいか
@@ -430,20 +441,22 @@ article_body には、親タイプ × サブタイプの組み合わせごとの
 - 親タイプだけの長文運勢
 - 無料 /type 診断の本質説明、基本性格、強み、苦手傾向の焼き直し
 - 「仕事・恋愛・注意点」などの大見出しを全タイプに展開する長文記事
+- 仕事・恋愛などの詳細見出し
+- 全体冒頭の長い星の流れ
 - 入力にない天体配置、日付、orb、度数
 
 親タイプ一覧（参照用。本文ではこの説明を焼き直さない）:
 {_type_definitions_for_prompt()}
 
-親タイプ × サブタイプの全組み合わせ（必ずこの順番で全件出力）:
-{_type_subtype_combinations_for_prompt()}
+今回出力する親タイプ × サブタイプ（必ずこの順番で全件出力）:
+{_type_group_for_prompt(type_group)}
 
 禁止:
 - タイプ定義にない性質を断定しない。
 - 西洋占星術・インド占星術・四柱推命の診断計算を再計算しない。
 - 無料診断の summary を言い換えるだけの記事にしない。
 - 入力にない天体配置、日付、orb、度数を追加しない。
-- article_body を長文記事にしない。各組み合わせは「根拠1〜3個」と「今月の読み2〜3行」まで。
+- article_body を長文記事にしない。各組み合わせは「根拠2個まで」と「今月の読み2〜3文」まで。
 """
     zodiac_instruction = (
         "zodiac_fortunes には牡羊座から魚座まで12星座を順番に、各80〜140字で必ず含める。"
@@ -472,7 +485,7 @@ JSONの前後に説明文、挨拶、注釈、Markdownコードフェンス、``
 }}
 
 {zodiac_instruction}
-article_body は記事タイプに合う十分な長さで、一文を短くし、断定を避けてください。
+{"article_body は短い鑑定素材にしてください。全体冒頭は入れないか、入れる場合も1文までにしてください。" if article_type == "type_monthly_fortunes" else "article_body は記事タイプに合う十分な長さで、一文を短くし、断定を避けてください。"}
 配置に触れる場合は「金星 × 土星 トライン（orb 0.55°）」の順序で書き、
 直後に生活レベルの感覚へ翻訳してください。
 入力にない配置、日付、orb、度数は追加しないでください。
@@ -597,6 +610,66 @@ def _parse_json_response(raw: str) -> dict[str, str]:
     return result
 
 
+def _response_warnings(response: Any) -> list[str]:
+    stop_reason = str(getattr(response, "stop_reason", "") or "").strip()
+    if stop_reason == "max_tokens":
+        return ["出力が途中で切れた可能性があります。Claudeのmax_tokens上限に到達しました。"]
+    return []
+
+
+def _type_material_intro(context: dict[str, Any]) -> str:
+    theme = ((context.get("theme_profile") or {}).get("label") or "月全体の流れ").strip()
+    evidence = ((context.get("theme_profile") or {}).get("evidence") or [])[:2]
+    lines = [f"# {context.get('month_label', '')} タイプ別運勢素材".strip(), "", f"全体メモ：{theme}を短く反映した鑑定素材です。"]
+    if evidence:
+        lines.extend(["", "主な根拠："])
+        lines.extend(f"- {_event_line(item)}" for item in evidence)
+    return "\n".join(lines).strip()
+
+
+def _generate_type_monthly_fortunes(
+    *,
+    client: Any,
+    model: str,
+    context: dict[str, Any],
+    custom_theme: str,
+) -> dict[str, Any]:
+    bodies: list[str] = []
+    warnings: list[str] = []
+    for group in get_type_subtype_groups_for_prompt():
+        response = client.messages.create(
+            model=model,
+            max_tokens=1800,
+            temperature=0.55,
+            system=_load_system_prompt(),
+            messages=[
+                {
+                    "role": "user",
+                    "content": _build_user_prompt(
+                        context=context,
+                        article_type="type_monthly_fortunes",
+                        custom_theme=custom_theme,
+                        type_group=group,
+                    ),
+                }
+            ],
+        )
+        warnings.extend(_response_warnings(response))
+        generated = _parse_json_response(_extract_response_text(response))
+        if generated.get("article_body"):
+            bodies.append(generated["article_body"])
+
+    if not bodies:
+        raise NoteArticleError("Claudeからタイプ別運勢素材を取得できませんでした。")
+    return {
+        "title": f"{context.get('month_label', '')} タイプ別運勢素材".strip(),
+        "article_body": normalize_layout("\n\n".join([_type_material_intro(context), *bodies])),
+        "zodiac_fortunes": "",
+        "sns_copy": "",
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+
+
 def generate_note_article(
     *,
     target_month: str,
@@ -631,9 +704,27 @@ def generate_note_article(
     factory = client_factory or Anthropic
     client = factory(api_key=api_key)
     model = CLAUDE_MODELS[model_key]["model"]
+    if article_type == "type_monthly_fortunes":
+        generated = _generate_type_monthly_fortunes(
+            client=client,
+            model=model,
+            context=context,
+            custom_theme=custom_theme,
+        )
+        return {
+            "target_month": target_month,
+            "article_type": article_type,
+            "article_type_label": ARTICLE_TYPES[article_type],
+            "model_key": model_key,
+            "model_label": CLAUDE_MODELS[model_key]["label"],
+            "custom_theme": custom_theme.strip(),
+            "transit_context": context,
+            **generated,
+        }
+
     response = client.messages.create(
         model=model,
-        max_tokens=9000 if article_type == "type_monthly_fortunes" else 7000 if article_type == "zodiac_fortunes" else 5000,
+        max_tokens=7000 if article_type == "zodiac_fortunes" else 5000,
         temperature=0.65,
         system=_load_system_prompt(),
         messages=[
@@ -647,6 +738,7 @@ def generate_note_article(
             }
         ],
     )
+    warnings = _response_warnings(response)
     generated = _parse_json_response(_extract_response_text(response))
     return {
         "target_month": target_month,
@@ -656,5 +748,6 @@ def generate_note_article(
         "model_label": CLAUDE_MODELS[model_key]["label"],
         "custom_theme": custom_theme.strip(),
         "transit_context": context,
+        "warnings": warnings,
         **generated,
     }
