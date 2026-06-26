@@ -17,7 +17,7 @@ except Exception:  # pragma: no cover - optional dependency failure is reported 
 from services.ai_dispatcher import CLAUDE_HAIKU_MODEL, CLAUDE_SONNET_MODEL
 from services.text_formatter import fix_punctuation, normalize_layout
 from services.transit_calc import calc_global_transit_snapshot
-from services.type_catalog import get_type_definitions_for_prompt
+from services.type_catalog import get_type_definitions_for_prompt, get_type_subtype_combinations_for_prompt
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -385,6 +385,10 @@ def _type_definitions_for_prompt() -> str:
     return json.dumps(get_type_definitions_for_prompt(), ensure_ascii=False, indent=2)
 
 
+def _type_subtype_combinations_for_prompt() -> str:
+    return json.dumps(get_type_subtype_combinations_for_prompt(), ensure_ascii=False, indent=2)
+
+
 def _load_system_prompt() -> str:
     path = Path(__file__).resolve().parents[1] / "prompts" / "note_article_system.txt"
     return path.read_text(encoding="utf-8").strip()
@@ -403,26 +407,43 @@ def _build_user_prompt(
         type_fortune_instruction = f"""
 
 # タイプ別運勢の追加条件
-これは無料の /type 診断本文ではなく、有料note向けの「タイプ × 今月の星」の読みです。
-タイプの本質説明、基本性格、強み、苦手傾向の説明だけで終わらせないでください。
-各タイプについて、必ず次の見出し構成で書いてください。
+これは完成済みの長文記事ではなく、有料noteや別のClaude AIで肉付けするための「鑑定素材」です。
+無料の /type 診断本文ではなく、「親タイプ × サブタイプ × 今月の星」の読みの素材として作成してください。
+article_body には、親タイプ × サブタイプの組み合わせごとの短いMarkdown素材だけを書いてください。
 
-## ○○タイプの今月のテーマ
-## 今月の星の流れが、このタイプにどう作用しやすいか
-## 仕事・活動
-## 恋愛・人間関係
-## 今月やるとよいこと
-## 気をつけたいこと
-## ひとこと
+必ず全30組み合わせを、次の見出し形式で出力してください。
 
-タイプ一覧と定義:
+## 親タイプ名 × サブタイプ名
+
+根拠：
+- 入力トランジットから1〜3個
+
+今月の読み：
+2〜3行。長文にしない。
+
+出力してよい内容:
+- そのタイプ × サブタイプに、今月の星の流れがどう出やすいか
+- 今月だけの使い方、ズレにくい動き方
+- 肉付け前の素材として使いやすい短い読み
+
+出力してはいけない内容:
+- 親タイプだけの長文運勢
+- 無料 /type 診断の本質説明、基本性格、強み、苦手傾向の焼き直し
+- 「仕事・恋愛・注意点」などの大見出しを全タイプに展開する長文記事
+- 入力にない天体配置、日付、orb、度数
+
+親タイプ一覧（参照用。本文ではこの説明を焼き直さない）:
 {_type_definitions_for_prompt()}
+
+親タイプ × サブタイプの全組み合わせ（必ずこの順番で全件出力）:
+{_type_subtype_combinations_for_prompt()}
 
 禁止:
 - タイプ定義にない性質を断定しない。
 - 西洋占星術・インド占星術・四柱推命の診断計算を再計算しない。
 - 無料診断の summary を言い換えるだけの記事にしない。
 - 入力にない天体配置、日付、orb、度数を追加しない。
+- article_body を長文記事にしない。各組み合わせは「根拠1〜3個」と「今月の読み2〜3行」まで。
 """
     zodiac_instruction = (
         "zodiac_fortunes には牡羊座から魚座まで12星座を順番に、各80〜140字で必ず含める。"

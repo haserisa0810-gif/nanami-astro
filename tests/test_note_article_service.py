@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from services.note_article_service import _parse_json_response, extract_monthly_transit_context, generate_note_article
-from services.type_catalog import get_type_definitions_for_prompt
+from services.type_catalog import get_type_definitions_for_prompt, get_type_subtype_combinations_for_prompt
 
 
 def _snapshot_loader(*, target_date):
@@ -92,7 +92,7 @@ def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
             calls.append(kwargs)
             payload = {
                 "title": "6月のタイプ別運勢",
-                "article_body": "## 裏方リーダー型の今月のテーマ\n整える流れです。",
+                "article_body": "## 突破集中型（燃焼タイプ） × 短距離全力\n\n根拠：\n- 金星 × 土星 トライン（orb 0.00°）\n\n今月の読み：\n区切ると動きやすい流れです。",
                 "zodiac_fortunes": "",
                 "sns_copy": "タイプ別運勢を公開しました。",
             }
@@ -117,8 +117,13 @@ def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
     prompt = calls[0]["messages"][0]["content"]
     assert "タイプ別運勢の追加条件" in prompt
     assert "無料の /type 診断本文ではなく" in prompt
+    assert "親タイプ × サブタイプの全組み合わせ" in prompt
     assert "backstage_leader" in prompt
     assert "裏方リーダー型" in prompt
+    assert "breakthrough_burnout" in prompt
+    assert "sprint_fullpower" in prompt
+    assert "突破集中型（燃焼タイプ） × 短距離全力" in prompt
+    assert "各組み合わせは「根拠1〜3個」と「今月の読み2〜3行」まで" in prompt
     assert "仕事" in prompt
     assert calls[0]["max_tokens"] == 9000
     assert result["article_type_label"] == "タイプ別運勢"
@@ -131,6 +136,16 @@ def test_type_catalog_contains_public_type_ids():
     assert len(rows) == 10
     assert {"backstage_leader", "ideal_first", "solo_fighter"} <= ids
     assert all(row["type_name"] and row["summary_for_reference_only"] for row in rows)
+
+
+def test_type_subtype_combinations_contains_all_public_pairs():
+    rows = get_type_subtype_combinations_for_prompt()
+    names = {row["display_name"] for row in rows}
+
+    assert len(rows) == 30
+    assert "突破集中型（燃焼タイプ） × 短距離全力" in names
+    assert "裏方リーダー型 × 分析特化" in names
+    assert all(row["type_id"] and row["subtype_id"] for row in rows)
 
 
 def test_parse_json_response_accepts_markdown_fenced_json():
