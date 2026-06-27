@@ -24,8 +24,7 @@ from services.type_catalog import (
     get_type_subtype_combinations_for_prompt,
     get_type_subtype_groups_for_prompt,
 )
-from services.vedic_calc import build_vedic_gochara_points, calc_vedic_from_payload
-from shared import _calc_payload_from_inputs
+from services.vedic_calc import build_vedic_gochara_points
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -94,29 +93,6 @@ def validate_target_month(value: str) -> tuple[int, int]:
     return parsed.year, parsed.month
 
 
-def _env_float(name: str) -> float | None:
-    raw = (os.getenv(name) or "").strip()
-    if not raw:
-        return None
-    return float(raw)
-
-
-def _note_vedic_payload_from_env() -> dict[str, Any] | None:
-    birth_date = (os.getenv("NOTE_ARTICLE_VEDIC_BIRTH_DATE") or "").strip()
-    if not birth_date:
-        return None
-    unknowns: list[str] = []
-    return _calc_payload_from_inputs(
-        birth_date=birth_date,
-        birth_time=(os.getenv("NOTE_ARTICLE_VEDIC_BIRTH_TIME") or "").strip() or None,
-        birth_place=(os.getenv("NOTE_ARTICLE_VEDIC_BIRTH_PLACE") or "").strip() or None,
-        prefecture=(os.getenv("NOTE_ARTICLE_VEDIC_PREFECTURE") or "").strip() or None,
-        lat=_env_float("NOTE_ARTICLE_VEDIC_LAT"),
-        lon=_env_float("NOTE_ARTICLE_VEDIC_LON"),
-        unknowns=unknowns,
-    )
-
-
 def _monthly_gochara_dates(target_month: str) -> dict[str, str]:
     year, month = validate_target_month(target_month)
     last_day = monthrange(year, month)[1]
@@ -129,29 +105,11 @@ def _monthly_gochara_dates(target_month: str) -> dict[str, str]:
 
 def extract_note_vedic_context(
     target_month: str,
-    *,
-    payload_loader: Callable[[], dict[str, Any] | None] = _note_vedic_payload_from_env,
 ) -> dict[str, Any] | None:
-    payload = payload_loader()
-    if not payload:
-        return None
-
     gochara_dates = _monthly_gochara_dates(target_month)
-    base_payload = dict(payload)
-    base_payload["gochara_date"] = gochara_dates["month_start"]
-    vedic = calc_vedic_from_payload(base_payload)
-    planets = vedic.get("planets_map") if isinstance(vedic.get("planets_map"), dict) else {}
-    moon = planets.get("Moon") if isinstance(planets.get("Moon"), dict) else {}
-    ascendant = vedic.get("ascendant") if isinstance(vedic.get("ascendant"), dict) else None
-    lagna_rashi_no = int(ascendant["rashi_no"]) if ascendant and ascendant.get("rashi_no") else None
-    moon_rashi_no = int(moon["rashi_no"]) if moon.get("rashi_no") else None
-    vedic["gochara"] = build_vedic_gochara_points(
-        transit_dates=gochara_dates,
-        lagna_rashi_no=lagna_rashi_no,
-        moon_rashi_no=moon_rashi_no,
-    )
-    vedic["gochara"]["target_month"] = target_month
-    return _prune_empty(vedic)
+    gochara = build_vedic_gochara_points(transit_dates=gochara_dates)
+    gochara["target_month"] = target_month
+    return _prune_empty({"gochara": gochara})
 
 
 def _aspect_key(item: dict[str, Any]) -> tuple[str, str, str]:
@@ -832,7 +790,6 @@ def generate_note_article(
     custom_theme: str = "",
     model_key: str = "haiku",
     snapshot_loader: Callable[..., dict[str, Any]] = calc_global_transit_snapshot,
-    vedic_payload_loader: Callable[[], dict[str, Any] | None] = _note_vedic_payload_from_env,
     client_factory: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     if article_type not in ARTICLE_TYPES:
@@ -860,7 +817,7 @@ def generate_note_article(
     vedic_context = None
     vedic_warnings: list[str] = []
     try:
-        vedic_context = extract_note_vedic_context(target_month, payload_loader=vedic_payload_loader)
+        vedic_context = extract_note_vedic_context(target_month)
     except Exception as exc:
         logger.warning("note article vedic context skipped: %r", exc)
         vedic_warnings.append(f"インド占星術ゴーチャラをYAMLに追加できませんでした: {exc}")

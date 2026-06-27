@@ -342,8 +342,6 @@ def _gochara_planet_row(
     name: str,
     sidereal_lon_deg: float,
     speed_lon_deg_per_day: float,
-    lagna_rashi_no: int | None,
-    moon_rashi_no: int | None,
 ) -> dict[str, Any]:
     rashi_no, rashi_name, deg_in_sign = _rashi_from_longitude(sidereal_lon_deg)
     nak_no, nak_name, pada, _progress = _nakshatra_from_longitude(sidereal_lon_deg)
@@ -356,16 +354,12 @@ def _gochara_planet_row(
         "nakshatra_name": nak_name,
         "nakshatra_pada": pada,
         "is_retrograde": is_retrograde,
-        "house_from_lagna": _whole_sign_house_no(lagna_rashi_no, rashi_no) if isinstance(lagna_rashi_no, int) else None,
-        "house_from_moon": _whole_sign_house_no(moon_rashi_no, rashi_no) if isinstance(moon_rashi_no, int) else None,
     }
 
 
 def build_vedic_gochara(
     *,
     transit_date: Any,
-    lagna_rashi_no: int | None,
-    moon_rashi_no: int | None,
 ) -> dict[str, Any]:
     dt_utc = _coerce_transit_dt_utc(transit_date)
     jd = _julian_day_ut(dt_utc)
@@ -383,8 +377,6 @@ def build_vedic_gochara(
             name=name,
             sidereal_lon_deg=lon,
             speed_lon_deg_per_day=speed_lon,
-            lagna_rashi_no=lagna_rashi_no,
-            moon_rashi_no=moon_rashi_no,
         )
 
     rahu_lon = planets["Rahu"]["sidereal_lon_deg"]
@@ -392,8 +384,6 @@ def build_vedic_gochara(
         name="Ketu",
         sidereal_lon_deg=(float(rahu_lon) + 180.0) % 360.0,
         speed_lon_deg_per_day=rahu_speed,
-        lagna_rashi_no=lagna_rashi_no,
-        moon_rashi_no=moon_rashi_no,
     )
 
     return {
@@ -401,16 +391,6 @@ def build_vedic_gochara(
         "zodiac_type": "sidereal",
         "date": dt_utc.astimezone(JST).date().isoformat(),
         "dt_utc": dt_utc.isoformat(),
-        "basis": {
-            "lagna": {
-                "rashi_no": lagna_rashi_no,
-                "rashi_name": RASHI_NAMES[lagna_rashi_no - 1],
-            } if isinstance(lagna_rashi_no, int) else None,
-            "moon": {
-                "rashi_no": moon_rashi_no,
-                "rashi_name": RASHI_NAMES[moon_rashi_no - 1],
-            } if isinstance(moon_rashi_no, int) else None,
-        },
         "planets": planets,
     }
 
@@ -418,27 +398,13 @@ def build_vedic_gochara(
 def build_vedic_gochara_points(
     *,
     transit_dates: dict[str, Any],
-    lagna_rashi_no: int | None,
-    moon_rashi_no: int | None,
 ) -> dict[str, Any]:
     return {
         "ayanamsha": "Lahiri",
         "zodiac_type": "sidereal",
-        "basis": {
-            "lagna": {
-                "rashi_no": lagna_rashi_no,
-                "rashi_name": RASHI_NAMES[lagna_rashi_no - 1],
-            } if isinstance(lagna_rashi_no, int) else None,
-            "moon": {
-                "rashi_no": moon_rashi_no,
-                "rashi_name": RASHI_NAMES[moon_rashi_no - 1],
-            } if isinstance(moon_rashi_no, int) else None,
-        },
         "points": {
             key: build_vedic_gochara(
                 transit_date=value,
-                lagna_rashi_no=lagna_rashi_no,
-                moon_rashi_no=moon_rashi_no,
             )
             for key, value in transit_dates.items()
         },
@@ -932,8 +898,6 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     gochara = build_vedic_gochara(
         transit_date=payload.get("gochara_date") or payload.get("target_date") or datetime.now(JST).date(),
-        lagna_rashi_no=int(asc_data["rashi_no"]) if asc_data else None,
-        moon_rashi_no=int(planets["Moon"]["rashi_no"]) if planets.get("Moon") else None,
     )
 
     out: Dict[str, Any] = {

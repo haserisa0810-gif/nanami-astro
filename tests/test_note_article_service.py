@@ -96,6 +96,7 @@ def test_generate_note_article_uses_claude_only_after_transit_extraction():
     assert result["sns_copy"].endswith("。")
     assert "western_astrology:" in result["yaml_preview"]
     assert "daily_snapshots:" in result["yaml_preview"]
+    assert "gochara:" in result["yaml_preview"]
 
 
 def test_build_note_article_yaml_contains_only_available_astrology_data():
@@ -150,8 +151,7 @@ def test_vedic_calc_adds_single_date_gochara_without_removing_existing_keys():
     assert result["yogas"] is not None
     assert result["varga"]["D9"]
     assert result["gochara"]["date"] == "2026-07-01"
-    assert result["gochara"]["basis"]["lagna"]["rashi_no"]
-    assert result["gochara"]["basis"]["moon"]["rashi_no"]
+    assert "basis" not in result["gochara"]
     jupiter = result["gochara"]["planets"]["Jupiter"]
     assert set(
         [
@@ -162,29 +162,31 @@ def test_vedic_calc_adds_single_date_gochara_without_removing_existing_keys():
             "nakshatra_name",
             "nakshatra_pada",
             "is_retrograde",
-            "house_from_lagna",
-            "house_from_moon",
         ]
     ) <= set(jupiter)
+    assert "house_from_lagna" not in jupiter
+    assert "house_from_moon" not in jupiter
 
 
-def test_note_vedic_context_adds_monthly_gochara_points():
-    result = extract_note_vedic_context("2026-07", payload_loader=_vedic_payload)
+def test_note_vedic_context_adds_only_monthly_gochara_points():
+    result = extract_note_vedic_context("2026-07")
 
     assert result
-    assert result["planets_map"]["Moon"]["rashi_no"]
-    assert result["dasha"]
-    assert result["yogas"] is not None
-    assert result["varga"]["D9"]
+    assert set(result) == {"gochara"}
     assert result["gochara"]["target_month"] == "2026-07"
     assert set(result["gochara"]["points"]) == {"month_start", "month_mid", "month_end"}
     assert result["gochara"]["points"]["month_start"]["date"] == "2026-07-01"
-    assert result["gochara"]["points"]["month_start"]["planets"]["Jupiter"]["house_from_moon"]
+    jupiter = result["gochara"]["points"]["month_start"]["planets"]["Jupiter"]
+    assert jupiter["sidereal_lon_deg"]
+    assert jupiter["rashi_name"]
+    assert jupiter["nakshatra_name"]
+    assert "house_from_lagna" not in jupiter
+    assert "house_from_moon" not in jupiter
 
 
-def test_build_note_article_yaml_includes_vedic_gochara_when_available():
+def test_build_note_article_yaml_includes_only_vedic_gochara():
     context = extract_monthly_transit_context("2026-07", snapshot_loader=_snapshot_loader)
-    vedic_context = extract_note_vedic_context("2026-07", payload_loader=_vedic_payload)
+    vedic_context = extract_note_vedic_context("2026-07")
     payload = {
         "target_month": "2026-07",
         "article_type": "monthly_reading",
@@ -199,12 +201,10 @@ def test_build_note_article_yaml_includes_vedic_gochara_when_available():
     loaded = yaml.safe_load(build_note_article_yaml(payload))
 
     vedic = loaded["astrology_data"]["vedic"]
-    assert vedic["ayanamsha"] == "Lahiri"
-    assert vedic["planets_map"]["Moon"]
-    assert vedic["dasha"]
-    assert vedic["yogas"] is not None
-    assert vedic["varga"]["D9"]
+    assert set(vedic) == {"gochara"}
+    assert vedic["gochara"]["ayanamsha"] == "Lahiri"
     assert vedic["gochara"]["points"]["month_start"]["planets"]["Jupiter"]["rashi_name"]
+    assert "basis" not in vedic["gochara"]
 
 
 def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
