@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Any, Dict, Tuple
 
 import swisseph as swe
@@ -65,6 +65,7 @@ PLANET_IDS = {
 
 TRADITIONAL_VEDIC_PLANETS = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Rahu", "Ketu"]
 SEVEN_CLASSICAL_PLANETS = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
+GOCHARA_PLANETS = TRADITIONAL_VEDIC_PLANETS
 
 SIGN_LORDS = {
     "Aries": "Mars",
@@ -310,6 +311,137 @@ def _build_dignity(planet: str, sign_name: str, lon: float, speed_lon: float, su
         "is_retrograde": is_retrograde,
         "speed_lon_deg_per_day": round(speed_lon, 6),
         "strength_score": score,
+    }
+
+
+def _coerce_transit_dt_utc(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=JST)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day, 12, 0, tzinfo=JST).astimezone(timezone.utc)
+
+    text = str(value or "").strip()
+    if not text:
+        return datetime.now(timezone.utc)
+    try:
+        if len(text) == 10:
+            parsed = datetime.strptime(text, "%Y-%m-%d")
+            return parsed.replace(hour=12, minute=0, tzinfo=JST).astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=JST)
+        return parsed.astimezone(timezone.utc)
+    except Exception as exc:
+        raise ValueError(f"Invalid gochara date: {value!r}") from exc
+
+
+def _gochara_planet_row(
+    *,
+    name: str,
+    sidereal_lon_deg: float,
+    speed_lon_deg_per_day: float,
+    lagna_rashi_no: int | None,
+    moon_rashi_no: int | None,
+) -> dict[str, Any]:
+    rashi_no, rashi_name, deg_in_sign = _rashi_from_longitude(sidereal_lon_deg)
+    nak_no, nak_name, pada, _progress = _nakshatra_from_longitude(sidereal_lon_deg)
+    is_retrograde = False if name in {"Sun", "Moon"} else bool(speed_lon_deg_per_day < 0)
+    return {
+        "sidereal_lon_deg": round(sidereal_lon_deg % 360.0, 6),
+        "rashi_no": rashi_no,
+        "rashi_name": rashi_name,
+        "deg_in_sign": round(deg_in_sign, 6),
+        "nakshatra_name": nak_name,
+        "nakshatra_pada": pada,
+        "is_retrograde": is_retrograde,
+        "house_from_lagna": _whole_sign_house_no(lagna_rashi_no, rashi_no) if isinstance(lagna_rashi_no, int) else None,
+        "house_from_moon": _whole_sign_house_no(moon_rashi_no, rashi_no) if isinstance(moon_rashi_no, int) else None,
+    }
+
+
+def build_vedic_gochara(
+    *,
+    transit_date: Any,
+    lagna_rashi_no: int | None,
+    moon_rashi_no: int | None,
+) -> dict[str, Any]:
+    dt_utc = _coerce_transit_dt_utc(transit_date)
+    jd = _julian_day_ut(dt_utc)
+
+    planets: dict[str, Any] = {}
+    rahu_speed = 0.0
+    for name in GOCHARA_PLANETS:
+        if name == "Ketu":
+            continue
+        pid = PLANET_IDS[name]
+        lon, speed_lon = _sidereal_state(jd, pid)
+        if name == "Rahu":
+            rahu_speed = speed_lon
+        planets[name] = _gochara_planet_row(
+            name=name,
+            sidereal_lon_deg=lon,
+            speed_lon_deg_per_day=speed_lon,
+            lagna_rashi_no=lagna_rashi_no,
+            moon_rashi_no=moon_rashi_no,
+        )
+
+    rahu_lon = planets["Rahu"]["sidereal_lon_deg"]
+    planets["Ketu"] = _gochara_planet_row(
+        name="Ketu",
+        sidereal_lon_deg=(float(rahu_lon) + 180.0) % 360.0,
+        speed_lon_deg_per_day=rahu_speed,
+        lagna_rashi_no=lagna_rashi_no,
+        moon_rashi_no=moon_rashi_no,
+    )
+
+    return {
+        "ayanamsha": "Lahiri",
+        "zodiac_type": "sidereal",
+        "date": dt_utc.astimezone(JST).date().isoformat(),
+        "dt_utc": dt_utc.isoformat(),
+        "basis": {
+            "lagna": {
+                "rashi_no": lagna_rashi_no,
+                "rashi_name": RASHI_NAMES[lagna_rashi_no - 1],
+            } if isinstance(lagna_rashi_no, int) else None,
+            "moon": {
+                "rashi_no": moon_rashi_no,
+                "rashi_name": RASHI_NAMES[moon_rashi_no - 1],
+            } if isinstance(moon_rashi_no, int) else None,
+        },
+        "planets": planets,
+    }
+
+
+def build_vedic_gochara_points(
+    *,
+    transit_dates: dict[str, Any],
+    lagna_rashi_no: int | None,
+    moon_rashi_no: int | None,
+) -> dict[str, Any]:
+    return {
+        "ayanamsha": "Lahiri",
+        "zodiac_type": "sidereal",
+        "basis": {
+            "lagna": {
+                "rashi_no": lagna_rashi_no,
+                "rashi_name": RASHI_NAMES[lagna_rashi_no - 1],
+            } if isinstance(lagna_rashi_no, int) else None,
+            "moon": {
+                "rashi_no": moon_rashi_no,
+                "rashi_name": RASHI_NAMES[moon_rashi_no - 1],
+            } if isinstance(moon_rashi_no, int) else None,
+        },
+        "points": {
+            key: build_vedic_gochara(
+                transit_date=value,
+                lagna_rashi_no=lagna_rashi_no,
+                moon_rashi_no=moon_rashi_no,
+            )
+            for key, value in transit_dates.items()
+        },
     }
 
 
@@ -798,6 +930,12 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif theme in {"learning_growth", "identity_reset"}:
             summary_flags["spiritual"].append(theme)
 
+    gochara = build_vedic_gochara(
+        transit_date=payload.get("gochara_date") or payload.get("target_date") or datetime.now(JST).date(),
+        lagna_rashi_no=int(asc_data["rashi_no"]) if asc_data else None,
+        moon_rashi_no=int(planets["Moon"]["rashi_no"]) if planets.get("Moon") else None,
+    )
+
     out: Dict[str, Any] = {
         "system": "vedic",
         "ephemeris": ephemeris_debug_info(),
@@ -826,6 +964,7 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "yogas": yogas,
         "varga": {"D9": d9},
         "dasha": dasha,
+        "gochara": gochara,
         "summary_flags": summary_flags,
     }
 

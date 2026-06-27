@@ -8,9 +8,11 @@ import yaml
 from services.note_article_service import (
     _parse_json_response,
     build_note_article_yaml,
+    extract_note_vedic_context,
     extract_monthly_transit_context,
     generate_note_article,
 )
+from services.vedic_calc import calc_vedic_from_payload
 from services.type_catalog import get_type_definitions_for_prompt, get_type_subtype_combinations_for_prompt
 
 
@@ -119,10 +121,90 @@ def test_build_note_article_yaml_contains_only_available_astrology_data():
     assert loaded["note_article"]["generated_article"]["article_body"] == "本文です。"
     assert "zodiac_fortunes" not in loaded["note_article"]["generated_article"]
     assert "western_astrology" in loaded["astrology_data"]
-    assert "vedic_astrology" not in loaded["astrology_data"]
+    assert "vedic" not in loaded["astrology_data"]
     assert "shichusuimei" not in loaded["astrology_data"]
     assert "natal_chart" not in loaded["astrology_data"]["western_astrology"]
     assert loaded["astrology_data"]["western_astrology"]["transits"]["daily_snapshots"][0]["aspects"]
+
+
+def _vedic_payload():
+    return {
+        "year": 1990,
+        "month": 1,
+        "day": 1,
+        "hour": 12,
+        "minute": 0,
+        "lat": 35.6895,
+        "lng": 139.6917,
+        "city": "Tokyo",
+    }
+
+
+def test_vedic_calc_adds_single_date_gochara_without_removing_existing_keys():
+    result = calc_vedic_from_payload({**_vedic_payload(), "gochara_date": "2026-07-01"})
+
+    assert result["ayanamsha"] == "Lahiri"
+    assert result["zodiac_type"] == "sidereal"
+    assert result["planets_map"]["Moon"]["rashi_no"]
+    assert result["dasha"]
+    assert result["yogas"] is not None
+    assert result["varga"]["D9"]
+    assert result["gochara"]["date"] == "2026-07-01"
+    assert result["gochara"]["basis"]["lagna"]["rashi_no"]
+    assert result["gochara"]["basis"]["moon"]["rashi_no"]
+    jupiter = result["gochara"]["planets"]["Jupiter"]
+    assert set(
+        [
+            "sidereal_lon_deg",
+            "rashi_no",
+            "rashi_name",
+            "deg_in_sign",
+            "nakshatra_name",
+            "nakshatra_pada",
+            "is_retrograde",
+            "house_from_lagna",
+            "house_from_moon",
+        ]
+    ) <= set(jupiter)
+
+
+def test_note_vedic_context_adds_monthly_gochara_points():
+    result = extract_note_vedic_context("2026-07", payload_loader=_vedic_payload)
+
+    assert result
+    assert result["planets_map"]["Moon"]["rashi_no"]
+    assert result["dasha"]
+    assert result["yogas"] is not None
+    assert result["varga"]["D9"]
+    assert result["gochara"]["target_month"] == "2026-07"
+    assert set(result["gochara"]["points"]) == {"month_start", "month_mid", "month_end"}
+    assert result["gochara"]["points"]["month_start"]["date"] == "2026-07-01"
+    assert result["gochara"]["points"]["month_start"]["planets"]["Jupiter"]["house_from_moon"]
+
+
+def test_build_note_article_yaml_includes_vedic_gochara_when_available():
+    context = extract_monthly_transit_context("2026-07", snapshot_loader=_snapshot_loader)
+    vedic_context = extract_note_vedic_context("2026-07", payload_loader=_vedic_payload)
+    payload = {
+        "target_month": "2026-07",
+        "article_type": "monthly_reading",
+        "article_type_label": "今月の星読み記事",
+        "model_label": "Claude Haiku（高速）",
+        "transit_context": context,
+        "vedic_context": vedic_context,
+        "title": "7月の星読み",
+        "article_body": "本文です。",
+    }
+
+    loaded = yaml.safe_load(build_note_article_yaml(payload))
+
+    vedic = loaded["astrology_data"]["vedic"]
+    assert vedic["ayanamsha"] == "Lahiri"
+    assert vedic["planets_map"]["Moon"]
+    assert vedic["dasha"]
+    assert vedic["yogas"] is not None
+    assert vedic["varga"]["D9"]
+    assert vedic["gochara"]["points"]["month_start"]["planets"]["Jupiter"]["rashi_name"]
 
 
 def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
