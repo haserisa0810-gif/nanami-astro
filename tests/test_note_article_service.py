@@ -92,6 +92,9 @@ def test_generate_note_article_uses_claude_only_after_transit_extraction():
 
     assert calls
     assert "主要アスペクト" in calls[0]["messages"][0]["content"]
+    assert "インド占星術ゴーチャラ" in calls[0]["messages"][0]["content"]
+    assert "Jupiter:" in calls[0]["messages"][0]["content"]
+    assert "ラグナ・出生月からのハウスはここでは計算しない" in calls[0]["messages"][0]["content"]
     assert result["article_body"].endswith("ですよ。")
     assert result["sns_copy"].endswith("。")
     assert "western_astrology:" in result["yaml_preview"]
@@ -241,6 +244,8 @@ def test_type_monthly_fortunes_prompt_includes_type_catalog_and_boundaries():
     assert "タイプ別運勢の追加条件" in prompt
     assert "無料の /type 診断本文ではなく" in prompt
     assert "今回出力する親タイプ × サブタイプ" in prompt
+    assert "インド占星術ゴーチャラ" in prompt
+    assert "西洋占星術を主軸" in prompt
     assert "backstage_leader" in prompt
     assert "裏方リーダー型" in prompt
     assert "各組み合わせは「根拠2個まで」と「今月の読み2〜3文」まで" in prompt

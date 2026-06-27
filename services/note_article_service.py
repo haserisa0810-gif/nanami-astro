@@ -498,6 +498,54 @@ Python判定の中心テーマ:
 """
 
 
+def _vedic_gochara_for_prompt(vedic_context: dict[str, Any] | None) -> str:
+    gochara = (vedic_context or {}).get("gochara") if isinstance(vedic_context, dict) else None
+    if not isinstance(gochara, dict):
+        return ""
+
+    points = gochara.get("points") if isinstance(gochara.get("points"), dict) else {}
+    if not points:
+        return ""
+
+    key_planets = ("Jupiter", "Saturn", "Rahu", "Ketu", "Mercury", "Venus", "Mars")
+    point_labels = {
+        "month_start": "月初",
+        "month_mid": "中旬",
+        "month_end": "月末",
+    }
+    rows: list[str] = []
+    for point_key in ("month_start", "month_mid", "month_end"):
+        point = points.get(point_key)
+        if not isinstance(point, dict):
+            continue
+        planets = point.get("planets") if isinstance(point.get("planets"), dict) else {}
+        parts: list[str] = []
+        for planet_name in key_planets:
+            pdata = planets.get(planet_name)
+            if not isinstance(pdata, dict):
+                continue
+            sign = pdata.get("rashi_name")
+            nakshatra = pdata.get("nakshatra_name")
+            pada = pdata.get("nakshatra_pada")
+            retro = "R" if pdata.get("is_retrograde") else ""
+            if sign and nakshatra and pada:
+                parts.append(f"{planet_name}: {sign} / {nakshatra} pada{pada}{retro}")
+        if parts:
+            rows.append(f"- {point_labels.get(point_key, point_key)}（{point.get('date') or '-'}）: " + "、".join(parts))
+
+    if not rows:
+        return ""
+
+    return f"""インド占星術ゴーチャラ（Lahiri sidereal / 生位置のみ）:
+{chr(10).join(rows)}
+
+インド占星術の扱い:
+- 上記がある場合は、西洋占星術を主軸にしつつ、現在の空模様の補助情報として必要に応じて1〜2文だけ反映する。
+- ラグナ・出生月からのハウスはここでは計算しない。タイプYAMLなど後段の個人データと組み合わせるための生位置として扱う。
+- インド占星術だけで断定しない。補足する場合も、生活レベルの言葉に翻訳する。
+"""
+
+
 def _type_definitions_for_prompt() -> str:
     return json.dumps(get_type_definitions_for_prompt(), ensure_ascii=False, indent=2)
 
@@ -522,6 +570,7 @@ def _build_user_prompt(
     context: dict[str, Any],
     article_type: str,
     custom_theme: str,
+    vedic_context: dict[str, Any] | None = None,
     type_group: dict[str, Any] | None = None,
 ) -> str:
     type_label = ARTICLE_TYPES[article_type]
@@ -582,6 +631,7 @@ article_body には、指定された親タイプ × サブタイプの短いMar
 任意テーマ: {custom_line}
 
 {_context_for_prompt(context)}
+{_vedic_gochara_for_prompt(vedic_context)}
 {type_fortune_instruction}
 
 # 出力形式（厳守）
@@ -745,6 +795,7 @@ def _generate_type_monthly_fortunes(
     client: Any,
     model: str,
     context: dict[str, Any],
+    vedic_context: dict[str, Any] | None,
     custom_theme: str,
 ) -> dict[str, Any]:
     bodies: list[str] = []
@@ -762,6 +813,7 @@ def _generate_type_monthly_fortunes(
                         context=context,
                         article_type="type_monthly_fortunes",
                         custom_theme=custom_theme,
+                        vedic_context=vedic_context,
                         type_group=group,
                     ),
                 }
@@ -829,6 +881,7 @@ def generate_note_article(
             client=client,
             model=model,
             context=context,
+            vedic_context=vedic_context,
             custom_theme=custom_theme,
         )
         result = {
@@ -858,6 +911,7 @@ def generate_note_article(
                     context=context,
                     article_type=article_type,
                     custom_theme=custom_theme,
+                    vedic_context=vedic_context,
                 ),
             }
         ],
