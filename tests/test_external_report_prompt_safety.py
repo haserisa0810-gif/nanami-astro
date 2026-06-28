@@ -65,6 +65,13 @@ def test_prompt_contains_public_evidence_and_internal_key_rules():
     assert "snake_case の内部キーを本文・根拠欄に出さない" in prompt
     assert "各区分は2〜4点程度" in prompt
     assert "ヨーガ名は vedic_yogas に存在するものだけ使う" in prompt
+    assert "占術知識ではなく、その人を書く" in prompt
+    assert "百科事典的説明" in prompt
+    assert "三占術を独立解説しない" in prompt
+    assert "同じ方向を指す場合は、その一致点" in prompt
+    assert "だから何をすると運が動くのか" in prompt
+    assert "第1章で決めた「この人の核」" in prompt
+    assert "章ごとに別人化" in prompt
 
 
 def test_planet_label_translates_english_signs_for_cover():
