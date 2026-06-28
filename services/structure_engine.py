@@ -371,6 +371,8 @@ def analyze_vedic_structure(vedic: dict[str, Any]) -> dict[str, Any]:
         "house_lords": vedic.get("house_lords") or {},
         "house_lords_placement": vedic.get("house_lords_placement") or {},
         "yogas": vedic.get("yogas") or [],
+        "vedic_yogas": vedic.get("vedic_yogas") or {},
+        "vedic_yogas_handoff": vedic.get("vedic_yogas_handoff") or {},
         "dasha": vedic.get("dasha") or {},
         "summary_flags": vedic.get("summary_flags") or {},
     }

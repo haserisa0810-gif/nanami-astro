@@ -65,6 +65,8 @@ def _augment_structure_summary(ss: Any) -> Any:
             "house_lords_placement",
             "planetary_aspects_vedic",
             "yogas",
+            "vedic_yogas",
+            "vedic_yogas_handoff",
             "varga",
             "dasha",
             "summary_flags",
@@ -79,6 +81,38 @@ def _augment_structure_summary(ss: Any) -> Any:
     if vedic_flags:
         ss["vedic_flags"] = vedic_flags
     return ss
+
+
+def _extract_vedic_yogas_for_handoff(ss: Any) -> dict[str, Any]:
+    ss = _extract_json_obj(ss)
+    if not isinstance(ss, dict):
+        return {}
+    vedic = ss.get("vedic") if isinstance(ss.get("vedic"), dict) else {}
+    candidates = [
+        vedic.get("vedic_yogas_handoff") if isinstance(vedic, dict) else None,
+        vedic.get("vedic_yogas") if isinstance(vedic, dict) else None,
+        ss.get("vedic_yogas_handoff"),
+        ss.get("vedic_yogas"),
+    ]
+    for value in candidates:
+        if isinstance(value, dict) and any(k in value for k in ("wealth", "career", "mind_support", "challenge")):
+            out: dict[str, Any] = {"summary": value.get("summary") or {}}
+            for category in ("wealth", "career", "mind_support", "challenge"):
+                items = value.get(category) or []
+                out[category] = [item for item in items if isinstance(item, dict) and item.get("present", True)]
+            return out
+    return {
+        "wealth": [],
+        "career": [],
+        "mind_support": [],
+        "challenge": [],
+        "summary": {
+            "wealth": "明確な富のヨーガはYAML上で検出されていません。",
+            "career": "明確な仕事・権力系ヨーガはYAML上で検出されていません。",
+            "mind_support": "明確な月関連の支援ヨーガはYAML上で検出されていません。",
+            "challenge": "主要な課題系ヨーガはYAML上で検出されていません。",
+        },
+    }
 
 
 def _slim_structure_summary(ss: Any) -> Any:
@@ -204,6 +238,7 @@ def build_handoff(
     if mode == "full":
         summary_aug = _augment_structure_summary(structure_summary)
         base["structure_summary"] = summary_aug
+        base["vedic_yogas"] = _extract_vedic_yogas_for_handoff(summary_aug)
         base["shichu"] = _extract_shichu_summary(summary_aug)
         base["reports"] = reports
         if transit is not None:
@@ -226,6 +261,7 @@ def build_handoff(
     # mini (default) — 肥大化防止のため structure_summary をスリム化
     summary_aug = _augment_structure_summary(structure_summary)
     base["structure_summary"] = _slim_structure_summary(summary_aug)
+    base["vedic_yogas"] = _extract_vedic_yogas_for_handoff(summary_aug)
     base["shichu"] = _extract_shichu_summary(summary_aug)
 
     # risk_flags top 3-5

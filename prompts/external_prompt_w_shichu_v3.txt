@@ -20,9 +20,19 @@
 YAMLには以下が含まれます。
 
 structure_summary.western：惑星・ハウス・アスペクトデータ
+structure_summary.vedic / vedic_yogas：インド占星術の計算済みヨーガ分類
 structure_summary.shichusuimei：四柱・十神・五行・大運データ
 transit：現在のトランジット情報
 risk_flags_top：システムが検出した構造的リスク
+
+【インド占星術ヨーガの扱い】
+- ヨーガ名は YAML の vedic_yogas または structure_summary.vedic.vedic_yogas に存在するものだけ使う。
+- YAMLに存在しないヨーガ名を推測で追加しない。
+- 「YAML上に記載がないものの」「明確なヨーガはないが」のような補完表現は禁止。
+- 明確に成立していないヨーガは「成立していない」と扱い、別のヨーガで代用しない。
+- Dhana Yoga がない場合、Gajakesari Yoga など他分類のヨーガで富のヨーガを代用しない。
+- 本文ではヨーガ名の羅列よりも、interpretation_hint と summary を使って「何に効くか」を優先して説明する。
+- challenge のヨーガは不安を煽らず、neutral な調整テーマとして書く。
 
 ━━━━━━━━━━━━━━━━━━
 章構成（プラン別・基本章＋追加EX章）

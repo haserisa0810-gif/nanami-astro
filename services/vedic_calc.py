@@ -446,24 +446,26 @@ def _house_distance(from_house: int, to_house: int) -> int:
     return ((to_house - from_house) % 12) + 1
 
 
+VEDIC_ASPECT_MAP = {
+    "Sun": [(7, "7th")],
+    "Moon": [(7, "7th")],
+    "Mercury": [(7, "7th")],
+    "Venus": [(7, "7th")],
+    "Mars": [(4, "special_4th"), (7, "7th"), (8, "special_8th")],
+    "Jupiter": [(5, "special_5th"), (7, "7th"), (9, "special_9th")],
+    "Saturn": [(3, "special_3rd"), (7, "7th"), (10, "special_10th")],
+    "Rahu": [(5, "special_5th"), (7, "7th"), (9, "special_9th")],
+    "Ketu": [(5, "special_5th"), (7, "7th"), (9, "special_9th")],
+}
+
+
 def _build_planetary_aspects_vedic(planets: dict[str, Any]) -> list[dict[str, Any]]:
-    aspect_map = {
-        "Sun": [(7, "7th")],
-        "Moon": [(7, "7th")],
-        "Mercury": [(7, "7th")],
-        "Venus": [(7, "7th")],
-        "Mars": [(4, "special_4th"), (7, "7th"), (8, "special_8th")],
-        "Jupiter": [(5, "special_5th"), (7, "7th"), (9, "special_9th")],
-        "Saturn": [(3, "special_3rd"), (7, "7th"), (10, "special_10th")],
-        "Rahu": [(5, "special_5th"), (7, "7th"), (9, "special_9th")],
-        "Ketu": [(5, "special_5th"), (7, "7th"), (9, "special_9th")],
-    }
     out: list[dict[str, Any]] = []
     for name, pdata in planets.items():
         from_house = pdata.get("house_no")
         if not isinstance(from_house, int):
             continue
-        for dist, aspect_type in aspect_map.get(name, []):
+        for dist, aspect_type in VEDIC_ASPECT_MAP.get(name, []):
             to_house = ((from_house + dist - 2) % 12) + 1
             out.append({
                 "from": name,
@@ -492,8 +494,245 @@ def _is_dusthana(house_no: int | None) -> bool:
     return house_no in {6, 8, 12}
 
 
-def _build_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) -> list[dict[str, Any]]:
-    yogas: list[dict[str, Any]] = []
+def _house_lord_name(house_lords: dict[str, Any] | None, house_no: int) -> str | None:
+    if not house_lords:
+        return None
+    item = house_lords.get(str(house_no)) or {}
+    lord = item.get("lord") if isinstance(item, dict) else None
+    return str(lord) if lord else None
+
+
+def _planet_house(planets: dict[str, Any], planet_name: str | None) -> int | None:
+    if not planet_name:
+        return None
+    value = (planets.get(planet_name) or {}).get("house_no")
+    return value if isinstance(value, int) else None
+
+
+def _planet_strength(planets: dict[str, Any], planet_name: str | None, default: float = 0.5) -> float:
+    if not planet_name:
+        return default
+    dignity = (planets.get(planet_name) or {}).get("dignity") or {}
+    try:
+        return float(dignity.get("strength_score"))
+    except Exception:
+        return default
+
+
+def _confidence_from_strength(strength: float) -> str:
+    if strength >= 0.7:
+        return "high"
+    if strength >= 0.45:
+        return "medium"
+    return "low"
+
+
+def _yoga_item(
+    *,
+    name: str,
+    slug: str,
+    strength: float,
+    evidence: list[str],
+    interpretation_hint: str,
+    tags: list[str] | None = None,
+    confidence: str | None = None,
+    notes: list[str] | None = None,
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "name": name,
+        "slug": slug,
+        "present": True,
+        "strength": round(max(0.0, min(1.0, strength)), 3),
+        "confidence": confidence or _confidence_from_strength(strength),
+        "evidence": evidence,
+        "interpretation_hint": interpretation_hint,
+    }
+    if tags:
+        item["tags"] = tags
+    if notes:
+        item["notes"] = notes
+    return item
+
+
+def _aspected_house(from_planet: str, from_house: int, target_house: int) -> bool:
+    for dist, _aspect_type in VEDIC_ASPECT_MAP.get(from_planet, []):
+        if ((from_house + dist - 2) % 12) + 1 == target_house:
+            return True
+    return False
+
+
+def _planet_relation(p1: str, p2: str, planets: dict[str, Any]) -> str | None:
+    if p1 == p2:
+        return f"{p1}が両方の支配星"
+    h1 = _planet_house(planets, p1)
+    h2 = _planet_house(planets, p2)
+    if not isinstance(h1, int) or not isinstance(h2, int):
+        return None
+    if h1 == h2:
+        return f"{p1}と{p2}が同じハウス"
+    if _aspected_house(p1, h1, h2):
+        return f"{p1}が{p2}の在住ハウスへアスペクト"
+    if _aspected_house(p2, h2, h1):
+        return f"{p2}が{p1}の在住ハウスへアスペクト"
+    return None
+
+
+def _sort_yoga_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(items, key=lambda x: float(x.get("strength") or 0), reverse=True)
+
+
+def detect_dhana_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not house_lords:
+        return []
+    out: list[dict[str, Any]] = []
+    relation_houses = [1, 2, 5, 9, 11]
+    relation_hits: list[str] = []
+    for idx, h1 in enumerate(relation_houses):
+        p1 = _house_lord_name(house_lords, h1)
+        for h2 in relation_houses[idx + 1:]:
+            p2 = _house_lord_name(house_lords, h2)
+            if not p1 or not p2:
+                continue
+            rel = _planet_relation(p1, p2, planets)
+            if rel:
+                relation_hits.append(f"{h1}室支配星と{h2}室支配星の関係: {rel}")
+
+    wealth_lords = {_house_lord_name(house_lords, h) for h in (2, 5, 9, 11)}
+    wealth_lords.discard(None)
+    placed_hits = [
+        f"{p}が第{_planet_house(planets, p)}室"
+        for p in sorted(str(x) for x in wealth_lords)
+        if _planet_house(planets, p) in {2, 5, 9, 11}
+    ]
+    if relation_hits or len(placed_hits) >= 2:
+        strength = min(1.0, 0.42 + 0.07 * min(5, len(relation_hits)) + 0.05 * len(placed_hits))
+        out.append(_yoga_item(
+            name="Dhana Yoga",
+            slug="dhana_yoga",
+            strength=strength,
+            evidence=(relation_hits[:4] + placed_hits[:3]),
+            interpretation_hint="才能・収益・人脈が結びつきやすい",
+            tags=["wealth_forming_capacity"],
+        ))
+
+    lagna_lord = _house_lord_name(house_lords, 1)
+    ninth_lord = _house_lord_name(house_lords, 9)
+    lagna_strength = _planet_strength(planets, lagna_lord)
+    ninth_strength = _planet_strength(planets, ninth_lord)
+    ninth_house = _planet_house(planets, ninth_lord)
+    # Lakshmi Yoga has lineage differences; this project uses a conservative D1 signal:
+    # strong Lagna lord plus strong 9th lord in kendra/trikona.
+    if lagna_strength >= 0.55 and ninth_strength >= 0.55 and (_is_kendra(ninth_house) or _is_trikona(ninth_house)):
+        out.append(_yoga_item(
+            name="Lakshmi Yoga",
+            slug="lakshmi_yoga",
+            strength=min(1.0, 0.45 + 0.2 * lagna_strength + 0.2 * ninth_strength),
+            confidence="medium",
+            evidence=[
+                f"ラグナ支配星{lagna_lord}が一定以上の強さ",
+                f"9室支配星{ninth_lord}がケンドラ/トリコーナに在住",
+            ],
+            interpretation_hint="品位・幸運・支援が豊かさへつながりやすい",
+            tags=["wealth_forming_capacity", "fortune_support"],
+            notes=["Lakshmi Yogaは流派差があるため、D1の主要条件に絞った中程度判定です。"],
+        ))
+
+    if relation_hits and not any(y["slug"] == "dhana_yoga" for y in out):
+        out.append(_yoga_item(
+            name="Wealth House Lord Link",
+            slug="wealth_house_lord_link",
+            strength=min(1.0, 0.36 + 0.06 * len(relation_hits)),
+            confidence="medium",
+            evidence=relation_hits[:5],
+            interpretation_hint="収入・才能・幸運・自己決定が接続しやすい",
+            tags=["wealth_forming_capacity"],
+            notes=["伝統的な固有名ヨーガではなく、富に関わる支配星関係の機械判定です。"],
+        ))
+    return _sort_yoga_items(out)
+
+
+def detect_raja_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not house_lords:
+        return []
+    out: list[dict[str, Any]] = []
+    kendra_houses = [1, 4, 7, 10]
+    trikona_houses = [1, 5, 9]
+    raja_hits: list[str] = []
+    for kh in kendra_houses:
+        kp = _house_lord_name(house_lords, kh)
+        for th in trikona_houses:
+            tp = _house_lord_name(house_lords, th)
+            if not kp or not tp:
+                continue
+            rel = _planet_relation(kp, tp, planets)
+            if rel:
+                raja_hits.append(f"{kh}室支配星と{th}室支配星の関係: {rel}")
+    if raja_hits:
+        out.append(_yoga_item(
+            name="Raja Yoga",
+            slug="raja_yoga",
+            strength=min(1.0, 0.45 + 0.07 * min(5, len(raja_hits))),
+            evidence=raja_hits[:5],
+            interpretation_hint="役割・評価・実行力がまとまりやすい",
+            tags=["status_support", "career_support"],
+        ))
+
+    ninth_lord = _house_lord_name(house_lords, 9)
+    tenth_lord = _house_lord_name(house_lords, 10)
+    dharma_karma_rel = _planet_relation(str(ninth_lord or ""), str(tenth_lord or ""), planets) if ninth_lord and tenth_lord else None
+    if dharma_karma_rel:
+        out.append(_yoga_item(
+            name="Dharma-Karmadhipati Yoga",
+            slug="dharma_karmadhipati_yoga",
+            strength=min(1.0, 0.52 + 0.12 * (_planet_strength(planets, ninth_lord) + _planet_strength(planets, tenth_lord)) / 2),
+            evidence=[f"9室支配星{ninth_lord}と10室支配星{tenth_lord}の関係: {dharma_karma_rel}"],
+            interpretation_hint="信念・専門性・社会的役割が結びつきやすい",
+            tags=["career_support", "purpose_work_link"],
+        ))
+
+    amala_hits = []
+    moon_house = _planet_house(planets, "Moon")
+    for benefic in ("Jupiter", "Venus", "Mercury"):
+        h = _planet_house(planets, benefic)
+        if h == 10:
+            amala_hits.append(f"{benefic}がラグナから第10室")
+        if isinstance(moon_house, int) and isinstance(h, int) and _house_distance(moon_house, h) == 10:
+            amala_hits.append(f"{benefic}が月から第10室")
+    if amala_hits:
+        out.append(_yoga_item(
+            name="Amala Yoga",
+            slug="amala_yoga",
+            strength=min(1.0, 0.48 + 0.08 * len(amala_hits)),
+            confidence="medium",
+            evidence=amala_hits[:4],
+            interpretation_hint="仕事上の評判・清潔感・継続評価が育ちやすい",
+            tags=["career_support", "reputation_support"],
+            notes=["月から第10室を見る条件を含める流派と含めない流派があります。"],
+        ))
+
+    viparita_hits = []
+    for h in (6, 8, 12):
+        lord = _house_lord_name(house_lords, h)
+        placed = _planet_house(planets, lord)
+        if placed in {6, 8, 12}:
+            viparita_hits.append(f"第{h}室支配星{lord}が第{placed}室に在住")
+    if viparita_hits:
+        out.append(_yoga_item(
+            name="Viparita Raja Yoga",
+            slug="viparita_raja_yoga",
+            strength=min(1.0, 0.45 + 0.08 * len(viparita_hits)),
+            confidence="medium",
+            evidence=viparita_hits,
+            interpretation_hint="困難や逆境が結果的に評価へ転じやすい",
+            tags=["career_support", "recovery_from_adversity"],
+            notes=["6/8/12室支配星がドゥシュタナに入る基本条件で判定しています。"],
+        ))
+    return _sort_yoga_items(out)
+
+
+def detect_mind_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    del house_lords
+    out: list[dict[str, Any]] = []
     moon = planets.get("Moon") or {}
     jupiter = planets.get("Jupiter") or {}
     mars = planets.get("Mars") or {}
@@ -503,22 +742,29 @@ def _build_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) ->
     mars_house = mars.get("house_no")
 
     if isinstance(moon_house, int) and isinstance(jup_house, int):
-        rel = _house_distance(jup_house, moon_house)
+        rel = _house_distance(moon_house, jup_house)
         if rel in {1, 4, 7, 10}:
-            yogas.append({
-                "name": "Gajakesari Yoga",
-                "strength": round(min(1.0, 0.45 + 0.3 * float((jupiter.get("dignity") or {}).get("strength_score") or 0.5)), 3),
-                "evidence": ["Moon in kendra from Jupiter"],
-                "tags": ["mental_support", "reputation_support"],
-            })
+            strength = min(1.0, 0.45 + 0.3 * _planet_strength(planets, "Jupiter"))
+            out.append(_yoga_item(
+                name="Gajakesari Yoga",
+                slug="gajakesari_yoga",
+                strength=strength,
+                confidence="medium",
+                evidence=["月から見たケンドラに木星"],
+                interpretation_hint="精神的な支え、評判、助言者運",
+                tags=["mental_support", "reputation_support"],
+                notes=["木星の傷や月の状態で強弱が変わるため、中程度判定を基本にしています。"],
+            ))
 
     if isinstance(moon_house, int) and isinstance(mars_house, int) and moon_house == mars_house:
-        yogas.append({
-            "name": "Chandra-Mangala Yoga",
-            "strength": round(min(1.0, 0.5 + 0.2 * float((mars.get("dignity") or {}).get("strength_score") or 0.5)), 3),
-            "evidence": ["Moon conjunct Mars by house"],
-            "tags": ["financial_drive", "emotional_heat"],
-        })
+        out.append(_yoga_item(
+            name="Chandra-Mangala Yoga",
+            slug="chandra_mangala_yoga",
+            strength=min(1.0, 0.5 + 0.2 * _planet_strength(planets, "Mars")),
+            evidence=["月と火星が同じハウス"],
+            interpretation_hint="感情の熱量と行動力が収益・実行へ向かいやすい",
+            tags=["financial_drive", "emotional_heat"],
+        ))
 
     if isinstance(moon_house, int):
         has_neighbor = False
@@ -532,59 +778,160 @@ def _build_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) ->
                 has_neighbor = True
                 break
         if not has_neighbor:
-            yogas.append({
-                "name": "Kemadruma Yoga",
-                "strength": 0.45,
-                "evidence": ["No classical planet in 2nd/12th from Moon"],
-                "tags": ["inner_isolation_tendency"],
-            })
+            out.append(_yoga_item(
+                name="Kemadruma Yoga",
+                slug="kemadruma_yoga",
+                strength=0.45,
+                confidence="medium",
+                evidence=["月の両隣に古典惑星なし"],
+                interpretation_hint="内側の孤立感。静かな時間の確保が重要",
+                tags=["inner_isolation_tendency"],
+                notes=["ケンドラ在住惑星などをキャンセル条件に含める流派があります。ここでは基本形のみを判定します。"],
+            ))
+    return _sort_yoga_items(out)
 
-    if house_lords:
-        kendra_lords = {house_lords[str(h)]["lord"] for h in (1, 4, 7, 10)}
-        trikona_lords = {house_lords[str(h)]["lord"] for h in (1, 5, 9)}
-        raja_hits: list[str] = []
-        for p in sorted(kendra_lords & trikona_lords):
-            pdata = planets.get(p) or {}
-            if _is_kendra(pdata.get("house_no")) or _is_trikona(pdata.get("house_no")):
-                raja_hits.append(p)
-        if raja_hits:
-            yogas.append({
-                "name": "Raja Yoga",
-                "strength": round(min(1.0, 0.5 + 0.1 * len(raja_hits)), 3),
-                "evidence": [f"Kendra/trikona lord active: {', '.join(raja_hits)}"],
-                "tags": ["status_support", "career_support"],
-            })
 
-        wealth_lords = {house_lords[str(h)]["lord"] for h in (2, 11, 5, 9)}
-        dhan_hits = []
-        for p in sorted(wealth_lords):
-            pdata = planets.get(p) or {}
-            if isinstance(pdata.get("house_no"), int) and pdata.get("house_no") in {2, 5, 9, 11}:
-                dhan_hits.append(p)
-        if len(dhan_hits) >= 2:
-            yogas.append({
-                "name": "Dhana Yoga",
-                "strength": round(min(1.0, 0.45 + 0.1 * len(dhan_hits)), 3),
-                "evidence": [f"Wealth lords active: {', '.join(dhan_hits)}"],
-                "tags": ["wealth_forming_capacity"],
-            })
+def detect_challenge_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not house_lords:
+        return []
+    out: list[dict[str, Any]] = []
+    daridra_hits = []
+    for h in (2, 11):
+        lord = _house_lord_name(house_lords, h)
+        placed = _planet_house(planets, lord)
+        if _is_dusthana(placed):
+            daridra_hits.append(f"第{h}室支配星{lord}が第{placed}室")
+    for h in (6, 8, 12):
+        lord = _house_lord_name(house_lords, h)
+        placed = _planet_house(planets, lord)
+        if placed in {2, 11}:
+            daridra_hits.append(f"第{h}室支配星{lord}が第{placed}室")
+    if daridra_hits:
+        out.append(_yoga_item(
+            name="Daridra Yoga",
+            slug="daridra_yoga",
+            strength=min(1.0, 0.38 + 0.07 * len(daridra_hits)),
+            confidence="medium",
+            evidence=daridra_hits,
+            interpretation_hint="収支・自己価値・人脈面で調整課題が出やすい",
+            tags=["wealth_challenge"],
+            notes=["不安を煽るためではなく、資源管理の課題として扱います。"],
+        ))
 
-        viparita_hits = []
-        for h in (6, 8, 12):
-            lord = house_lords[str(h)]["lord"]
-            pdata = planets.get(lord) or {}
-            if pdata.get("house_no") in {6, 8, 12}:
-                viparita_hits.append(f"{h}L={lord}")
-        if viparita_hits:
-            yogas.append({
-                "name": "Viparita Raja Yoga",
-                "strength": round(min(1.0, 0.45 + 0.08 * len(viparita_hits)), 3),
-                "evidence": viparita_hits,
-                "tags": ["recovery_from_adversity"],
-            })
+    moon_house = _planet_house(planets, "Moon")
+    jup_house = _planet_house(planets, "Jupiter")
+    if isinstance(moon_house, int) and isinstance(jup_house, int) and _house_distance(moon_house, jup_house) in {6, 8, 12}:
+        out.append(_yoga_item(
+            name="Sakata Yoga",
+            slug="sakata_yoga",
+            strength=0.46,
+            confidence="medium",
+            evidence=["月から見て木星が6/8/12室"],
+            interpretation_hint="気分・支援・見通しに波が出やすい",
+            tags=["support_fluctuation"],
+            notes=["Gajakesari Yogaと同じく月と木星の状態で強弱が変わります。"],
+        ))
 
-    yogas.sort(key=lambda x: float(x.get("strength") or 0), reverse=True)
-    return yogas
+    malefics = {"Sun", "Mars", "Saturn", "Rahu", "Ketu"}
+    kartari_hits = []
+    for base_name, base_house in (("ラグナ", 1), ("月", moon_house)):
+        if not isinstance(base_house, int):
+            continue
+        prev_house = ((base_house + 10) % 12) + 1
+        next_house = (base_house % 12) + 1
+        prev_malefics = [p for p in malefics if _planet_house(planets, p) == prev_house]
+        next_malefics = [p for p in malefics if _planet_house(planets, p) == next_house]
+        if prev_malefics and next_malefics:
+            kartari_hits.append(f"{base_name}の両隣に凶星: {', '.join(sorted(prev_malefics))} / {', '.join(sorted(next_malefics))}")
+    if kartari_hits:
+        out.append(_yoga_item(
+            name="Paap Kartari Yoga",
+            slug="paap_kartari_yoga",
+            strength=min(1.0, 0.42 + 0.08 * len(kartari_hits)),
+            confidence="medium",
+            evidence=kartari_hits,
+            interpretation_hint="始動時に圧迫感が出やすく、環境設計が重要",
+            tags=["pressure_pattern"],
+            notes=["凶星の定義やキャンセル条件は流派差があります。"],
+        ))
+    return _sort_yoga_items(out)
+
+
+def _vedic_yoga_summary(category: str, items: list[dict[str, Any]]) -> str:
+    if items:
+        names = "、".join(str(item.get("name")) for item in items[:3])
+        return {
+            "wealth": f"富・収益に関するヨーガは {names} を中心に確認できます。",
+            "career": f"仕事・評価に関するヨーガは {names} を中心に確認できます。",
+            "mind_support": f"心理的支えに関するヨーガは {names} を中心に確認できます。",
+            "challenge": f"課題系ヨーガは {names} を確認します。本文ではリスクではなく調整テーマとして扱います。",
+        }.get(category, f"検出ヨーガ: {names}")
+    return {
+        "wealth": "明確な富のヨーガは限定的です。収益判断は2室・11室・ダシャーなど他の根拠を優先します。",
+        "career": "明確な仕事・権力系ヨーガは限定的です。キャリア判断は10室・ダシャーなど他の根拠を優先します。",
+        "mind_support": "明確な月関連の支援ヨーガは限定的です。心理面は月・4室・ダシャーなど他の根拠を優先します。",
+        "challenge": "主要な課題系ヨーガは強く出ていません。課題判断は個別配置の負荷を確認します。",
+    }.get(category, "該当する主要ヨーガは限定的です。")
+
+
+def analyze_vedic_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) -> dict[str, Any]:
+    wealth = detect_dhana_yogas(planets, house_lords)
+    career = detect_raja_yogas(planets, house_lords)
+    mind_support = detect_mind_yogas(planets, house_lords)
+    challenge = detect_challenge_yogas(planets, house_lords)
+    return {
+        "wealth": wealth,
+        "career": career,
+        "mind_support": mind_support,
+        "challenge": challenge,
+        "summary": {
+            "wealth": _vedic_yoga_summary("wealth", wealth),
+            "career": _vedic_yoga_summary("career", career),
+            "mind_support": _vedic_yoga_summary("mind_support", mind_support),
+            "challenge": _vedic_yoga_summary("challenge", challenge),
+        },
+    }
+
+
+def summarize_vedic_yogas_for_handoff(vedic_yogas: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"summary": vedic_yogas.get("summary") or {}}
+    for category in ("wealth", "career", "mind_support", "challenge"):
+        out[category] = [
+            {
+                "name": item.get("name"),
+                "slug": item.get("slug"),
+                "present": item.get("present", True),
+                "strength": item.get("strength"),
+                "confidence": item.get("confidence"),
+                "evidence": item.get("evidence") or [],
+                "interpretation_hint": item.get("interpretation_hint"),
+                "notes": item.get("notes") or [],
+            }
+            for item in vedic_yogas.get(category, [])
+            if isinstance(item, dict) and item.get("present", True)
+        ]
+    return out
+
+
+def _build_yogas(planets: dict[str, Any], house_lords: dict[str, Any] | None) -> list[dict[str, Any]]:
+    vedic_yogas = analyze_vedic_yogas(planets, house_lords)
+    flat: list[dict[str, Any]] = []
+    for category in ("wealth", "career", "mind_support", "challenge"):
+        for item in vedic_yogas.get(category, []):
+            compat = {
+                "name": item.get("name"),
+                "slug": item.get("slug"),
+                "strength": item.get("strength"),
+                "confidence": item.get("confidence"),
+                "evidence": item.get("evidence") or [],
+                "tags": item.get("tags") or [],
+                "category": category,
+                "interpretation_hint": item.get("interpretation_hint"),
+            }
+            if item.get("notes"):
+                compat["notes"] = item.get("notes")
+            flat.append(compat)
+    return _sort_yoga_items(flat)
 
 
 def _navamsa_sign_index(rashi_no: int, deg_in_sign: float) -> int:
@@ -841,6 +1188,7 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("緯度経度が無いため、ASC（ラグナ）とハウスは未計算です。")
 
     planetary_aspects_vedic = _build_planetary_aspects_vedic(planets)
+    vedic_yogas = analyze_vedic_yogas(planets, house_lords)
     yogas = _build_yogas(planets, house_lords)
     d9 = _build_d9(planets, asc_data)
     dasha = _dasha_chain_from_moon(nak_no, 1.0 - progress, dt_utc, datetime.now(timezone.utc))
@@ -926,6 +1274,8 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "planets_map": planets,
         "planetary_aspects_vedic": planetary_aspects_vedic,
         "yogas": yogas,
+        "vedic_yogas": vedic_yogas,
+        "vedic_yogas_handoff": summarize_vedic_yogas_for_handoff(vedic_yogas),
         "varga": {"D9": d9},
         "dasha": dasha,
         "gochara": gochara,
