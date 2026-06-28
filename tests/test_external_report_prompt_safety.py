@@ -72,18 +72,22 @@ def test_prompt_contains_public_evidence_and_internal_key_rules():
     assert "だから何をすると運が動くのか" in prompt
     assert "第1章で決めた「この人の核」" in prompt
     assert "章ごとに別人化" in prompt
-    assert "読者に刺さる一文を各章に入れる" in prompt
-    assert "え、それ私かも" in prompt
-    assert "そこまで分かるの？" in prompt
-    assert "確かにいつもそうなる" in prompt
-    assert "この一文には「読者に刺さる一文」「驚きポイント」「ポイント」などのラベルを付けない" in prompt
-    assert "本文の自然な流れの中に通常の文章として入れる" in prompt
+    assert "共感できる一文を各章に入れる" in prompt
+    assert "そうそう" in prompt
+    assert "あるある" in prompt
+    assert "なんで分かるの？" in prompt
+    assert "言われてみると、いつもそうなる" in prompt
     assert "言われると痛いけど当たっている" in prompt
+    assert "この一文には「共感できる一文」「読者に刺さる一文」「驚きポイント」「ポイント」「注目ポイント」「ここが重要」「重要ポイント」などのラベルを付けない" in prompt
+    assert "本文の自然な流れの中に通常の文章として入れる" in prompt
+    assert "アドバイスより先に構造を言語化する" in prompt
     assert "優等生すぎる助言で終わらせない" in prompt
-    assert "自分で出すタイミングを遅らせやすい" in prompt
+    assert "自分で完成ラインを上げ続けやすい" in prompt
     assert "三占術の一致から刺さる一文" in prompt
     assert "完成度を求めすぎるほど公開が遅れ" in prompt
-    assert "読者に刺さる一文は本文に入れる" in prompt
+    assert "同じあるあるを繰り返さない" in prompt
+    assert "出すのが遅い" in prompt
+    assert "共感できる一文は本文に入れる" in prompt
     assert "本文ではラベル化せず自然文にする" in prompt
 
 
