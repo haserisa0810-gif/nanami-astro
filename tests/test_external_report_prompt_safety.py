@@ -65,30 +65,31 @@ def test_prompt_contains_public_evidence_and_internal_key_rules():
     assert "snake_case の内部キーを本文・根拠欄に出さない" in prompt
     assert "各区分は2〜4点程度" in prompt
     assert "ヨーガ名は vedic_yogas に存在するものだけ使う" in prompt
-    assert "占術知識ではなく、その人を書く" in prompt
-    assert "百科事典的説明" in prompt
-    assert "三占術を独立解説しない" in prompt
-    assert "同じ方向を指す場合は、その一致点" in prompt
-    assert "だから何をすると運が動くのか" in prompt
+    assert "占術は主役ではない" in prompt
+    assert "ダニシュタは〜のナクシャトラです" in prompt
+    assert "Raja Yogaとは〜" in prompt
+    assert "第6ハウスとは〜" in prompt
     assert "第1章で決めた「この人の核」" in prompt
     assert "章ごとに別人化" in prompt
-    assert "共感できる一文を各章に入れる" in prompt
+    assert "共感できる個人鑑定" in prompt
     assert "そうそう" in prompt
     assert "あるある" in prompt
     assert "なんで分かるの？" in prompt
-    assert "言われてみると、いつもそうなる" in prompt
     assert "言われると痛いけど当たっている" in prompt
-    assert "この一文には「共感できる一文」「読者に刺さる一文」「驚きポイント」「ポイント」「注目ポイント」「ここが重要」「重要ポイント」などのラベルを付けない" in prompt
-    assert "本文の自然な流れの中に通常の文章として入れる" in prompt
-    assert "アドバイスより先に構造を言語化する" in prompt
-    assert "優等生すぎる助言で終わらせない" in prompt
-    assert "自分で完成ラインを上げ続けやすい" in prompt
-    assert "三占術の一致から刺さる一文" in prompt
-    assert "完成度を求めすぎるほど公開が遅れ" in prompt
-    assert "同じあるあるを繰り返さない" in prompt
-    assert "出すのが遅い" in prompt
-    assert "共感できる一文は本文に入れる" in prompt
-    assert "本文ではラベル化せず自然文にする" in prompt
+    assert "自分でも説明できなかった" in prompt
+    assert "占術は人物像を説明する材料" in prompt
+    assert "まず人物像を書き" in prompt
+    assert "三占術を順番に説明しない" in prompt
+    assert "西洋占星術で主軸を作り" in prompt
+    assert "四柱推命で現実面や行動パターンを補強" in prompt
+    assert "三占術が一致した内容は、一つの結論として統合" in prompt
+    assert "各章で違う気付きを書く" in prompt
+    assert "完成してから出そうとする" in prompt
+    assert "異なる視点から人物像を掘り下げ" in prompt
+    assert "アドバイスを書く前に構造を書く" in prompt
+    assert "なぜそうなるのか" in prompt
+    assert "どんな場面で現れやすいのか" in prompt
+    assert "自分のことを理解できた" in prompt
 
 
 def test_planet_label_translates_english_signs_for_cover():
