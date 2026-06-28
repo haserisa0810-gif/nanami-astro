@@ -33,6 +33,34 @@ risk_flags_top：システムが検出した構造的リスク
 - Dhana Yoga がない場合、Gajakesari Yoga など他分類のヨーガで富のヨーガを代用しない。
 - 本文ではヨーガ名の羅列よりも、interpretation_hint と summary を使って「何に効くか」を優先して説明する。
 - challenge のヨーガは不安を煽らず、neutral な調整テーマとして書く。
+- strength / confidence は本文・根拠欄に数値やキー名として出さない。
+- 必要なら「明確に成立」「中程度に確認」「補助的に確認」など自然文で表現する。
+
+【日本語表記ルール】
+- 星座名は本文・根拠欄とも日本語表記に統一する。
+- Virgo は必ず「乙女座」と書く。「処女座」は使用禁止。
+- Cancer は「蟹座」、Leo は「獅子座」、Aquarius は「水瓶座」と書く。
+- Aries=牡羊座、Taurus=牡牛座、Gemini=双子座、Libra=天秤座、Scorpio=蠍座、Sagittarius=射手座、Capricorn=山羊座、Pisces=魚座。
+- Vedic側のRashi名も、本文では日本語星座名を優先する。
+
+【内部値・デバッグキーの出力禁止】
+- 本文・根拠欄に以下をそのまま出さない: enemy_sign / enemy sign / friendly_sign / strength_score / strength: / confidence: / confidence / severity / risk_flag / active_themes / overwork_health_debt / obsession_burnout_cycle / raw YAML key。
+- snake_case の内部キーを本文・根拠欄に出さない。
+- enemy sign は「本来の力を少し発揮しにくい配置」と言い換える。
+- strength_score が低い場合は「力の出方に工夫が必要」と言い換える。
+- confidence high は「明確に確認できる」と言い換える。
+- severity 4 は「注意度が高い」と言い換える。
+- overwork_health_debt は「頑張りすぎが体調や気力の負債になりやすい」と言い換える。
+- obsession_burnout_cycle は「集中しすぎて消耗へ向かいやすい」と言い換える。
+- active_themes: learning_growth は「学び直しや成長がテーマ」と言い換える。
+- active_themes: inner_pressure は「内側からのプレッシャーが強まりやすい」と言い換える。
+
+【根拠欄の方針】
+- 根拠欄は残す。ただし読み手向けの「証拠一覧＋短い補足」にする。
+- 各区分は2〜4点程度に抑え、長文解説は本文側に回す。
+- 根拠欄は【西洋】【インド】【四柱推命】を保つ。
+- 根拠欄にデバッグ値、英語キー、snake_case、数値スコアを出さない。
+- 書式例: <details class="evidence-block"><summary>▼ 星の根拠</summary><p>【西洋】・第6ハウスに水星・金星・火星が集中<br>・太陽は獅子座第5ハウス</p><p>【インド】・魚座ラグナ<br>・月はダニシュタ第3パダ</p><p>【四柱推命】・日干は甲<br>・五行は火が強く、水が表に出ていない</p></details>
 
 ━━━━━━━━━━━━━━━━━━
 章構成（プラン別・基本章＋追加EX章）

@@ -12,6 +12,81 @@ from services.shichu_formatter import extract_shichu_data
 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 
+SIGN_JA = {
+    "Aries": "牡羊座",
+    "Taurus": "牡牛座",
+    "Gemini": "双子座",
+    "Cancer": "蟹座",
+    "Leo": "獅子座",
+    "Virgo": "乙女座",
+    "Libra": "天秤座",
+    "Scorpio": "蠍座",
+    "Sagittarius": "射手座",
+    "Capricorn": "山羊座",
+    "Aquarius": "水瓶座",
+    "Pisces": "魚座",
+    "処女座": "乙女座",
+}
+
+SIGN_JA_SHORT = {
+    "牡羊": "牡羊座",
+    "牡牛": "牡牛座",
+    "双子": "双子座",
+    "蟹": "蟹座",
+    "獅子": "獅子座",
+    "乙女": "乙女座",
+    "天秤": "天秤座",
+    "蠍": "蠍座",
+    "射手": "射手座",
+    "山羊": "山羊座",
+    "水瓶": "水瓶座",
+    "魚": "魚座",
+}
+
+INTERNAL_PUBLIC_REPLACEMENTS = [
+    (r"enemy[_ ]sign", "本来の力を少し発揮しにくい配置"),
+    (r"friendly[_ ]sign", "力を自然に発揮しやすい配置"),
+    (r"strength_score[^\s。<、,]*\s*[0-9.]+", "力の出方に工夫が必要"),
+    (r"strength_score\s*[:=]?\s*[0-9.]+", "力の出方に工夫が必要"),
+    (r"strength\s*:\s*[0-9.]+", "強さの目安が確認できる"),
+    (r"strength\s+[0-9.]+", "強さの目安が確認できる"),
+    (r"strength\s*:", "強さの目安は"),
+    (r"confidence\s*:\s*high", "明確に確認できる"),
+    (r"confidence\s+high", "明確に確認できる"),
+    (r"confidence\s*:\s*medium", "中程度に確認できる"),
+    (r"confidence\s+medium", "中程度に確認できる"),
+    (r"confidence\s*:\s*low", "補助的に確認できる"),
+    (r"confidence\s+low", "補助的に確認できる"),
+    (r"confidence", "確認度"),
+    (r"severity\s*[:=]?\s*4", "注意度が高い"),
+    (r"severity\s*[:=]?\s*3", "注意して扱いたい"),
+    (r"severity", "注意度"),
+    (r"risk[_ ]flag", "注意テーマ"),
+    (r"active_themes\s*:\s*learning_growth\s*/\s*inner_pressure", "学び直しと内側からのプレッシャー"),
+    (r"active_themes\s*:\s*inner_pressure\s*/\s*learning_growth", "内側からのプレッシャーと学び直し"),
+    (r"active_themes\s*:\s*learning_growth", "学び直しや成長がテーマ"),
+    (r"active_themes\s*:\s*inner_pressure", "内側からのプレッシャーが強まりやすい"),
+    (r"active_themes", "現在強まりやすいテーマ"),
+    (r"learning_growth", "学び直しや成長"),
+    (r"inner_pressure", "内側からのプレッシャー"),
+    (r"overwork_health_debt", "頑張りすぎが体調や気力の負債になりやすい傾向"),
+    (r"obsession_burnout_cycle", "集中しすぎて消耗へ向かいやすい傾向"),
+    (r"raw YAML key", "内部データ名"),
+]
+
+PROHIBITED_PUBLIC_TERMS = [
+    "enemy sign",
+    "enemy_sign",
+    "friendly_sign",
+    "strength_score",
+    "confidence",
+    "severity",
+    "risk_flag",
+    "active_themes",
+    "overwork_health_debt",
+    "obsession_burnout_cycle",
+]
+
 CHAPTER_TITLES_W_SHICHU = [
     ("01", "基本性格・本質"),
     ("02", "才能・適性・仕事運"),
@@ -99,6 +174,22 @@ def _safe(value: Any) -> str:
     return html.escape("" if value is None else str(value))
 
 
+def _normalize_public_astrology_terms(text: Any) -> str:
+    out = "" if text is None else str(text)
+    if not out:
+        return ""
+    out = out.replace("処女座", "乙女座")
+    for src, dst in SIGN_JA.items():
+        out = re.sub(re.escape(src), dst, out, flags=re.I)
+    for src, dst in SIGN_JA_SHORT.items():
+        out = re.sub(rf"{re.escape(src)}(?!座)", dst, out)
+    for pattern, replacement in INTERNAL_PUBLIC_REPLACEMENTS:
+        out = re.sub(pattern, replacement, out, flags=re.I)
+    # Last-resort cleanup for snake_case tokens that slipped into prose.
+    out = re.sub(r"\b[a-z]+(?:_[a-z0-9]+)+\b", "内部テーマ", out)
+    return out
+
+
 def _jp_date(value: Any) -> str:
     if isinstance(value, (date, datetime)):
         return f"{value.year}年{value.month}月{value.day}日"
@@ -149,7 +240,7 @@ def _planet_label(raw: dict[str, Any], planet_name: str) -> str:
             except Exception:
                 pass
             house_s = f"・{house}ハウス" if house else ""
-            return f"{sign}{deg_s}{house_s}".strip() or "-"
+            return _normalize_public_astrology_terms(f"{sign}{deg_s}{house_s}".strip()) or "-"
     return "-"
 
 
@@ -165,11 +256,11 @@ def _asc_label(raw: dict[str, Any]) -> str:
             sign = c.get("sign") or c.get("sign_name") or ""
             deg = c.get("deg_in_sign") or c.get("degree")
             try:
-                return f"{sign} {float(deg):.0f}度".strip()
+                return _normalize_public_astrology_terms(f"{sign} {float(deg):.0f}度".strip())
             except Exception:
-                return str(sign or "-")
+                return _normalize_public_astrology_terms(sign or "-")
         if c:
-            return str(c)
+            return _normalize_public_astrology_terms(c)
     return "-"
 
 
@@ -425,6 +516,10 @@ def build_chapter_json_prompt(order: Any, *, plan: str, handoff_yaml: str, repor
 - 【西洋】には、その章で使った西洋占星術の主要根拠を入れる
 - 【インド】には、その章で使ったインド占星術の主要根拠を入れる
 - 【四柱推命】には、その章で使った四柱推命の主要根拠を入れる
+- 各区分は2〜4点程度に抑え、「・根拠 + 短い補足」の形にする
+- 根拠欄に enemy_sign / strength_score / confidence / severity / risk_flag / active_themes などの内部キーを出さない
+- 根拠欄に英語星座名や「処女座」を出さず、必ず日本語星座名で書く
+- インドのヨーガは vedic_yogas に存在するものだけを書く。strength / confidence の数値は書かない
 - 該当章で使えるインド占星術データがYAML上限定的な場合は、捏造せず「【インド】入力データ上、この章で直接使える追加根拠は限定的」と書く
 - 根拠欄を【西洋】と【命式】だけで終わらせない
 """.strip()
@@ -456,6 +551,42 @@ HTML全体・CSS・ホロスコープ図・命式表は出力しません。
 - 章ごとにnamingとcloserを必ず入れる
 - body_htmlは <p>, <strong>, <div class=\"callout\"><p>...</p></div>, <details class=\"evidence-block\"><summary>▼ 星の根拠</summary>...</details> だけを使う
 - <script>, <style>, <html>, <body> は出力禁止
+
+【日本語表記ルール】
+- 星座名は本文・根拠欄とも日本語表記に統一する
+- Virgo は必ず「乙女座」と書く。「処女座」は使用禁止
+- Cancer は「蟹座」、Leo は「獅子座」、Aquarius は「水瓶座」と書く
+- Aries=牡羊座、Taurus=牡牛座、Gemini=双子座、Libra=天秤座、Scorpio=蠍座、Sagittarius=射手座、Capricorn=山羊座、Pisces=魚座
+- インド占星術のRashi名も、本文では日本語星座名を優先する
+
+【内部値を本文・根拠欄に出さない】
+- 次の語をそのまま出力禁止: enemy_sign, enemy sign, friendly_sign, strength_score, strength:, confidence:, confidence, severity, risk_flag, active_themes, overwork_health_debt, obsession_burnout_cycle, raw YAML key
+- snake_case の内部キーを本文・根拠欄に出さない
+- YAMLのキー名やデバッグ値を引用せず、必ず読み手向けの自然文に直す
+- enemy sign は「本来の力を少し発揮しにくい配置」
+- strength_score が低い場合は「力の出方に工夫が必要」
+- confidence high は「明確に確認できる」
+- severity 4 は「注意度が高い」
+- overwork_health_debt は「頑張りすぎが体調や気力の負債になりやすい」
+- obsession_burnout_cycle は「集中しすぎて消耗へ向かいやすい」
+- active_themes: learning_growth は「学び直しや成長がテーマ」
+- active_themes: inner_pressure は「内側からのプレッシャーが強まりやすい」
+
+【根拠欄の方針】
+- 根拠欄は残すが、読み手向けの「証拠一覧＋短い補足」にする
+- 各区分は2〜4点程度に抑える。長文解説は本文側に回す
+- 根拠欄ではデバッグ値、英語キー、snake_case、数値スコアを出さない
+- 書式は <details class=\"evidence-block\"><summary>▼ 星の根拠</summary><p>【西洋】・...<br>・...</p><p>【インド】・...<br>・...</p><p>【四柱推命】・...<br>・...</p></details>
+- 【西洋】例: ・第6ハウスに水星・金星・火星が集中<br>・太陽は獅子座第5ハウス
+- 【インド】例: ・魚座ラグナ<br>・月はダニシュタ第3パダ<br>・土星マハーダシャー、火星アンタラ期
+- 【四柱推命】例: ・日干は甲<br>・五行は火が強く、水が表に出ていない
+
+【ヨーガ表記】
+- ヨーガ名は vedic_yogas に存在するものだけ使う
+- strength / confidence は本文・根拠欄に数値やキー名として出さない
+- 必要なら「明確に成立」「中程度に確認」「補助的に確認」など自然文で表現する
+- 「YAML上に記載がないものの」は禁止
+- 成立していないヨーガを別のヨーガで代用しない
 
 【主役を決めてから書く（最優先）】
 - 書き始める前に、この鑑定書の主役を最大2つ特定する
@@ -508,12 +639,13 @@ def parse_chapter_json(text: str, specs: list[dict[str, str]]) -> dict[str, Any]
         c = by_num.get(key) or {}
         normalized.append({
             "num": spec["num"],
-            "title": c.get("title") or spec["title"],
-            "naming": c.get("naming") or "",
-            "body_html": c.get("body_html") or "<p>本文生成に失敗しました。再生成してください。</p>",
-            "closer": c.get("closer") or "",
+            "title": _normalize_public_astrology_terms(c.get("title") or spec["title"]),
+            "naming": _normalize_public_astrology_terms(c.get("naming") or ""),
+            "body_html": _normalize_public_astrology_terms(c.get("body_html") or "<p>本文生成に失敗しました。再生成してください。</p>"),
+            "closer": _normalize_public_astrology_terms(c.get("closer") or ""),
         })
-    return {"cover_tagline": (data.get("cover_tagline") if isinstance(data, dict) else "") or "星の配置から、人生の設計図を読む", "chapters": normalized}
+    tagline = (data.get("cover_tagline") if isinstance(data, dict) else "") or "星の配置から、人生の設計図を読む"
+    return {"cover_tagline": _normalize_public_astrology_terms(tagline), "chapters": normalized}
 
 
 def _cover(order: Any, raw: dict[str, Any], shichu: dict[str, Any], tagline: str, premium: bool) -> str:
