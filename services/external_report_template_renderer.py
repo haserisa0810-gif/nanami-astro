@@ -396,6 +396,38 @@ def chapter_specs(plan: str, options: dict[str, bool] | None = None) -> list[dic
 def build_chapter_json_prompt(order: Any, *, plan: str, handoff_yaml: str, report_options: dict[str, bool]) -> str:
     specs = chapter_specs(plan, report_options)
     specs_text = "\n".join([f"- {s['num']} {s['title']}" for s in specs])
+    premium_integration_rules = ""
+    if plan == "premium":
+        premium_integration_rules = """
+【プレミアム三術統合ルール（必須）】
+- プレミアム鑑定書は、西洋占星術・インド占星術・四柱推命の3占術を統合して本文を書く
+- 西洋占星術だけ、または西洋占星術＋四柱推命だけで本文を作らない
+- 各章で最低1回はインド占星術の要素を本文に反映する
+- インド占星術は補足ではなく、章テーマを読むための根拠のひとつとして扱う
+- 入力YAMLに存在しないインド占星術要素は追加しない
+- ナクシャトラ、ラグナ、月、ダシャー、ハウス支配星、ヨーガなど、YAMLに存在する範囲で使う
+- ナヴァムシャ、サディサティなどがYAMLに無い場合は書かない
+- 「インド占星術では〜」という一般論で埋めず、必ずYAML内の計算済みデータを根拠にする
+- 西洋・インド・四柱推命を無理に均等配分せず、章テーマごとに最も効く要素を選ぶ
+- ただし各章末の根拠欄には、3占術すべての根拠を必ず出す
+
+【章ごとの三術接続】
+- 基本性格・本質: 西洋は太陽・月・ASC・ハウス集中、インドはラグナ・月・ナクシャトラ、四柱推命は日干・月令・五行バランスを見る
+- 才能・適性・仕事運: 西洋は仕事ハウス・MC・アスペクト、インドは10室・10室支配星・ダシャー・適職に関係する配置、四柱推命は食傷・財星・官星・五行の偏りを見る
+- 恋愛・パートナーシップ: 西洋は7ハウス・金星・月・対人アスペクト、インドは7室・7室支配星・金星・ナヴァムシャ情報がYAMLにあればそれ、四柱推命は財星・官星・日支・配偶者宮を見る
+- お金・豊かさ: 西洋は2ハウス・8ハウス・金星・木星、インドは2室・11室・ダナヨーガ・ダシャー、四柱推命は財星・食傷生財・五行バランスを見る
+- 魂の課題・人生テーマ: 西洋はノード・土星・冥王星・キロン、インドはラーフ・ケートゥ・月・ナクシャトラ・ダシャー、四柱推命は用神的な偏り・空亡・大運の流れを見る
+- 年運・トランジット: 西洋はトランジット、インドはダシャーとYAMLにある時期要素、四柱推命は大運・流年を見る
+
+【プレミアム根拠欄の必須書式】
+各章の body_html 末尾に、必ず次の形の details を入れる。
+<details class=\"evidence-block\"><summary>▼ 星の根拠</summary><p>【西洋】...</p><p>【インド】...</p><p>【四柱推命】...</p></details>
+- 【西洋】には、その章で使った西洋占星術の主要根拠を入れる
+- 【インド】には、その章で使ったインド占星術の主要根拠を入れる
+- 【四柱推命】には、その章で使った四柱推命の主要根拠を入れる
+- 該当章で使えるインド占星術データがYAML上限定的な場合は、捏造せず「【インド】入力データ上、この章で直接使える追加根拠は限定的」と書く
+- 根拠欄を【西洋】と【命式】だけで終わらせない
+""".strip()
     return f"""
 あなたは星月七海の鑑定書ライターです。
 以下のYAMLデータを根拠に、鑑定書本文だけをJSONで生成してください。
@@ -433,6 +465,8 @@ HTML全体・CSS・ホロスコープ図・命式表は出力しません。
 - アスペクトは単独解説にせず、主役の説明を深める根拠として従属させる
 - 矛盾する配置は「結果的にバランスが取れている」とまとめず、両方を同時に存在するものとして残す
 - トランジットは「主役 → 今どこが刺激されているか → だから何が起きやすいか」の順で読む
+
+{premium_integration_rules}
 
 【今回出力する章】
 {specs_text}
@@ -629,6 +663,11 @@ def render_external_report_html(order: Any, *, plan: str, astro_result: dict[str
         _charts(astro_result, shichu, premium),
     ]
     body.extend(_chapter_html(c, premium) for c in chapters)
-    body.append("<footer><div class='footer-logo'>星月七海 · nanami-astro</div><div class='footer-note'>この鑑定書はSwiss Ephemerisによる天体計算と、四柱推命ロジックをもとに作成しています。<br>星の流れはひとつの地図です。最終的な判断はご自身を大切にしながら行ってください。</div></footer>")
+    footer_basis = (
+        "この鑑定書は、Swiss Ephemerisによる西洋占星術の天体計算、インド占星術ロジック、四柱推命ロジックをもとに作成しています。"
+        if premium
+        else "この鑑定書はSwiss Ephemerisによる天体計算と、四柱推命ロジックをもとに作成しています。"
+    )
+    body.append(f"<footer><div class='footer-logo'>星月七海 · nanami-astro</div><div class='footer-note'>{footer_basis}<br>星の流れはひとつの地図です。最終的な判断はご自身を大切にしながら行ってください。</div></footer>")
     title = "統合鑑定書" if premium else "総合鑑定書"
     return f"<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>{_safe(title)} — {_safe(getattr(order,'customer_name',''))}様</title><link rel='preconnect' href='https://fonts.googleapis.com'><link href='https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Noto+Serif+JP:wght@200;300;400;500&display=swap' rel='stylesheet'><style>{css}</style></head><body>{''.join(body)}</body></html>"
