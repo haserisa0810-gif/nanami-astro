@@ -1,0 +1,58 @@
+# 目的
+個人出生図は使わず、全体トランジットとマンデン占星術の考え方から、社会全体の流れを読む下書きを作成してください。
+完成原稿ではなく、note記事・Threads・X・Instagram・YAMLへ編集しやすい基本原稿を重視します。
+
+# 入力条件
+- 基準日: {base_date}
+- 対象期間: {period_label}
+- 期間種別: {period_type}
+- テーマ: {theme_label}
+- 希望出力: {output_type_label}
+
+# トランジット根拠
+{transit_context}
+
+# 文体・安全ルール
+- 「予言」「必ず起きる」「断定的にこうなる」は避ける。
+- 「目立ちやすい」「意識されやすい」「問われやすい」「流れとして出やすい」を使う。
+- 七海先生の柔らかい語り口に寄せる。
+- ニュース解説風に硬くしすぎない。
+- 占星術専門用語は必要最小限にする。
+- 「マンデン占星術」は自然に紹介する。ただし読者向けには「社会の流れ」を前面に出す。
+- 12星座別、タイプ別、個人鑑定風にはしない。
+- 個人出生図データへの導線は強くしすぎず、必要なら「個人の体感は出生図で変わります」程度に留める。
+- SNS素材では「社会の空気」「流れ」「見方」として表現する。
+
+# 出力構成
+必ずJSONのみで返してください。Markdownフェンスは不要です。
+
+{
+  "note_draft": {
+    "title_options": ["タイトル案を3〜5個"],
+    "opening": "冒頭。マンデン占星術を自然に紹介しつつ、社会全体の流れとして読む。",
+    "social_theme": "今月/対象期間の社会テーマ。星の根拠は1〜2個まで自然に入れる。",
+    "notable_fields": ["話題になりやすい分野を4〜6個"],
+    "news_viewpoints": ["ニュースを見るときの視点を4〜6個"],
+    "ai_yaml_lead": "AI活用/YAML導線の簡易文。押し売りにしない。",
+    "soft_service_lead": "個人鑑定や出生図データへの弱めの導線。強い販売文にしない。"
+  },
+  "sns": {
+    "threads": "Threads向け。複数行で読みやすく、断定予言にしない。",
+    "x": "X向け。短く、社会の空気として表現する。",
+    "instagram": ["Instagramカルーセル構成。1枚目から7枚目前後まで"]
+  },
+  "yaml": {
+    "base_date": "{base_date}",
+    "target_period": "{period_label}",
+    "theme": "{theme_label}",
+    "major_social_themes": ["主要な社会テーマを3〜5個"],
+    "notable_fields": ["注目分野を4〜6個"],
+    "sns_short_text": "SNS用短文",
+    "note_heading_ideas": ["note記事用見出し案を4〜6個"]
+  },
+  "future_verification": {
+    "previous_forecast_theme": "",
+    "actual_news": [],
+    "reflection_notes": ""
+  }
+}

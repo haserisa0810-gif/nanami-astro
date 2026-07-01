@@ -1,0 +1,231 @@
+{% extends "platform_hub_base.html" %}{% set title = "社会の流れ〈星読み〉" %}{% set active_main_nav = "products" %}{% set active_sub_nav = "products_social_flow" %}{% block content %}
+<style>
+  .flow-layout{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:18px;align-items:start}
+  .flow-form{position:sticky;top:112px}
+  .form-stack{display:grid;gap:14px}
+  .result-stack{display:grid;gap:16px}
+  .output-box{white-space:pre-wrap;line-height:1.85;background:#faf8f5;border:1px solid #eee2d5;border-radius:12px;padding:16px;max-height:640px;overflow:auto}
+  .output-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+  .copy-feedback{font-size:12px;color:#2e7d32;min-width:48px}
+  .copy-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .copy-actions .copy-btn{min-height:40px;padding:10px 14px}
+  .yaml-box{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px;line-height:1.65}
+  .section-list{margin:0;padding-left:22px;line-height:1.8}
+  .transit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .transit-box{background:#faf8f5;border:1px solid #eee2d5;border-radius:12px;padding:14px}
+  .transit-box ul{margin:8px 0 0;padding-left:20px;line-height:1.65}
+  @media (max-width: 860px){.flow-layout{grid-template-columns:1fr}.flow-form{position:static}.output-head{align-items:flex-start;flex-direction:column}.copy-actions{width:100%;justify-content:stretch}.copy-actions .copy-btn{width:100%}}
+</style>
+
+<div class="section-head">
+  <div>
+    <h1>社会の流れ〈星読み〉</h1>
+    <p class="muted">個人出生図は使わず、全体トランジットとマンデン占星術的な天体配置から、社会全体の流れを作るツールです。note記事やSNS素材の下書きに使えます。</p>
+  </div>
+</div>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+<div class="flow-layout">
+  <aside class="flow-form">
+    <div class="card">
+      <h2>生成条件</h2>
+      <form class="form-stack" method="post" action="/products/social-flow/generate">
+        <div>
+          <label for="base_date">基準日</label>
+          <input id="base_date" type="date" name="base_date" value="{{ base_date }}" required>
+        </div>
+        <div>
+          <label for="period">期間</label>
+          <select id="period" name="period" required>
+            {% for key, label in periods.items() %}
+              <option value="{{ key }}" {% if key == period %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="theme">テーマ</label>
+          <select id="theme" name="theme" required>
+            {% for key, label in themes.items() %}
+              <option value="{{ key }}" {% if key == theme %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="output_type">出力タイプ</label>
+          <select id="output_type" name="output_type" required>
+            {% for key, label in output_types.items() %}
+              <option value="{{ key }}" {% if key == output_type %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="model_key">Claudeモデル</label>
+          <select id="model_key" name="model_key" required>
+            {% for key, item in claude_models.items() %}
+              <option value="{{ key }}" {% if key == model_key %}selected{% endif %}>{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">社会の流れを生成</button>
+        <p class="muted">API側では編集しやすい基本原稿を作ります。最終調整はClaudeチャット等で行う前提です。</p>
+      </form>
+    </div>
+  </aside>
+
+  <main class="result-stack">
+    {% if result %}
+      {% set generated = result.generated %}
+      {% set note = generated.note_draft %}
+      {% set sns = generated.sns %}
+      <section class="card">
+        <h2>{{ result.period_label }} / {{ result.theme_label }}</h2>
+        <p class="muted">{{ result.output_type_label }} / {{ result.model_label }}</p>
+        {% if result.warnings %}
+          <div class="error" style="margin-top:12px">
+            {% for warning in result.warnings %}<div>{{ warning }}</div>{% endfor %}
+          </div>
+        {% endif %}
+      </section>
+
+      <section class="card">
+        <div class="output-head">
+          <h2>タイトル案</h2>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="title-options">コピー</button></div>
+        </div>
+        <ol id="title-options" class="section-list">
+          {% for item in generated.title_options %}<li>{{ item }}</li>{% endfor %}
+        </ol>
+      </section>
+
+      <section class="card">
+        <div class="output-head">
+          <h2>note記事下書き</h2>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="note-draft">コピー</button></div>
+        </div>
+        <div id="note-draft" class="output-box"># 冒頭
+{{ note.opening }}
+
+# 今月/対象期間の社会テーマ
+{{ note.social_theme }}
+
+# 話題になりやすい分野
+{% for item in note.notable_fields %}- {{ item }}
+{% endfor %}
+
+# ニュースを見るときの視点
+{% for item in note.news_viewpoints %}- {{ item }}
+{% endfor %}
+
+# AI活用/YAML導線
+{{ note.ai_yaml_lead }}
+
+# やわらかい導線
+{{ note.soft_service_lead }}</div>
+      </section>
+
+      <section class="card">
+        <div class="output-head">
+          <h2>SNS素材</h2>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="sns-output">コピー</button></div>
+        </div>
+        <div id="sns-output" class="output-box"># Threads
+{{ sns.threads }}
+
+# X
+{{ sns.x }}
+
+# Instagramカルーセル
+{% for item in sns.instagram %}- {{ item }}
+{% endfor %}</div>
+      </section>
+
+      <section class="card">
+        <h2>抽出した根拠</h2>
+        <p class="muted">{{ result.transit_context.snapshot_count }}日分を確認。Claudeには以下の抽出結果だけを渡しています。</p>
+        <div class="transit-grid">
+          <div class="transit-box">
+            <strong>主要アスペクト</strong>
+            <ul>
+              {% for item in result.transit_context.major_aspects[:5] %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+          <div class="transit-box">
+            <strong>変化・見直し候補</strong>
+            <ul>
+              {% for item in (result.transit_context.change_aspects + result.transit_context.inner_review_aspects)[:5] %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+          <div class="transit-box">
+            <strong>注意して見たい日</strong>
+            <ul>
+              {% for item in result.transit_context.caution_dates[:5] %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+          <div class="transit-box">
+            <strong>動きやすい日</strong>
+            <ul>
+              {% for item in result.transit_context.movement_dates[:5] %}
+                <li>{{ item.date }} {{ item.label }}（orb {{ "%.2f"|format(item.orb) }}°）</li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="output-head">
+          <div>
+            <h2>YAML</h2>
+            <p class="muted">SNS素材やClaudeチャットへ渡しやすい編集用データです。将来の答え合わせ用スロットも含めています。</p>
+          </div>
+          <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="yaml-preview">YAMLをコピー</button></div>
+        </div>
+        <pre id="yaml-preview" class="output-box yaml-box">{{ result.yaml_preview }}</pre>
+      </section>
+    {% else %}
+      <section class="card">
+        <h2>生成結果</h2>
+        <p class="muted">左の条件を選び、生成ボタンを押してください。月・四半期・年単位で、社会全体の流れを下書きとして出します。</p>
+      </section>
+    {% endif %}
+  </main>
+</div>
+
+<script>
+  async function copyText(target, button) {
+    const element = document.getElementById(target);
+    if (!element) return;
+    const text = (element.innerText || element.textContent || "").trim();
+    const feedback = button.parentElement.querySelector(".copy-feedback");
+    try {
+      await navigator.clipboard.writeText(text);
+      feedback.textContent = "コピーしました";
+    } catch (error) {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.focus();
+      area.select();
+      document.execCommand("copy");
+      document.body.removeChild(area);
+      feedback.textContent = "コピーしました";
+    }
+    window.setTimeout(() => { feedback.textContent = ""; }, 1800);
+  }
+
+  document.querySelectorAll(".copy-btn").forEach((button) => {
+    button.addEventListener("click", () => copyText(button.dataset.copyTarget, button));
+  });
+</script>
+{% endblock %}
