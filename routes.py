@@ -5,6 +5,7 @@ FastAPI の起動・共通設定・router 登録のみを担当する薄い層�
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from line_webhook import router as line_router
@@ -27,6 +28,11 @@ from routes_social_flow import router as social_flow_router
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return RedirectResponse("/static/favicon.svg", status_code=307)
 
 
 @app.on_event("startup")

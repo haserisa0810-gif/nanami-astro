@@ -27,6 +27,7 @@
     .variant-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.variant-card{border:1px solid #e7e1d9;border-radius:16px;background:#fff;padding:16px;display:flex;flex-direction:column;gap:10px}.variant-card.disabled{opacity:.55}.variant-title{font-weight:700;font-size:18px}.variant-meta{color:#666;font-size:13px;line-height:1.6}.variant-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     @media (max-width: 768px){.wrap{margin:16px auto;padding:0 12px 24px}.card{padding:16px;border-radius:16px}h1{font-size:30px}.shell-inner{padding:12px}.nav-pill{padding:9px 12px;font-size:13px}.table-scroll table{min-width:720px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
   </style>
+{% include "_head_icons.html" %}
 </head>
 <body>
   {% set has_staff = staff is defined and staff %}
