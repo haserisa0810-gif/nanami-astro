@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS stores_payments (
 """
 STORES_PAYMENT_INDEX_SQL = "CREATE INDEX IF NOT EXISTS ix_stores_payments_buyer_email ON stores_payments (buyer_email)"
 STORES_FROM_DEFAULT = "hello@stores.jp"
-PAYHIP_FROM_DEFAULT = "no-reply@payhip.com"
+PAYHIP_FROM_DEFAULT = "contact@payhip.com"
 STORES_OWNER_NOTICE_PATTERN = re.compile(
     r"アイテムが購入されました|注文がありました|初売上おめでとうございます",
     re.I,
@@ -143,6 +143,39 @@ def _resolve_initial_menu_id(db: Session, menu_id: int | None = None, course: st
         .order_by(Menu.id.asc())
     )
     return menu.id if menu else None
+
+
+def _resolve_order_menu(
+    db: Session,
+    *,
+    menu_id: int | None = None,
+    course: str | None = None,
+    payment_row: dict[str, Any] | None = None,
+) -> Menu | None:
+    resolved_menu_id = _resolve_initial_menu_id(db, menu_id=menu_id, course=course)
+    if resolved_menu_id:
+        return db.get(Menu, resolved_menu_id)
+
+    amount = None
+    if payment_row and (payment_row.get("currency") or "").lower() == "jpy":
+        try:
+            amount = int(payment_row.get("amount") or 0)
+        except Exception:
+            amount = None
+    if amount:
+        menu = db.scalar(
+            select(Menu)
+            .where(Menu.is_active == True, Menu.price == amount)
+            .order_by(Menu.id.asc())
+        )
+        if menu:
+            return menu
+
+    return db.scalar(
+        select(Menu)
+        .where(Menu.is_active == True, Menu.price > 0)
+        .order_by(Menu.price.asc(), Menu.id.asc())
+    )
 
 
 def _decode_header_value(value: str | None) -> str:
@@ -541,9 +574,19 @@ def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]
         conn.login(username, password)
         conn.select("INBOX")
 
-        search_status, data = conn.search(None, 'FROM', f'"{from_filter}"')
-        if search_status != "OK" or not data or not data[0]:
+        search_status = "OK"
+        search_ids: list[bytes] = []
+        for candidate in dict.fromkeys([from_filter, payhip_from_filter]):
+            if not candidate:
+                continue
+            candidate_status, candidate_data = conn.search(None, 'FROM', f'"{candidate}"')
+            if candidate_status == "OK" and candidate_data and candidate_data[0]:
+                search_ids.extend(candidate_data[0].split())
+
+        if not search_ids:
             search_status, data = conn.search(None, "ALL")
+            if search_status == "OK" and data and data[0]:
+                search_ids = data[0].split()
 
         if search_status != "OK":
             return {
@@ -556,7 +599,7 @@ def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]
                 "message": "IMAP検索に失敗しました。",
             }
 
-        ids = data[0].split()
+        ids = sorted(set(search_ids), key=lambda item: int(item))
         recent_ids = list(reversed(ids[-limit:]))
 
         for msg_id in recent_ids:
@@ -815,7 +858,7 @@ def menu_page_by_course(
 @router.post("/order/start", response_class=HTMLResponse)
 def create_order_page(
     request: Request,
-    menu_id: int = Form(...),
+    menu_id: int | None = Form(None),
     user_name: str = Form(...),
     user_contact: str | None = Form(None),
     birth_date: str = Form(...),
@@ -833,10 +876,6 @@ def create_order_page(
     course: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    menu = db.get(Menu, menu_id)
-    if not menu or not menu.is_active:
-        raise HTTPException(status_code=404, detail="menu not found")
-
     normalized_contact = (user_contact or "").strip().lower()
     normalized_payment_email = (payment_email or "").strip().lower()
     normalized_payment_order_ref = _normalize_order_no(payment_order_ref or base_order_ref or "")
@@ -888,9 +927,7 @@ def create_order_page(
         return render_form_error("注文IDが未入力です。購入完了メールに記載のOrder IDまたは注文番号を入力してください。")
     if not PAYMENT_ORDER_ID_PATTERN.fullmatch(normalized_payment_order_ref):
         return render_form_error("注文IDは6文字以上の英数字またはハイフンで入力してください。")
-    if not normalized_contact:
-        return render_form_error("ホームページからのお申込みは連絡先メールアドレスが必須です。")
-    if "@" not in normalized_contact:
+    if normalized_contact and "@" not in normalized_contact:
         return render_form_error("正しいご連絡先メールアドレスを入力してください。")
     if normalized_payment_email and "@" not in normalized_payment_email:
         return render_form_error("購入時メールアドレスの形式が正しくありません。")
@@ -914,7 +951,7 @@ def create_order_page(
         )
         if not sync_result.get("ok"):
             return render_form_error(
-                "STORES購入メールの確認処理に失敗しました。"
+                "購入メールの確認処理に失敗しました。"
                 f" 管理側設定をご確認ください。詳細: {sync_result.get('message')}"
             )
 
@@ -935,11 +972,16 @@ def create_order_page(
     location = resolve_birth_location((birth_prefecture or "").strip() or None, (birth_place or "").strip() or None)
     payment_source = (payment_row or {}).get("source") or ""
     external_platform = "payhip" if str(payment_source).startswith("payhip") else "stores"
+    menu = _resolve_order_menu(db, menu_id=menu_id, course=course, payment_row=payment_row)
+    if not menu:
+        return render_form_error("受付に使うメニューが見つかりません。管理側の商品設定をご確認ください。")
+    buyer_email = _normalize_email((payment_row or {}).get("buyer_email"))
+    effective_contact = normalized_contact or buyer_email
     customer = get_or_create_customer(
         db,
         display_name=(normalized_line_name or user_name.strip()),
         line_user_id=normalized_line_user_id,
-        email=normalized_contact,
+        email=effective_contact,
     )
     linked_free_reading_code = (free_reading_code or "").strip().upper() or None
     source_free_order = _find_source_free_order(db, linked_free_reading_code)
@@ -955,7 +997,7 @@ def create_order_page(
         existing_order.menu_id = menu.id
         existing_order.price = menu.price
         existing_order.user_name = user_name.strip()
-        existing_order.user_contact = normalized_contact or None
+        existing_order.user_contact = effective_contact or None
         existing_order.birth_date = birth_date_obj
         existing_order.birth_time = (birth_time or "").strip() or None
         existing_order.birth_prefecture = location.get("birth_prefecture")
@@ -977,7 +1019,7 @@ def create_order_page(
             order_id=existing_order.id,
             inputs_json=json.dumps({
                 "user_name": user_name,
-                "user_contact": normalized_contact,
+                "user_contact": effective_contact,
                 "birth_date": birth_date,
                 "birth_time": birth_time,
                 "birth_prefecture": birth_prefecture,
@@ -1003,7 +1045,7 @@ def create_order_page(
             db,
             menu=menu,
             user_name=user_name.strip(),
-            user_contact=normalized_contact or None,
+            user_contact=effective_contact or None,
             birth_date=birth_date_obj,
             birth_time=(birth_time or "").strip() or None,
             birth_prefecture=location.get("birth_prefecture"),
@@ -1036,7 +1078,7 @@ def create_order_page(
         db,
         menu=menu,
         user_name=user_name.strip(),
-        user_contact=normalized_contact or None,
+        user_contact=effective_contact or None,
         birth_date=birth_date_obj,
         birth_time=(birth_time or "").strip() or None,
         birth_prefecture=location.get("birth_prefecture"),
@@ -1054,7 +1096,7 @@ def create_order_page(
         status="paid",
         inputs_json=json.dumps({
             "user_name": user_name,
-            "user_contact": normalized_contact,
+            "user_contact": effective_contact,
             "birth_date": birth_date,
             "birth_time": birth_time,
             "birth_prefecture": birth_prefecture,
@@ -1079,7 +1121,7 @@ def create_order_page(
         db,
         menu=menu,
         user_name=user_name.strip(),
-        user_contact=normalized_contact or None,
+        user_contact=effective_contact or None,
         birth_date=birth_date_obj,
         birth_time=(birth_time or "").strip() or None,
         birth_prefecture=location.get("birth_prefecture"),
