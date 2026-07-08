@@ -89,7 +89,7 @@ def _order_summary_lines(order: Any) -> list[str]:
         "■受付番号",
         str(_safe_get(order, "order_code")),
         "",
-        "■STORES注文番号",
+        "■外部注文ID",
         str(_safe_get(order, "external_order_ref")),
         "",
         "■お名前",

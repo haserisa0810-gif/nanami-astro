@@ -56,11 +56,12 @@ CREATE TABLE IF NOT EXISTS stores_payments (
 """
 STORES_PAYMENT_INDEX_SQL = "CREATE INDEX IF NOT EXISTS ix_stores_payments_buyer_email ON stores_payments (buyer_email)"
 STORES_FROM_DEFAULT = "hello@stores.jp"
+PAYHIP_FROM_DEFAULT = "no-reply@payhip.com"
 STORES_OWNER_NOTICE_PATTERN = re.compile(
     r"アイテムが購入されました|注文がありました|初売上おめでとうございます",
     re.I,
 )
-STORES_ORDER_NO_PATTERN = re.compile(r"^\d{10}$")
+PAYMENT_ORDER_ID_PATTERN = re.compile(r"^[0-9A-Z][0-9A-Z\-]{5,63}$", re.I)
 STORES_SUBJECT_ORDER_NO_PATTERN = re.compile(
     r"[（(]\s*(?:オーダー番号|注文番号)\s*[：:]\s*([0-9]{10})\s*[)）]"
 )
@@ -207,8 +208,8 @@ def _normalize_order_no(value: str | None) -> str | None:
     if not value:
         return None
     value = value.strip()
-    value = re.sub(r"(注文番号|オーダー番号|注文ID)\s*[：:]?\s*", "", value, flags=re.I)
-    value = re.sub(r"[^\dA-Z\-]", "", value.upper())
+    value = re.sub(r"(注文番号|オーダー番号|注文ID|Order\s*ID)\s*[：:]?\s*", "", value, flags=re.I)
+    value = re.sub(r"[^\dA-Za-z\-]", "", value)
     return value or None
 
 
@@ -222,6 +223,7 @@ def _extract_first(patterns: list[str], text_value: str) -> str | None:
 
 def _extract_amount(text_value: str) -> int | None:
     candidates = [
+        r"(?:Total|Amount)\s*[：:]?\s*(?:USD\s*)?[$＄]\s*([0-9][0-9,]*)(?:\.[0-9]+)?",
         r"(?:お支払い金額|合計金額|ご請求金額|金額|合計（税込）)\s*[：:]?\s*[¥￥]?\s*([0-9][0-9,]*)",
         r"[¥￥]\s*([0-9][0-9,]*)",
     ]
@@ -236,9 +238,16 @@ def _extract_amount(text_value: str) -> int | None:
     return None
 
 
+def _extract_currency(text_value: str) -> str:
+    if re.search(r"(?:Total|Amount)\s*[：:]?\s*(?:USD\s*)?[$＄]", text_value, flags=re.I):
+        return "usd"
+    return "jpy"
+
+
 def _parse_mail_datetime(raw: str | None) -> datetime | None:
     if not raw:
         return None
+    raw = re.sub(r"\b(\d{1,2})(st|nd|rd|th)\b", r"\1", raw, flags=re.I)
     try:
         dt = email.utils.parsedate_to_datetime(raw)
         if dt.tzinfo is not None:
@@ -251,9 +260,16 @@ def _parse_mail_datetime(raw: str | None) -> datetime | None:
 def _parse_stores_mail(subject: str, body: str, message_id: str | None, received_at: datetime | None) -> dict[str, Any] | None:
     merged = f"{subject}\n{body}"
     lowered = merged.lower()
+    is_payhip_notice = (
+        "payhip" in lowered
+        or "you've sold an item" in lowered
+        or "you have sold an item" in lowered
+        or "order id:" in lowered
+    )
 
     if (
-        "stores" not in lowered
+        not is_payhip_notice
+        and "stores" not in lowered
         and "ストアーズ" not in merged
         and "オーダー番号" not in merged
         and "注文番号" not in merged
@@ -273,6 +289,7 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
                 r"オーダー番号[：:]\s*([0-9A-Z\-]+)",
                 r"注文番号[：:]\s*([0-9A-Z\-]+)",
                 r"注文ID[：:]\s*([0-9A-Z\-]+)",
+                r"Order\s*ID\s*[：:]\s*([0-9A-Z\-]+)",
                 r"オーダー番号[：:\s]*([0-9A-Z\-]{6,})",
                 r"[（(]\s*(?:オーダー番号|注文番号)\s*[：:]\s*([0-9A-Z\-]+)\s*[)）]",
             ],
@@ -285,6 +302,7 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
     buyer_email = _normalize_email(
         _extract_first(
             [
+                r"Buyer\s*[：:]\s*([^\n]+)",
                 r"メールアドレス\s*[：:]\s*([^\n]+)",
                 r"購入者メールアドレス\s*[：:]\s*([^\n]+)",
                 r"連絡先\s*[：:]\s*([^\n]+)",
@@ -304,7 +322,9 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
 
     item_name = _extract_first(
         [
+            r"(?:Item|Product)\s*[：:]\s*([^\n]+)",
             r"(?:商品名|購入商品|商品)\s*[：:]\s*([^\n]+)",
+            r"\n([^\n]*\[[A-Z0-9-]+\][^\n]*)",
             r"^([^\n\t]+)\t",
             r"\n([^\n]+?鑑定[^\n]+)\n",
         ],
@@ -323,6 +343,7 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
         payment_method = re.sub(r"\s+", " ", payment_method).strip()
 
     amount = _extract_amount(merged)
+    currency = _extract_currency(merged)
 
     is_owner_notice = bool(STORES_OWNER_NOTICE_PATTERN.search(merged))
     has_paid_hint = bool(STORES_PAID_HINT_PATTERN.search(merged))
@@ -330,7 +351,10 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
     mail_kind = "purchase_completed"
     payment_status = "ordered"
 
-    if "キャンセル" in merged:
+    if is_payhip_notice:
+        mail_kind = "payhip_owner_notice"
+        payment_status = "paid"
+    elif "キャンセル" in merged:
         mail_kind = "cancelled"
         payment_status = "cancelled"
     elif "入金完了" in merged or "お支払いが完了" in merged or "支払い完了" in merged:
@@ -350,6 +374,7 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
         _extract_first(
             [
                 r"(?:注文日時|ご注文日時|購入日時)\s*[：:]\s*([^\n]+)",
+                r"Date\s*[：:]\s*([^\n]+)",
             ],
             merged,
         )
@@ -374,7 +399,7 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
         "buyer_email": buyer_email,
         "item_name": item_name,
         "amount": amount,
-        "currency": "jpy",
+        "currency": currency,
         "payment_method": payment_method,
         "payment_status": payment_status,
         "ordered_at": ordered_at,
@@ -384,7 +409,7 @@ def _parse_stores_mail(subject: str, body: str, message_id: str | None, received
         "mail_subject": subject[:500],
         "mail_received_at": received_at,
         "raw_body": body,
-        "source": "stores_email",
+        "source": "payhip_email" if is_payhip_notice else "stores_email",
     }
 
 
@@ -491,6 +516,7 @@ def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]
     username = (os.getenv("STORES_MAIL_USERNAME") or "").strip()
     password = (os.getenv("STORES_MAIL_PASSWORD") or "").strip()
     from_filter = (os.getenv("STORES_MAIL_FROM_FILTER", STORES_FROM_DEFAULT) or "").strip()
+    payhip_from_filter = (os.getenv("PAYHIP_MAIL_FROM_FILTER", PAYHIP_FROM_DEFAULT) or "").strip()
 
     if not username or not password:
         return {
@@ -553,6 +579,11 @@ def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]
             searchable_lower = searchable.lower()
             if (
                 from_filter.lower() not in searchable_lower
+                and payhip_from_filter.lower() not in searchable_lower
+                and "payhip" not in searchable_lower
+                and "you've sold an item" not in searchable_lower
+                and "you have sold an item" not in searchable_lower
+                and "order id:" not in searchable_lower
                 and "stores" not in searchable_lower
                 and "ストアーズ" not in searchable
                 and "アイテムが購入されました" not in searchable
@@ -618,9 +649,6 @@ def _verify_stores_payment(db: Session, *, stores_order_no: str, payment_email: 
     buyer_email = _normalize_email(row.get("buyer_email"))
     normalized_payment_email = _normalize_email(payment_email)
 
-    if buyer_email and normalized_payment_email and buyer_email != normalized_payment_email:
-        return "needs_review", dict(row)
-
     payment_status = (row.get("payment_status") or "unknown").lower()
     if payment_status == "paid":
         if buyer_email or normalized_payment_email:
@@ -674,7 +702,7 @@ def _send_user_form_link_email(
         "以下のフォームから必要事項をご入力ください。",
         intake_url,
         "",
-        "STORESの購入完了メールに記載の注文番号をご用意のうえ、ご入力をお願いいたします。",
+        "購入完了メールに記載の注文IDまたは注文番号をご用意のうえ、ご入力をお願いいたします。",
         "",
         "※ LINEからご案内が届いている場合は、LINE内のフォームをご利用ください。",
     ])
@@ -857,23 +885,20 @@ def create_order_page(
         )
 
     if not normalized_payment_order_ref:
-        return render_form_error("STORES注文番号が未入力です。購入完了メールに記載の注文番号を入力してください。")
-    if not STORES_ORDER_NO_PATTERN.fullmatch(normalized_payment_order_ref):
-        return render_form_error("STORES注文番号は10桁の数字で入力してください。")
+        return render_form_error("注文IDが未入力です。購入完了メールに記載のOrder IDまたは注文番号を入力してください。")
+    if not PAYMENT_ORDER_ID_PATTERN.fullmatch(normalized_payment_order_ref):
+        return render_form_error("注文IDは6文字以上の英数字またはハイフンで入力してください。")
     if not normalized_contact:
         return render_form_error("ホームページからのお申込みは連絡先メールアドレスが必須です。")
     if "@" not in normalized_contact:
         return render_form_error("正しいご連絡先メールアドレスを入力してください。")
-    if not normalized_payment_email:
-        return render_form_error("STORES購入時メールアドレスが未入力です。購入完了メールに記載のメールアドレスを入力してください。")
-    if "@" not in normalized_payment_email:
-        return render_form_error("STORES購入時メールアドレスの形式が正しくありません。")
+    if normalized_payment_email and "@" not in normalized_payment_email:
+        return render_form_error("購入時メールアドレスの形式が正しくありません。")
 
     existing_order = db.scalar(
         select(Order).where(
-            Order.external_platform == "stores",
             Order.external_order_ref == normalized_payment_order_ref,
-            Order.user_contact == normalized_contact,
+            Order.external_platform.in_(["stores", "payhip"]),
         )
     )
 
@@ -905,9 +930,11 @@ def create_order_page(
     if verification_status == "cancelled":
         return render_form_error("この注文はキャンセル扱いになっています。別の注文番号をご確認ください。")
     if verification_status == "needs_review":
-        return render_form_error("注文番号は見つかりましたが、購入時メールアドレスが一致しません。購入時のメールアドレスをご確認ください。")
+        return render_form_error("注文IDは見つかりましたが、決済情報の確認が必要です。管理者へお問い合わせください。")
 
     location = resolve_birth_location((birth_prefecture or "").strip() or None, (birth_place or "").strip() or None)
+    payment_source = (payment_row or {}).get("source") or ""
+    external_platform = "payhip" if str(payment_source).startswith("payhip") else "stores"
     customer = get_or_create_customer(
         db,
         display_name=(normalized_line_name or user_name.strip()),
@@ -941,7 +968,7 @@ def create_order_page(
         existing_order.consultation_text = (consultation_text or "").strip() or None
         existing_order.customer = customer
         existing_order.source = "self"
-        existing_order.external_platform = "stores"
+        existing_order.external_platform = external_platform
         existing_order.external_order_ref = normalized_payment_order_ref
         existing_order.status = "paid"
         if source_free_order:
@@ -988,7 +1015,7 @@ def create_order_page(
             gender=(gender or "").strip() or None,
             consultation_text=(consultation_text or "").strip() or None,
             source="self",
-            external_platform="stores",
+            external_platform=external_platform,
             external_order_ref=normalized_payment_order_ref,
             order_kind="paid",
             requested_menu_code=(course or "").strip().lower() or None,
@@ -1022,7 +1049,7 @@ def create_order_page(
         consultation_text=(consultation_text or "").strip() or None,
         customer=customer,
         source="self",
-        external_platform="stores",
+        external_platform=external_platform,
         external_order_ref=normalized_payment_order_ref,
         status="paid",
         inputs_json=json.dumps({
@@ -1064,7 +1091,7 @@ def create_order_page(
         gender=(gender or "").strip() or None,
         consultation_text=(consultation_text or "").strip() or None,
         source="self",
-        external_platform="stores",
+        external_platform=external_platform,
         external_order_ref=normalized_payment_order_ref,
         order_kind="paid",
         requested_menu_code=(course or "").strip().lower() or None,
