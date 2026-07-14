@@ -46,6 +46,10 @@ vedic_focus_summary: {vedic_focus_summary}
 - `normalized_data.interactions.items` → 柱同士の作用（冲=緊張・変化、支合=結びつき等）。`status: detected` は「組み合わせがある」事実のみで、吉凶断定に使わない
 - `normalized_data.shinsatsu.items` → 神殺。単独で強い予言・吉凶断定に使わず、他の根拠と重なるときだけ言及する
 - `provisional: true` の相互作用・神殺には「出生時刻が確定すれば」と留保をつける
+- `normalized_data.timing.current_daiun` → 今の10年運。`stem_ten_god` と `interactions_natal` を「今の時期の外圧・追い風」の根拠に使う
+- `normalized_data.timing.ryunen.items` → 今年〜数年の年運。`is_current: true` が今年。命式との冲は変化年、支合・三合完成は結びつき・加速の年として扱う
+- `伏吟` は「同じテーマの反復・強調」、`反吟` は「流れの反転・動揺」として翻訳し、単独で吉凶断定しない
+- 流年干支の適用は立春から。1月〜立春前は前年の干支として扱う
 
 【統合システム：西洋占星術 ＋ 四柱推命】
 - 西洋のデータは `astro_raw（西洋）` から読む（planets/houses/aspects など）

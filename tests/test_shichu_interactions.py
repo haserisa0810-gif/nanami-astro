@@ -105,7 +105,7 @@ def test_calc_keeps_existing_keys_and_adds_interactions():
     for key in ("pillars", "summary", "features", "normalized_data"):
         assert key in result
     assert "pillars" in result["normalized_data"]
-    assert result["engine_version"] == "0.3.0"
+    assert result["engine_version"] == "0.4.0"
     assert result["normalized_data"]["interactions"] == result["interactions"]
     assert result["normalized_data"]["shinsatsu"] == result["shinsatsu"]
     assert result["time_certainty"]["hour_known"] is True

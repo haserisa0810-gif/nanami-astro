@@ -19,6 +19,12 @@ def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _number_text(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return _safe_text(value)
+
+
 def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
     candidate = {}
     if isinstance(raw.get("shichusuimei"), dict):
@@ -49,6 +55,7 @@ def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
     daiun = _dict(_dict(candidate.get("features")).get("daiun")) or _dict(normalized.get("daiun"))
     interactions = _dict(normalized.get("interactions")) or _dict(candidate.get("interactions"))
     shinsatsu = _dict(normalized.get("shinsatsu")) or _dict(candidate.get("shinsatsu"))
+    timing = _dict(normalized.get("timing")) or _dict(candidate.get("timing"))
     periods = daiun.get("periods") if isinstance(daiun.get("periods"), list) else []
     first_period = periods[0] if periods else {}
     return {
@@ -64,6 +71,7 @@ def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
         "day_master_element": day_master_element,
         "interactions": interactions,
         "shinsatsu": shinsatsu,
+        "timing": timing,
         "daiun_first": {
             "age_start": _safe_text(_dict(first_period).get("start_age")),
             "pillar": _safe_text(_dict(first_period).get("kanshi")),
@@ -116,6 +124,21 @@ def render_shichu_summary_html(data: dict[str, Any]) -> str:
     if _safe_text(first.get("pillar")):
         age = _safe_text(first.get("age_start"))
         parts.append(f"大運初回：{html.escape(age)}歳頃から {html.escape(_safe_text(first.get('pillar')))}")
+    timing = _dict(data.get("timing"))
+    current_daiun = _dict(timing.get("current_daiun"))
+    if current_daiun:
+        kanshi = _safe_text(current_daiun.get("kanshi"))
+        god = _safe_text(current_daiun.get("stem_ten_god"))
+        age = _number_text(current_daiun.get("age_from"))
+        detail = "・".join(value for value in (god, f"{age}歳頃〜" if age else "") if value)
+        parts.append("現大運：" + html.escape(kanshi + (f"（{detail}）" if detail else "")))
+    ryunen_items = _dict(timing.get("ryunen")).get("items")
+    if isinstance(ryunen_items, list):
+        current_ryunen = next((_dict(item) for item in ryunen_items if _dict(item).get("is_current")), {})
+        if current_ryunen:
+            kanshi = _safe_text(current_ryunen.get("kanshi"))
+            god = _safe_text(current_ryunen.get("stem_ten_god"))
+            parts.append("今年：" + html.escape(kanshi + (f"（{god}）" if god else "")))
     interaction_items = _dict(data.get("interactions")).get("items")
     if isinstance(interaction_items, list):
         labels = []

@@ -53,6 +53,9 @@ _HARMS = {
 _DESTRUCTIONS = {
     frozenset(pair) for pair in (("子", "酉"), ("丑", "辰"), ("寅", "亥"), ("卯", "午"), ("巳", "申"), ("戌", "未"))
 }
+_STEM_CLASHES = {
+    frozenset(pair) for pair in (("甲", "庚"), ("乙", "辛"), ("丙", "壬"), ("丁", "癸"))
+}
 
 _TENOTSU_KIJIN = {
     "甲": ("丑", "未"), "戊": ("丑", "未"), "庚": ("丑", "未"),
@@ -250,3 +253,178 @@ def analyze_natal(
         detect_interactions(stem_entries, branch_entries, hour_known=hour_known),
         detect_shinsatsu(stem_entries, branch_entries, hour_known=hour_known),
     )
+
+
+def detect_cross_interactions(
+    natal_stems: Iterable[NamedSymbol],
+    natal_branches: Iterable[NamedSymbol],
+    transit_stems: Iterable[NamedSymbol],
+    transit_branches: Iterable[NamedSymbol],
+    *,
+    scope: str,
+    hour_known: bool = True,
+) -> list[dict]:
+    """命式側と運側をまたぐ相互作用だけを検出する。"""
+    natal_stem_entries = _normalize(natal_stems)
+    natal_branch_entries = _normalize(natal_branches)
+    transit_stem_entries = _normalize(transit_stems)
+    transit_branch_entries = _normalize(transit_branches)
+    items: list[dict] = []
+
+    def append_scoped(detected: Iterable[dict]) -> None:
+        for raw_item in detected:
+            item = dict(raw_item)
+            item["scope"] = scope
+            items.append(item)
+
+    for natal_entry in natal_stem_entries:
+        for transit_entry in transit_stem_entries:
+            append_scoped(detect_interactions(
+                [natal_entry, transit_entry],
+                [],
+                hour_known=hour_known,
+            ))
+
+    for natal_entry in natal_branch_entries:
+        for transit_entry in transit_branch_entries:
+            append_scoped(detect_interactions(
+                [],
+                [natal_entry, transit_entry],
+                hour_known=hour_known,
+            ))
+
+    input_order: dict[str, int] = {}
+    for pillar, _ in (
+        *natal_stem_entries,
+        *natal_branch_entries,
+        *transit_stem_entries,
+        *transit_branch_entries,
+    ):
+        input_order.setdefault(pillar, len(input_order))
+
+    completed_trines: list[frozenset[str]] = []
+    natal_symbols = {symbol for _, symbol in natal_branch_entries}
+    for group, element in _TRINES:
+        group_set = frozenset(group)
+        if group_set.issubset(natal_symbols):
+            continue
+        for transit_entry in transit_branch_entries:
+            transit_name, transit_symbol = transit_entry
+            if group_set - natal_symbols != {transit_symbol}:
+                continue
+            natal_chosen = [
+                next(entry for entry in natal_branch_entries if entry[1] == symbol)
+                for symbol in group
+                if symbol != transit_symbol
+            ]
+            item = _interaction(
+                rule_id="branch_trine_v1",
+                type_="三合",
+                category="branch",
+                entries=[*natal_chosen, transit_entry],
+                input_order=input_order,
+                hour_known=hour_known,
+                tags=["alliance", "amplification"],
+                detail={
+                    "element": element,
+                    "transformation": "not_evaluated",
+                    "completed_by": transit_name,
+                },
+            )
+            item["scope"] = scope
+            items.append(item)
+            completed_trines.append(group_set)
+
+    if completed_trines:
+        items = [
+            item
+            for item in items
+            if not (
+                item["rule_id"] == "branch_half_trine_v1"
+                and any(frozenset(item["members"]).issubset(group) for group in completed_trines)
+            )
+        ]
+
+    for group, element in _DIRECTIONALS:
+        group_set = frozenset(group)
+        if group_set.issubset(natal_symbols):
+            continue
+        for transit_entry in transit_branch_entries:
+            transit_name, transit_symbol = transit_entry
+            if group_set - natal_symbols != {transit_symbol}:
+                continue
+            natal_chosen = [
+                next(entry for entry in natal_branch_entries if entry[1] == symbol)
+                for symbol in group
+                if symbol != transit_symbol
+            ]
+            item = _interaction(
+                rule_id="branch_directional_v1",
+                type_="方合",
+                category="branch",
+                entries=[*natal_chosen, transit_entry],
+                input_order=input_order,
+                hour_known=hour_known,
+                tags=["alliance", "seasonal_force"],
+                detail={
+                    "element": element,
+                    "transformation": "not_evaluated",
+                    "completed_by": transit_name,
+                },
+            )
+            item["scope"] = scope
+            items.append(item)
+    return items
+
+
+def detect_special_kanshi_relations(
+    natal_pillars: Iterable[NamedSymbol],
+    transit_kanshi: str,
+    transit_name: str,
+    *,
+    scope: str,
+    hour_known: bool = True,
+) -> list[dict]:
+    """運と命式の伏吟・反吟（天剋地冲）を検出する。"""
+    natal_entries = _normalize(natal_pillars)
+    input_order = {pillar: index for index, (pillar, _) in enumerate(natal_entries)}
+    input_order.setdefault(transit_name, len(input_order))
+    items: list[dict] = []
+
+    for natal_name, natal_kanshi in natal_entries:
+        if len(natal_kanshi) < 2 or len(transit_kanshi) < 2:
+            continue
+        rule_id = ""
+        type_ = ""
+        tags: list[str] = []
+        if natal_kanshi == transit_kanshi:
+            rule_id = "fukugin_v1"
+            type_ = "伏吟"
+            tags = ["repetition", "stagnation_or_emphasis"]
+        elif (
+            frozenset((natal_kanshi[0], transit_kanshi[0])) in _STEM_CLASHES
+            and frozenset((natal_kanshi[1], transit_kanshi[1])) in _BRANCH_CLASHES
+        ):
+            rule_id = "hangin_v1"
+            type_ = "反吟"
+            tags = ["reversal", "upheaval"]
+        if not rule_id:
+            continue
+        entries = _sort_entries(
+            [(natal_name, natal_kanshi), (transit_name, transit_kanshi)],
+            input_order,
+        )
+        pillars = [pillar for pillar, _ in entries]
+        items.append({
+            "rule_id": rule_id,
+            "type": type_,
+            "category": "kanshi",
+            "scope": scope,
+            "pillars": pillars,
+            "members": [kanshi for _, kanshi in entries],
+            "status": "detected",
+            "provisional": not hour_known and "hour" in pillars,
+            "tags": tags,
+            "detail": {},
+        })
+    return items

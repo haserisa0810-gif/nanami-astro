@@ -19,7 +19,7 @@ from __future__ import annotations
 """
 
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
@@ -1025,6 +1025,7 @@ def calc_shichusuimei_from_payload(
     *,
     tz_name: str = "Asia/Tokyo",
     day_change_at_23: bool = False,
+    target_date: date | None = None,
 ) -> dict[str, Any]:
     """routes.py の payload から四柱推命結果を作る。
 
@@ -1090,6 +1091,17 @@ def calc_shichusuimei_from_payload(
         "rules_version": "v1",
         "items": shinsatsu_items,
     }
+    from services.shichu_timing import build_timing
+
+    effective_target_date = target_date or datetime.now(ZoneInfo(tz_name)).date()
+    timing = build_timing(
+        p4,
+        daiun,
+        birth_local=dt.replace(tzinfo=ZoneInfo(tz_name)),
+        target_date=effective_target_date,
+        tz_name=tz_name,
+        hour_known=hour_known,
+    )
 
     normalized_data = {
         "pillars": {
@@ -1113,6 +1125,7 @@ def calc_shichusuimei_from_payload(
         },
         "interactions": interactions,
         "shinsatsu": shinsatsu,
+        "timing": timing,
     }
 
     structure_report = _build_structure_report(
@@ -1128,7 +1141,7 @@ def calc_shichusuimei_from_payload(
         "module": "shichusuimei",
         "system": "shichusuimei",
         "ephemeris": ephemeris_debug_info(),
-        "engine_version": "0.3.0",
+        "engine_version": "0.4.0",
         "generated_at": datetime.now(ZoneInfo(tz_name)).isoformat(),
         "input": {
             "raw": {
@@ -1151,6 +1164,8 @@ def calc_shichusuimei_from_payload(
                 "daiun_start_mode": "approx_days_to_years",
                 "interaction_rules": "干合/支合/三合/半会/方合/冲/刑/自刑/害/破を検出。合化の成立判定は未実装（検出のみ）",
                 "shinsatsu_rules": "天乙貴人(日干)/駅馬(日支)/咸池(日支)/華蓋(日支)/羊刃(陽干のみ)/魁罡の6種。年支基準は不採用",
+                "ryunen_rules": "流年干支は暦年式(年-4 mod 60)。適用開始は当年立春。基準年判定も立春基準",
+                "timing_rules": "伏吟=干支一致、反吟=天干冲(甲庚/乙辛/丙壬/丁癸)＋地支冲の同時成立。現大運は目安年齢(簡易起運)による",
             },
         },
         "unknowns": unknowns,
@@ -1160,6 +1175,7 @@ def calc_shichusuimei_from_payload(
         },
         "interactions": interactions,
         "shinsatsu": shinsatsu,
+        "timing": timing,
         "normalized_data": normalized_data,
         "structure_report": structure_report,
         "debug": {
