@@ -50,6 +50,10 @@ vedic_focus_summary: {vedic_focus_summary}
 - `normalized_data.timing.ryunen.items` → 今年〜数年の年運。`is_current: true` が今年。命式との冲は変化年、支合・三合完成は結びつき・加速の年として扱う
 - `伏吟` は「同じテーマの反復・強調」、`反吟` は「流れの反転・動揺」として翻訳し、単独で吉凶断定しない
 - 流年干支の適用は立春から。1月〜立春前は前年の干支として扱う
+- `normalized_data.hidden_stem_command` → 月令で司令する蔵干。月支の意味を強調する根拠に使う
+- `structure_report.pattern_candidates` → 格局の候補。「あなたは◯◯格です」と断定せず「◯◯格の色合いが強い命式」のように扱う。`counter_evidence` がある場合は言い切らない
+- `structure_report.yojin_candidates` → 推奨五行の候補。`fu_yi`（扶抑）と `climate`（調候）が一致する五行は開運アドバイスの軸にしてよい。`status` が `hold` / `withheld` のときは五行を推奨しない
+- `strength_v2` と既存 `features.strength` が食い違う場合は断定を避けて幅を持たせる
 
 【統合システム：西洋占星術 ＋ 四柱推命】
 - 西洋のデータは `astro_raw（西洋）` から読む（planets/houses/aspects など）

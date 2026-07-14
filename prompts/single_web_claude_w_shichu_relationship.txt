@@ -46,6 +46,10 @@ vedic_focus_summary: {vedic_focus_summary}
 - `normalized_data.interactions.items` → 柱同士の作用（冲=緊張・変化、支合=結びつき等）。`status: detected` は「組み合わせがある」事実のみで、吉凶断定に使わない
 - `normalized_data.shinsatsu.items` → 神殺。単独で強い予言・吉凶断定に使わず、他の根拠と重なるときだけ言及する
 - `provisional: true` の相互作用・神殺には「出生時刻が確定すれば」と留保をつける
+- `normalized_data.hidden_stem_command` → 月令で司令する蔵干。月支の意味を強調する根拠に使う
+- `structure_report.pattern_candidates` → 格局の候補。「あなたは◯◯格です」と断定せず「◯◯格の色合いが強い命式」のように扱う。`counter_evidence` がある場合は言い切らない
+- `structure_report.yojin_candidates` → 推奨五行の候補。`fu_yi`（扶抑）と `climate`（調候）が一致する五行は開運アドバイスの軸にしてよい。`status` が `hold` / `withheld` のときは五行を推奨しない
+- `strength_v2` と既存 `features.strength` が食い違う場合は断定を避けて幅を持たせる
 
 【統合システム：西洋占星術 ＋ 四柱推命】
 - 西洋のデータは `astro_raw（西洋）` から読む（planets/houses/aspects など）

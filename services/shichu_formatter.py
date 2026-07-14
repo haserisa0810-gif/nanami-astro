@@ -56,6 +56,10 @@ def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
     interactions = _dict(normalized.get("interactions")) or _dict(candidate.get("interactions"))
     shinsatsu = _dict(normalized.get("shinsatsu")) or _dict(candidate.get("shinsatsu"))
     timing = _dict(normalized.get("timing")) or _dict(candidate.get("timing"))
+    structure = _dict(candidate.get("structure_report"))
+    hidden_stem_command = _dict(normalized.get("hidden_stem_command"))
+    pattern_candidates = _dict(structure.get("pattern_candidates"))
+    yojin_candidates = _dict(structure.get("yojin_candidates"))
     periods = daiun.get("periods") if isinstance(daiun.get("periods"), list) else []
     first_period = periods[0] if periods else {}
     return {
@@ -72,6 +76,9 @@ def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
         "interactions": interactions,
         "shinsatsu": shinsatsu,
         "timing": timing,
+        "hidden_stem_command": hidden_stem_command,
+        "pattern_candidates": pattern_candidates,
+        "yojin_candidates": yojin_candidates,
         "daiun_first": {
             "age_start": _safe_text(_dict(first_period).get("start_age")),
             "pillar": _safe_text(_dict(first_period).get("kanshi")),
@@ -139,6 +146,44 @@ def render_shichu_summary_html(data: dict[str, Any]) -> str:
             kanshi = _safe_text(current_ryunen.get("kanshi"))
             god = _safe_text(current_ryunen.get("stem_ten_god"))
             parts.append("今年：" + html.escape(kanshi + (f"（{god}）" if god else "")))
+    command = _dict(data.get("hidden_stem_command"))
+    if command:
+        stem = _safe_text(command.get("commanding_stem"))
+        phase = _safe_text(command.get("phase"))
+        if stem:
+            parts.append("月令：" + html.escape(stem + "司令" + (f"（{phase}）" if phase else "")))
+    pattern_items = _dict(data.get("pattern_candidates")).get("candidates")
+    if isinstance(pattern_items, list) and pattern_items:
+        confidence_labels = {"high": "高", "medium": "中", "low": "低"}
+        labels = []
+        for raw_item in pattern_items:
+            item = _dict(raw_item)
+            name = _safe_text(item.get("name"))
+            confidence = confidence_labels.get(_safe_text(item.get("confidence")), "")
+            if name:
+                labels.append(name + (f"（{confidence}）" if confidence else ""))
+        if labels:
+            parts.append("格局候補：" + html.escape("・".join(labels)))
+    yojin = _dict(data.get("yojin_candidates"))
+    fu_yi = _dict(yojin.get("fu_yi"))
+    climate = _dict(yojin.get("climate"))
+    if fu_yi:
+        status = _safe_text(fu_yi.get("status"))
+        if status in ("hold", "withheld"):
+            reason = "境界域" if status == "hold" else "従格・専旺疑い"
+            parts.append(f"推奨五行：保留（{reason}）")
+        else:
+            fu_items = fu_yi.get("candidates") if isinstance(fu_yi.get("candidates"), list) else []
+            climate_items = climate.get("candidates") if isinstance(climate.get("candidates"), list) else []
+            fu_elements = "・".join(_safe_text(_dict(item).get("element")) for item in fu_items if _safe_text(_dict(item).get("element")))
+            climate_elements = "・".join(_safe_text(_dict(item).get("element")) for item in climate_items if _safe_text(_dict(item).get("element")))
+            labels = []
+            if fu_elements:
+                labels.append(f"{fu_elements}（扶抑）")
+            if climate_elements:
+                labels.append(f"{climate_elements}（調候）")
+            if labels:
+                parts.append("推奨五行：" + html.escape("／".join(labels)))
     interaction_items = _dict(data.get("interactions")).get("items")
     if isinstance(interaction_items, list):
         labels = []

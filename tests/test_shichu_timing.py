@@ -160,7 +160,7 @@ def test_default_target_date_preserves_existing_daiun_item_shape():
         {"year": 1990, "month": 5, "day": 15, "hour": 8, "minute": 30, "gender": "female"}
     )
 
-    assert result["engine_version"] == "0.4.0"
+    assert result["engine_version"] == "0.5.0"
     assert result["normalized_data"]["timing"] == result["timing"]
     assert set(result["features"]["daiun"]["items"][0]) == {
         "index", "kanshi", "age_from", "age_to", "approx_start_year"

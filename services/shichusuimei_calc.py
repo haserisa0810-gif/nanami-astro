@@ -1102,6 +1102,14 @@ def calc_shichusuimei_from_payload(
         tz_name=tz_name,
         hour_known=hour_known,
     )
+    from services.shichu_structure import build_structure_analysis
+
+    birth_local = dt.replace(tzinfo=ZoneInfo(tz_name))
+    prev_jieqi_utc, _ = _jieqi_boundary_utc_for_birth_month(birth_local, tz_name)
+    elapsed_days_since_jieqi = (
+        birth_local.astimezone(timezone.utc) - prev_jieqi_utc
+    ).total_seconds() / 86400.0
+    structure_analysis = build_structure_analysis(p4, elapsed_days_since_jieqi)
 
     normalized_data = {
         "pillars": {
@@ -1112,6 +1120,7 @@ def calc_shichusuimei_from_payload(
         },
         "hidden_stems": hidden_all,
         "main_hidden_stems": hidden_main,
+        "hidden_stem_command": structure_analysis["hidden_stem_command"],
         "ten_gods": ten,
         "five_elements": {
             **five,
@@ -1136,12 +1145,18 @@ def calc_shichusuimei_from_payload(
         tf=tf,
         daiun=daiun,
     )
+    structure_report.update({
+        "element_power": structure_analysis["element_power"],
+        "strength_v2": structure_analysis["strength_v2"],
+        "pattern_candidates": structure_analysis["pattern_candidates"],
+        "yojin_candidates": structure_analysis["yojin_candidates"],
+    })
 
     return {
         "module": "shichusuimei",
         "system": "shichusuimei",
         "ephemeris": ephemeris_debug_info(),
-        "engine_version": "0.4.0",
+        "engine_version": "0.5.0",
         "generated_at": datetime.now(ZoneInfo(tz_name)).isoformat(),
         "input": {
             "raw": {
@@ -1166,6 +1181,8 @@ def calc_shichusuimei_from_payload(
                 "shinsatsu_rules": "天乙貴人(日干)/駅馬(日支)/咸池(日支)/華蓋(日支)/羊刃(陽干のみ)/魁罡の6種。年支基準は不採用",
                 "ryunen_rules": "流年干支は暦年式(年-4 mod 60)。適用開始は当年立春。基準年判定も立春基準",
                 "timing_rules": "伏吟=干支一致、反吟=天干冲(甲庚/乙辛/丙壬/丁癸)＋地支冲の同時成立。現大運は目安年齢(簡易起運)による",
+                "month_command_rules": "月律分野蔵干は累積日数方式(30日基準)。流派差あり",
+                "yojin_rules": "扶抑=strength_v2ベースの推奨五行候補(境界域・従格疑いは保留)。調候=季節軸の簡易版。いずれも用神の確定ではない",
             },
         },
         "unknowns": unknowns,
