@@ -141,6 +141,33 @@ def angle_diff(a: float, b: float) -> float:
     return min(d, 360 - d)
 
 
+def aspect_applying(
+    lon1: float,
+    speed1: float | None,
+    lon2: float,
+    speed2: float | None,
+    exact_angle: float,
+) -> bool | None:
+    """指定アスペクトが接近中かを経度速度から判定する。"""
+    if speed1 is None or speed2 is None:
+        return None
+    signed_sep = ((lon1 - lon2 + 180) % 360) - 180
+    d_abs = abs(signed_sep)
+    deviation = d_abs - exact_angle
+    speed_delta = speed1 - speed2
+    if signed_sep > 0:
+        rate = speed_delta
+    elif signed_sep < 0:
+        rate = -speed_delta
+    else:
+        rate = abs(speed_delta)
+    if deviation > 0:
+        return rate < 0
+    if deviation < 0:
+        return rate > 0
+    return False
+
+
 def calc_aspects(planets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for i in range(len(planets)):
@@ -151,14 +178,24 @@ def calc_aspects(planets: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for name, ang in ASPECTS.items():
                 orb = abs(d - ang)
                 if orb <= ORB[name]:
-                    out.append(
-                        {
-                            "planet1": p1["name"],
-                            "planet2": p2["name"],
-                            "type": name,
-                            "orb": round(orb, 2),
-                        }
-                    )
+                    item = {
+                        "planet1": p1["name"],
+                        "planet2": p2["name"],
+                        "type": name,
+                        "orb": round(orb, 2),
+                        "exact_angle": ang,
+                        "actual_angle": round(d, 2),
+                        "signed_deviation": round(d - ang, 2),
+                        "orb_limit": ORB[name],
+                        "applying": aspect_applying(
+                            p1["lon"], p1.get("speed"),
+                            p2["lon"], p2.get("speed"),
+                            ang,
+                        ),
+                    }
+                    if p1["name"] == "South Node" or p2["name"] == "South Node":
+                        item["axis_mirror"] = True
+                    out.append(item)
     return sorted(out, key=lambda x: (x["orb"], x["planet1"], x["planet2"]))
 
 
@@ -209,6 +246,7 @@ def _append_angle(name: str, lon: float | None, fixed_house: int | None, planets
             "degree": deg,
             "retrograde": False,
             "house": fixed_house if fixed_house is not None else house_of(lon, cusps),
+            "speed": None,
         }
     )
 
@@ -221,10 +259,20 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
     year = int(payload["year"])
     month = int(payload["month"])
     day = int(payload["day"])
-    hour = int(payload.get("hour", 12))
-    minute = int(payload.get("minute", 0))
+    raw_hour = payload.get("hour")
+    raw_minute = payload.get("minute")
+    explicit_birth_time = payload.get("birth_time")
+    if explicit_birth_time is not None:
+        birth_time_known = str(explicit_birth_time).strip() not in ("", "不明")
+    else:
+        birth_time_known = raw_hour not in (None, "", "不明")
+        if birth_time_known and int(raw_hour) == 12 and raw_minute in (None, "", "不明", 0, "0"):
+            birth_time_known = False
+    hour = 12 if raw_hour in (None, "", "不明") else int(raw_hour)
+    minute = 0 if raw_minute in (None, "", "不明") else int(raw_minute)
     lat = payload.get("lat")
     lng = payload.get("lng")
+    coordinates_provided = lat is not None and lng is not None
     tz = payload.get("tz_offset_hours", 9)
 
     selected_house_system = _normalize_house_system(payload.get("house_system", house_system))
@@ -288,7 +336,9 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
             )
             return False
 
-        planets.append(_body_dict(name, xx[0], xx[3] < 0, cusps))
+        body = _body_dict(name, xx[0], xx[3] < 0, cusps)
+        body["speed"] = round(float(xx[3]), 4)
+        planets.append(body)
         return True
 
     for name, body_id in PLANETS:
@@ -299,7 +349,9 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
     node = next((x for x in planets if x["name"] == "North Node"), None)
     if node is not None:
         south_lon = norm360(node["lon"] + 180)
-        planets.append(_body_dict("South Node", south_lon, bool(node["retrograde"]), cusps))
+        south_node = _body_dict("South Node", south_lon, bool(node["retrograde"]), cusps)
+        south_node["speed"] = node.get("speed")
+        planets.append(south_node)
 
     if include_lilith:
         lilith_body = swe.OSCU_APOG if selected_lilith_mode == "true" else swe.MEAN_APOG
@@ -338,6 +390,25 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
 
     planets = _sort_planets(planets)
     aspects = calc_aspects(planets)
+    calculation_rules = {
+        "rule_set_id": "western_default_v1",
+        "aspects": {
+            name: {"angle": angle, "orb": ORB[name]}
+            for name, angle in ASPECTS.items()
+        },
+        "house_system": selected_house_system,
+        "node_mode": selected_node_mode,
+        "lilith_mode": selected_lilith_mode,
+        "notes": [
+            "アスペクト対象・orbは従来実装と同一（後方互換）",
+            "South Node関与のアスペクトは axis_mirror=true でマーク",
+        ],
+    }
+    data_quality = {
+        "birth_time": "known" if birth_time_known else "unknown",
+        "houses_available": bool(coordinates_provided and birth_time_known and houses),
+        "coordinates": "provided" if coordinates_provided else "default",
+    }
 
     return {
         "module": "western",
@@ -363,4 +434,7 @@ def calc_western_from_payload(payload: dict[str, Any], house_system: str = "P") 
         "aspects": aspects,
         "angles": {"asc": asc, "mc": mc, "vertex": vertex if include_vertex else None},
         "skipped_bodies": skipped_bodies,
+        "calculation_rules": calculation_rules,
+        "data_quality": data_quality,
+        "engine_version_western": "w0.1.0",
     }

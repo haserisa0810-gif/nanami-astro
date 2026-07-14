@@ -149,6 +149,8 @@ def _calc_payload_from_inputs(
     else:
         hour, minute = 12, 0
         unknowns.append("出生時刻が未入力のため12:00として計算しています。")
+    # 12:00仮置きと真の12:00生まれを下流(data_quality等)で区別できるよう原文を残す
+    birth_time_raw = bt or None
 
     normalized_prefecture = None
     if prefecture:
@@ -178,6 +180,7 @@ def _calc_payload_from_inputs(
         "day": day,
         "hour": hour,
         "minute": minute,
+        "birth_time": birth_time_raw,
         "lat": float(lat),
         "lng": float(lon),
         "city": city,
