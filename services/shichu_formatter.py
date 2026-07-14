@@ -6,6 +6,7 @@ from typing import Any
 
 PILLAR_KEYS = ["year", "month", "day", "hour"]
 PILLAR_LABELS = {"year": "年柱", "month": "月柱", "day": "日柱", "hour": "時柱"}
+BRANCH_POSITION_LABELS = {"year": "年支", "month": "月支", "day": "日支", "hour": "時支"}
 
 
 def _safe_text(value: Any) -> str:
@@ -46,6 +47,8 @@ def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
     day_master = _safe_text(candidate.get("day_master"))
     day_master_element = _safe_text(_dict(candidate.get("structure_report")).get("day_master_element"))
     daiun = _dict(_dict(candidate.get("features")).get("daiun")) or _dict(normalized.get("daiun"))
+    interactions = _dict(normalized.get("interactions")) or _dict(candidate.get("interactions"))
+    shinsatsu = _dict(normalized.get("shinsatsu")) or _dict(candidate.get("shinsatsu"))
     periods = daiun.get("periods") if isinstance(daiun.get("periods"), list) else []
     first_period = periods[0] if periods else {}
     return {
@@ -59,6 +62,8 @@ def extract_shichu_data(raw: dict[str, Any]) -> dict[str, Any]:
         "kubo_text": kubo_text,
         "day_master": day_master,
         "day_master_element": day_master_element,
+        "interactions": interactions,
+        "shinsatsu": shinsatsu,
         "daiun_first": {
             "age_start": _safe_text(_dict(first_period).get("start_age")),
             "pillar": _safe_text(_dict(first_period).get("kanshi")),
@@ -111,6 +116,36 @@ def render_shichu_summary_html(data: dict[str, Any]) -> str:
     if _safe_text(first.get("pillar")):
         age = _safe_text(first.get("age_start"))
         parts.append(f"大運初回：{html.escape(age)}歳頃から {html.escape(_safe_text(first.get('pillar')))}")
+    interaction_items = _dict(data.get("interactions")).get("items")
+    if isinstance(interaction_items, list):
+        labels = []
+        for raw_item in interaction_items:
+            item = _dict(raw_item)
+            members = item.get("members") if isinstance(item.get("members"), list) else []
+            label = "".join(_safe_text(member) for member in members) + " " + _safe_text(item.get("type"))
+            if item.get("provisional"):
+                label += " ※時刻未確定"
+            if label.strip():
+                labels.append(label.strip())
+        if labels:
+            parts.append("命式内の作用：" + html.escape("・".join(labels)))
+    shinsatsu_items = _dict(data.get("shinsatsu")).get("items")
+    if isinstance(shinsatsu_items, list):
+        labels = []
+        for raw_item in shinsatsu_items:
+            item = _dict(raw_item)
+            found_in = item.get("found_in") if isinstance(item.get("found_in"), list) else []
+            position_labels = PILLAR_LABELS if item.get("basis") == "day_pillar" else BRANCH_POSITION_LABELS
+            found_labels = "・".join(position_labels.get(_safe_text(pillar), _safe_text(pillar)) for pillar in found_in)
+            label = _safe_text(item.get("name"))
+            if found_labels:
+                label += f"（{found_labels}）"
+            if item.get("provisional"):
+                label += " ※時刻未確定"
+            if label:
+                labels.append(label)
+        if labels:
+            parts.append("神殺：" + html.escape("・".join(labels)))
     if not parts:
         return ""
     return "<div class=\"reading-text\">" + "<br>".join(parts) + "</div>"

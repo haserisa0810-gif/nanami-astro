@@ -26,6 +26,8 @@ from typing import Any
 from pathlib import Path
 import swisseph as swe
 
+from services.shichu_interactions import analyze_natal
+
 def configure_ephemeris() -> int:
     ephe_dir = Path(__file__).resolve().parents[1] / "ephe"
     if ephe_dir.exists() and any(ephe_dir.glob("*.se1")):
@@ -1029,10 +1031,11 @@ def calc_shichusuimei_from_payload(
     返却は従来互換キーを残しつつ、StructurePayload 寄りの
     input / unknowns / normalized_data / structure_report を含める。
     """
-    raw_hour = payload.get("hour", 12)
+    raw_hour = payload.get("hour")
     raw_minute = payload.get("minute", 0)
-    hour = 12 if raw_hour in (None, "") else int(raw_hour)
-    minute = 0 if raw_minute in (None, "") else int(raw_minute)
+    hour_known = raw_hour not in (None, "", "不明")
+    hour = 12 if not hour_known else int(raw_hour)
+    minute = 0 if raw_minute in (None, "", "不明") else int(raw_minute)
     dt = datetime(
         int(payload["year"]),
         int(payload["month"]),
@@ -1061,6 +1064,32 @@ def calc_shichusuimei_from_payload(
     hidden_main = {k: (v[0] if v else None) for k, v in hidden_all.items()}
     gender_norm = _parse_gender(payload.get("gender"))
     unknowns = _build_unknowns(payload, day_change_at_23=day_change_at_23)
+    named_stems = [
+        ("year", p4.year[0]),
+        ("month", p4.month[0]),
+        ("day", p4.day[0]),
+        ("hour", p4.hour[0]),
+    ]
+    named_branches = [
+        ("year", p4.year[1]),
+        ("month", p4.month[1]),
+        ("day", p4.day[1]),
+        ("hour", p4.hour[1]),
+    ]
+    interaction_items, shinsatsu_items = analyze_natal(
+        named_stems,
+        named_branches,
+        hour_known=hour_known,
+    )
+    interactions = {
+        "engine": "shichu_interactions_v1",
+        "scope": "natal",
+        "items": interaction_items,
+    }
+    shinsatsu = {
+        "rules_version": "v1",
+        "items": shinsatsu_items,
+    }
 
     normalized_data = {
         "pillars": {
@@ -1082,6 +1111,8 @@ def calc_shichusuimei_from_payload(
             **daiun,
             "calc_mode": "approx",
         },
+        "interactions": interactions,
+        "shinsatsu": shinsatsu,
     }
 
     structure_report = _build_structure_report(
@@ -1097,7 +1128,7 @@ def calc_shichusuimei_from_payload(
         "module": "shichusuimei",
         "system": "shichusuimei",
         "ephemeris": ephemeris_debug_info(),
-        "engine_version": "0.2.7",
+        "engine_version": "0.3.0",
         "generated_at": datetime.now(ZoneInfo(tz_name)).isoformat(),
         "input": {
             "raw": {
@@ -1118,14 +1149,28 @@ def calc_shichusuimei_from_payload(
                 "year_boundary_rule": "lichun(315deg)",
                 "month_boundary_rule": "solar_terms(315deg+30deg_step)",
                 "daiun_start_mode": "approx_days_to_years",
+                "interaction_rules": "干合/支合/三合/半会/方合/冲/刑/自刑/害/破を検出。合化の成立判定は未実装（検出のみ）",
+                "shinsatsu_rules": "天乙貴人(日干)/駅馬(日支)/咸池(日支)/華蓋(日支)/羊刃(陽干のみ)/魁罡の6種。年支基準は不採用",
             },
         },
         "unknowns": unknowns,
+        "time_certainty": {
+            "hour_known": hour_known,
+            "policy": "hour柱・時柱関与の判定は provisional=true でマークする",
+        },
+        "interactions": interactions,
+        "shinsatsu": shinsatsu,
         "normalized_data": normalized_data,
         "structure_report": structure_report,
         "debug": {
             "year_month": ym_debug,
             "daiun": daiun.get("debug", {}),
+            "interactions": {
+                "stem_inputs": named_stems,
+                "branch_inputs": named_branches,
+                "detected_count": len(interaction_items),
+                "shinsatsu_count": len(shinsatsu_items),
+            },
         },
         # backward compatibility for current templates / prompts
         "pillars": asdict(p4),
