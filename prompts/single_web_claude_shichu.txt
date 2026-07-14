@@ -31,12 +31,13 @@ meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 - `features.strength` → 身強・身弱の判定（structure_report.strength_v2 と食い違う場合は断定を避けて幅を持たせる）
 - `features.hidden_stems` → 蔵干
 - `normalized_data.interactions.items` → 柱同士の作用（冲=緊張・変化、支合=結びつき等）。`status: detected` は「組み合わせがある」事実のみで、吉凶断定に使わない
-- `normalized_data.shinsatsu.items` → 神殺。単独で強い予言・吉凶断定に使わず、他の根拠と重なるときだけ言及する
-- `normalized_data.hidden_stem_command` → 月令で司令する蔵干。月支の意味を強調する根拠に使う
-- `structure_report.pattern_candidates` → 格局の**候補**。「あなたは◯◯格です」と断定せず「◯◯格の色合いが強い命式」のように候補として扱う。counter_evidence がある場合は言い切らない
-- `structure_report.yojin_candidates` → 推奨五行の候補。fu_yi(扶抑)と climate(調候)が一致する五行は開運アドバイスの軸にしてよい。status が hold/withheld のときは五行の推奨をしない
+- `normalized_data.shinsatsu.items` → 神殺。**データに存在する神殺は、本文のどこかで必ず1回以上、感覚語に翻訳して使う**（例：駅馬=「じっとしていられない・移動や変化で流れが良くなる力」、華蓋=「一人の世界を持つ・精神性や独自の美意識」、天乙貴人=「困ったときに助けが入りやすい」、咸池=「人を惹きつける魅力」）。ただし単独で強い予言・吉凶断定には使わず、性質や流れの補強材料として使う
+- `normalized_data.hidden_stem_command` → 月令で司令する蔵干。**基本構造の章で月支の意味を語るときに必ず参照する**（司令の五行が、その人の「生まれ持った季節感・土台の質感」になる）
+- `structure_report.pattern_candidates` → 格局の**候補**。**confidence が high または medium の第一候補は、基本構造または仕事の章で1回は使う**。「あなたは◯◯格です」と断定せず「◯◯格の色合いが強い命式」のように候補として扱う。counter_evidence がある場合は言い切らない
+- `structure_report.yojin_candidates` → 推奨五行の候補。**fu_yi の status が proposed のときは、実践アクションの章で候補五行を日常の行動に翻訳して1つ以上入れる**（例：火→「体を温める・日光・情熱を注げる活動」、水→「休息・水辺・感情を流す時間」）。fu_yi と climate が一致する五行（agreement.matched_elements）は最優先で使う。status が hold/withheld のときは五行の推奨をしない
 - `normalized_data.timing.current_daiun` → 今の10年運。`stem_ten_god` と `interactions_natal` を「今の時期の外圧・追い風」の根拠に使う
 - `normalized_data.timing.ryunen.items` → 今年〜数年の年運。`is_current: true` が今年。命式との冲は変化年、支合・三合完成は結びつき・加速の年として扱う
+- **用語の厳密ルール**: 「伏吟」という語は、データの `special` / `special_natal` / `special_daiun` に `type: 伏吟` がある場合のみ使う。「反吟」も同様。同じ地支が重なるだけの場合（`type: 自刑` など）は「伏吟」と呼ばず、「同じ支が重なり、同じテーマが強調される」のように事実として書く
 - `伏吟` は「同じテーマの反復・強調」、`反吟` は「流れの反転・動揺」として翻訳し、単独で吉凶断定しない
 - `provisional: true` の項目には「出生時刻が確定すれば」と留保をつける
 - 流年干支の適用は立春から。1月〜立春前は前年の干支として扱う
