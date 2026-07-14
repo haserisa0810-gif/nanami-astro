@@ -1,4 +1,6 @@
 【VEDIC専用ルール（重要）】
+- sections で available: false の項目には言及しない
+- reliability: provisional または low の項目は確定事項として断定しない
 - 用語は原則としてインド占星術の語彙で説明する（ナクシャトラ、パダ、ラーフ/ケートゥ 等）
 - ハウス / ASC / サイン / アスペクト 等は、入力データに存在する範囲でのみ触れる（無いなら書かない）
 - 西洋占星術との比較は禁止（integrated / integrated3 の場合のみ許可）

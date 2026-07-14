@@ -153,14 +153,32 @@ VIMSHOTTARI_YEARS = dict(VIMSHOTTARI_SEQUENCE)
 VIMSHOTTARI_INDEX = {name: idx for idx, (name, _) in enumerate(VIMSHOTTARI_SEQUENCE)}
 
 JST = timezone(timedelta(hours=9))
+RELIABILITY_VALUES = {"high", "medium", "low", "provisional", "unavailable"}
+ASC_DEPENDENT_YOGA_SLUGS = {
+    "dhana_yoga",
+    "lakshmi_yoga",
+    "raja_yoga",
+    "dharma_karmadhipati_yoga",
+    "amala_yoga",
+    "viparita_raja_yoga",
+    "daridra_yoga",
+    "sakata_yoga",
+    "paap_kartari_yoga",
+}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _to_utc_from_payload(payload: Dict[str, Any]) -> datetime:
     y = int(payload["year"])
     m = int(payload["month"])
     d = int(payload["day"])
-    hh = int(payload.get("hour", 12))
-    mm = int(payload.get("minute", 0))
+    raw_hour = payload.get("hour")
+    raw_minute = payload.get("minute")
+    hh = 12 if raw_hour in (None, "", "不明") else int(raw_hour)
+    mm = 0 if raw_minute in (None, "", "不明") else int(raw_minute)
     local_dt = datetime(y, m, d, hh, mm, 0, tzinfo=JST)
     return local_dt.astimezone(timezone.utc)
 
@@ -324,7 +342,7 @@ def _coerce_transit_dt_utc(value: Any) -> datetime:
 
     text = str(value or "").strip()
     if not text:
-        return datetime.now(timezone.utc)
+        return _utc_now()
     try:
         if len(text) == 10:
             parsed = datetime.strptime(text, "%Y-%m-%d")
@@ -335,6 +353,21 @@ def _coerce_transit_dt_utc(value: Any) -> datetime:
         return parsed.astimezone(timezone.utc)
     except Exception as exc:
         raise ValueError(f"Invalid gochara date: {value!r}") from exc
+
+
+def _resolve_gochara_dt_utc(
+    payload: Dict[str, Any],
+    gochara_at: datetime | date | None,
+    as_of_utc: datetime,
+) -> datetime:
+    if gochara_at is not None:
+        if isinstance(gochara_at, datetime) and gochara_at.tzinfo is None:
+            raise ValueError("gochara_at must be timezone-aware")
+        return _coerce_transit_dt_utc(gochara_at)
+    payload_value = payload.get("gochara_date") or payload.get("target_date")
+    return _coerce_transit_dt_utc(
+        payload_value if payload_value not in (None, "") else as_of_utc
+    )
 
 
 def _gochara_planet_row(
@@ -360,6 +393,8 @@ def _gochara_planet_row(
 def build_vedic_gochara(
     *,
     transit_date: Any,
+    natal_moon_rashi_no: int | None = None,
+    natal_asc_rashi_no: int | None = None,
 ) -> dict[str, Any]:
     dt_utc = _coerce_transit_dt_utc(transit_date)
     jd = _julian_day_ut(dt_utc)
@@ -385,6 +420,19 @@ def build_vedic_gochara(
         sidereal_lon_deg=(float(rahu_lon) + 180.0) % 360.0,
         speed_lon_deg_per_day=rahu_speed,
     )
+
+    if natal_moon_rashi_no is not None:
+        for row in planets.values():
+            row["house_from_moon"] = _whole_sign_house_no(
+                int(natal_moon_rashi_no),
+                int(row["rashi_no"]),
+            )
+    if natal_asc_rashi_no is not None:
+        for row in planets.values():
+            row["house_from_asc"] = _whole_sign_house_no(
+                int(natal_asc_rashi_no),
+                int(row["rashi_no"]),
+            )
 
     return {
         "ayanamsha": "Lahiri",
@@ -1034,6 +1082,149 @@ def _dasha_chain_from_moon(moon_nak_no: int, remaining_fraction: float, birth_dt
     return {"maha": maha, "antara": antara}
 
 
+def _dasha_origin(
+    moon_nak_no: int,
+    remaining_fraction: float,
+    birth_dt_utc: datetime,
+) -> tuple[int, datetime]:
+    start_lord = _nakshatra_lord(moon_nak_no)
+    elapsed_first_years = VIMSHOTTARI_YEARS[start_lord] * (1.0 - remaining_fraction)
+    return (
+        VIMSHOTTARI_INDEX[start_lord],
+        birth_dt_utc - timedelta(days=elapsed_first_years * 365.2425),
+    )
+
+
+def _maha_periods_for_window(
+    moon_nak_no: int,
+    remaining_fraction: float,
+    birth_dt_utc: datetime,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[tuple[str, datetime, datetime]]:
+    sequence_length = len(VIMSHOTTARI_SEQUENCE)
+    seq_idx, cursor = _dasha_origin(
+        moon_nak_no,
+        remaining_fraction,
+        birth_dt_utc,
+    )
+
+    # Usually as_of is after birth, but walking backwards also makes the helper
+    # well-defined for historical evaluation dates.
+    while cursor > window_start:
+        seq_idx = (seq_idx - 1) % sequence_length
+        _lord, years = VIMSHOTTARI_SEQUENCE[seq_idx]
+        cursor -= timedelta(days=years * 365.2425)
+
+    periods: list[tuple[str, datetime, datetime]] = []
+    while cursor < window_end:
+        lord, years = VIMSHOTTARI_SEQUENCE[seq_idx]
+        end = cursor + timedelta(days=years * 365.2425)
+        if end > window_start:
+            periods.append((lord, cursor, end))
+        cursor = end
+        seq_idx = (seq_idx + 1) % sequence_length
+    return periods
+
+
+def _antara_periods(
+    maha_lord: str,
+    maha_start: datetime,
+    maha_end: datetime,
+) -> list[tuple[str, datetime, datetime]]:
+    duration = maha_end - maha_start
+    cursor = maha_start
+    periods: list[tuple[str, datetime, datetime]] = []
+    seq_idx = VIMSHOTTARI_INDEX[maha_lord]
+    for offset in range(len(VIMSHOTTARI_SEQUENCE)):
+        lord, years = VIMSHOTTARI_SEQUENCE[
+            (seq_idx + offset) % len(VIMSHOTTARI_SEQUENCE)
+        ]
+        start = cursor
+        # Pin the final boundary to the maha boundary so accumulated floating
+        # point rounding can never introduce a gap or overlap.
+        end = (
+            maha_end
+            if offset == len(VIMSHOTTARI_SEQUENCE) - 1
+            else start + duration * (years / 120.0)
+        )
+        periods.append((lord, start, end))
+        cursor = end
+    return periods
+
+
+def _lord_natal_context(
+    lord: str,
+    planets: dict[str, Any],
+    house_lords: dict[str, Any] | None,
+) -> dict[str, Any]:
+    planet = planets.get(lord) or {}
+    dignity = planet.get("dignity")
+    ruled_houses: list[int] | None = None
+    if lord not in {"Rahu", "Ketu"} and house_lords:
+        ruled_houses = [
+            int(house_no)
+            for house_no, item in house_lords.items()
+            if isinstance(item, dict) and item.get("lord") == lord
+        ]
+    return {
+        "rashi": planet.get("rashi_name"),
+        "nakshatra": planet.get("nakshatra_name"),
+        "retrograde": (
+            dignity.get("is_retrograde")
+            if isinstance(dignity, dict)
+            else None
+        ),
+        "dignity": dignity,
+        "house_no": planet.get("house_no"),
+        "ruled_houses": ruled_houses,
+    }
+
+
+def _build_dasha_timeline(
+    moon_nak_no: int,
+    remaining_fraction: float,
+    birth_dt_utc: datetime,
+    as_of_utc: datetime,
+    forecast_until_utc: datetime,
+    planets: dict[str, Any],
+    house_lords: dict[str, Any] | None,
+) -> dict[str, Any]:
+    periods: list[dict[str, Any]] = []
+    for lord, start, end in _maha_periods_for_window(
+        moon_nak_no,
+        remaining_fraction,
+        birth_dt_utc,
+        as_of_utc,
+        forecast_until_utc,
+    ):
+        antara = [
+            {
+                "lord": sub_lord,
+                "start_utc": sub_start.isoformat(),
+                "end_utc": sub_end.isoformat(),
+                "is_current": sub_start <= as_of_utc < sub_end,
+            }
+            for sub_lord, sub_start, sub_end in _antara_periods(lord, start, end)
+            if sub_end > as_of_utc and sub_start < forecast_until_utc
+        ]
+        periods.append({
+            "level": "maha",
+            "lord": lord,
+            "start_utc": start.isoformat(),
+            "end_utc": end.isoformat(),
+            "is_current": start <= as_of_utc < end,
+            "lord_natal": _lord_natal_context(lord, planets, house_lords),
+            "antara": antara,
+        })
+    return {
+        "rule_id": "vimshottari_timeline_v1",
+        "as_of_utc": as_of_utc.isoformat(),
+        "forecast_until_utc": forecast_until_utc.isoformat(),
+        "periods": periods,
+    }
+
+
 def _active_dasha_themes(dasha: dict[str, Any], planets: dict[str, Any], house_lords_placement: dict[str, Any] | None) -> list[str]:
     themes: list[str] = []
     lords = []
@@ -1070,7 +1261,285 @@ def _active_dasha_themes(dasha: dict[str, Any], planets: dict[str, Any], house_l
     return deduped
 
 
-def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _birth_time_status(payload: Dict[str, Any]) -> str:
+    if "birth_time" in payload:
+        raw = payload.get("birth_time")
+        return "known" if raw not in (None, "", "不明") else "unknown"
+    return "known" if payload.get("hour") not in (None, "") else "unknown"
+
+
+def _payload_timezone(payload: Dict[str, Any]) -> timezone:
+    try:
+        offset = float(payload.get("tz_offset_hours", 9))
+    except (TypeError, ValueError):
+        offset = 9.0
+    return timezone(timedelta(hours=offset))
+
+
+def _moon_lon_at(dt_utc: datetime) -> float:
+    return _sidereal_longitude(_julian_day_ut(dt_utc), swe.MOON)
+
+
+def _unwrap_moon_lon(raw_lon: float, previous: float) -> float:
+    candidate = raw_lon % 360.0
+    while candidate < previous - 180.0:
+        candidate += 360.0
+    while candidate > previous + 180.0:
+        candidate -= 360.0
+    return candidate
+
+
+def _boundaries_between(start: float, end: float, span: float) -> list[float]:
+    first_index = int(start // span) + 1
+    last_index = int(end // span)
+    return [
+        index * span
+        for index in range(first_index, last_index + 1)
+        if start < index * span < end
+    ]
+
+
+def _category_label(kind: str, lon: float) -> str:
+    if kind == "rashi":
+        return _rashi_from_longitude(lon)[1]
+    nak_no, nak_name, pada, _progress = _nakshatra_from_longitude(lon)
+    if kind == "nakshatra":
+        return nak_name
+    return f"{nak_name}:pada{pada}"
+
+
+def _bisect_moon_boundary(
+    start_dt: datetime,
+    end_dt: datetime,
+    start_lon: float,
+    boundary_lon: float,
+) -> datetime:
+    low = start_dt
+    high = end_dt
+    for _ in range(24):
+        if (high - low).total_seconds() <= 60:
+            break
+        mid = low + (high - low) / 2
+        mid_lon = _unwrap_moon_lon(_moon_lon_at(mid), start_lon)
+        if mid_lon < boundary_lon:
+            low = mid
+        else:
+            high = mid
+    return high.replace(second=0, microsecond=0)
+
+
+def _moon_day_stability(payload: Dict[str, Any]) -> dict[str, Any]:
+    local_tz = _payload_timezone(payload)
+    local_start = datetime(
+        int(payload["year"]),
+        int(payload["month"]),
+        int(payload["day"]),
+        tzinfo=local_tz,
+    )
+    start_dt = local_start.astimezone(timezone.utc)
+    end_dt = (local_start + timedelta(days=1)).astimezone(timezone.utc)
+    mid_dt = start_dt + (end_dt - start_dt) / 2
+
+    sample_times = [start_dt, mid_dt, end_dt]
+    sample_lons = [_moon_lon_at(item) for item in sample_times]
+    unwrapped = [sample_lons[0]]
+    for raw_lon in sample_lons[1:]:
+        unwrapped.append(_unwrap_moon_lon(raw_lon, unwrapped[-1]))
+
+    if not (unwrapped[0] <= unwrapped[1] <= unwrapped[2]):
+        sample_times = [
+            start_dt + timedelta(hours=hours)
+            for hours in range(0, 25, 2)
+        ]
+        unwrapped = []
+        for item in sample_times:
+            raw_lon = _moon_lon_at(item)
+            unwrapped.append(
+                raw_lon if not unwrapped else _unwrap_moon_lon(raw_lon, unwrapped[-1])
+            )
+
+    start_lon = unwrapped[0]
+    end_lon = unwrapped[-1]
+    boundary_specs = (
+        ("rashi", 30.0),
+        ("nakshatra", NAKSHATRA_SPAN),
+        ("pada", PADA_SPAN),
+    )
+    boundaries: list[dict[str, Any]] = []
+    for kind, span in boundary_specs:
+        for boundary_lon in _boundaries_between(start_lon, end_lon, span):
+            at_utc = _bisect_moon_boundary(
+                start_dt,
+                end_dt,
+                start_lon,
+                boundary_lon,
+            )
+            epsilon = 1e-7
+            boundaries.append({
+                "kind": kind,
+                "at_utc": at_utc.isoformat(),
+                "from": _category_label(kind, boundary_lon - epsilon),
+                "to": _category_label(kind, boundary_lon + epsilon),
+            })
+    boundaries.sort(key=lambda item: (item["at_utc"], item["kind"]))
+    kinds = {item["kind"] for item in boundaries}
+    return {
+        "moon_rashi_stable_all_day": "rashi" not in kinds,
+        "moon_nakshatra_stable_all_day": "nakshatra" not in kinds,
+        "moon_pada_stable_all_day": "pada" not in kinds,
+        "boundaries": boundaries,
+    }
+
+
+def _section(
+    available: bool,
+    reliability: str,
+    reasons: list[str] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    if reliability not in RELIABILITY_VALUES:
+        raise ValueError(f"invalid reliability: {reliability}")
+    return {
+        "available": available,
+        "reliability": reliability,
+        "reasons": reasons or [],
+        **extra,
+    }
+
+
+def _unknown_time_sections(stability: dict[str, Any]) -> dict[str, Any]:
+    rashi_stable = bool(stability["moon_rashi_stable_all_day"])
+    nakshatra_stable = bool(stability["moon_nakshatra_stable_all_day"])
+    pada_stable = bool(stability["moon_pada_stable_all_day"])
+    rashi_candidates: list[str] = []
+    for boundary in stability["boundaries"]:
+        if boundary["kind"] == "rashi":
+            for value in (boundary["from"], boundary["to"]):
+                if value not in rashi_candidates:
+                    rashi_candidates.append(value)
+    d9_reasons = ["birth_time_unknown", "planetary_navamsa_time_sensitive"]
+    if not pada_stable:
+        d9_reasons.append("moon_pada_changes_during_day")
+    return {
+        "ascendant": _section(False, "unavailable", ["birth_time_unknown"]),
+        "houses": _section(False, "unavailable", ["birth_time_unknown"]),
+        "house_lords": _section(False, "unavailable", ["birth_time_unknown"]),
+        "yogas": _section(True, "provisional", ["asc_dependent_yogas_skipped"]),
+        "d9": _section(True, "low", d9_reasons),
+        "chandra_lagna": _section(
+            True,
+            "high" if rashi_stable else "provisional",
+            [] if rashi_stable else ["moon_rashi_changes_during_day"],
+            candidates=rashi_candidates,
+        ),
+        "dasha": _section(
+            True,
+            "provisional" if nakshatra_stable else "low",
+            ["birth_time_unknown"]
+            if nakshatra_stable
+            else ["moon_nakshatra_changes_during_day"],
+        ),
+        "gochara": _section(
+            True,
+            "high" if rashi_stable else "provisional",
+            ["moon_rashi_stable_all_day"]
+            if rashi_stable
+            else ["moon_rashi_changes_during_day"],
+        ),
+    }
+
+
+def _known_time_sections() -> dict[str, Any]:
+    return {
+        name: _section(True, "high")
+        for name in (
+            "ascendant",
+            "houses",
+            "house_lords",
+            "yogas",
+            "d9",
+            "chandra_lagna",
+            "dasha",
+            "gochara",
+        )
+    }
+
+
+def _moon_relative_planets(planets: dict[str, Any]) -> dict[str, Any]:
+    moon_rashi_no = int((planets.get("Moon") or {})["rashi_no"])
+    relative: dict[str, Any] = {}
+    for name, data in planets.items():
+        item = dict(data)
+        item["house_no"] = _whole_sign_house_no(
+            moon_rashi_no,
+            int(item["rashi_no"]),
+        )
+        relative[name] = item
+    return relative
+
+
+def _dasha_scenarios(
+    stability: dict[str, Any],
+    birth_dt_utc: datetime,
+    as_of_utc: datetime,
+) -> list[dict[str, Any]]:
+    # 境界日の月は from 側の終端・to 側の始端付近にいることが分かっているため、
+    # 残量の代表値を from=0.0 / to=1.0 として現在マハー期の候補幅を正しく出す
+    fractions: dict[str, float] = {}
+    for boundary in stability["boundaries"]:
+        if boundary["kind"] != "nakshatra":
+            continue
+        fractions.setdefault(boundary["from"], 0.0)
+        fractions.setdefault(boundary["to"], 1.0)
+    scenarios: list[dict[str, Any]] = []
+    for name, fraction in list(fractions.items())[:2]:
+        nak_no = NAKSHATRA_NAMES.index(name) + 1
+        chain = _dasha_chain_from_moon(
+            nak_no,
+            fraction,
+            birth_dt_utc,
+            as_of_utc,
+        )
+        scenarios.append({
+            "moon_nakshatra": name,
+            "representative_remaining_fraction": fraction,
+            "mahadasha_candidate": (chain.get("maha") or {}).get("lord"),
+        })
+    return scenarios
+
+
+def calc_vedic_from_payload(
+    payload: Dict[str, Any],
+    *,
+    as_of: datetime | None = None,
+    gochara_at: datetime | date | None = None,
+    forecast_years: int = 10,
+) -> Dict[str, Any]:
+    as_of_source = "request" if as_of is not None else "default_now"
+    if as_of is None:
+        as_of_utc = _utc_now()
+    else:
+        if as_of.tzinfo is None:
+            raise ValueError("as_of must be timezone-aware")
+        as_of_utc = as_of.astimezone(timezone.utc)
+    if isinstance(forecast_years, bool) or not isinstance(forecast_years, int):
+        raise ValueError("forecast_years must be an integer")
+    if forecast_years <= 0:
+        raise ValueError("forecast_years must be positive")
+    forecast_until_utc = as_of_utc + timedelta(
+        days=forecast_years * 365.2425
+    )
+    gochara_dt_utc = _resolve_gochara_dt_utc(
+        payload,
+        gochara_at,
+        as_of_utc,
+    )
+    birth_time_status = _birth_time_status(payload)
+    moon_day_stability = (
+        _moon_day_stability(payload)
+        if birth_time_status == "unknown"
+        else None
+    )
     dt_utc = _to_utc_from_payload(payload)
     jd = _julian_day_ut(dt_utc)
 
@@ -1135,7 +1604,7 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     house_lords_placement: Dict[str, Any] | None = None
     warnings: list[str] = []
 
-    if has_geo:
+    if has_geo and birth_time_status == "known":
         try:
             asc_lon = _ascendant_sidereal(jd, float(lat), float(lng))
             asc_rashi_no, asc_rashi_name, asc_deg_in_sign = _rashi_from_longitude(asc_lon)
@@ -1184,15 +1653,41 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             }
         except Exception as e:
             warnings.append(f"ASC/ハウス計算に失敗しました: {e!r}")
-    else:
+    elif not has_geo:
         warnings.append("緯度経度が無いため、ASC（ラグナ）とハウスは未計算です。")
 
     planetary_aspects_vedic = _build_planetary_aspects_vedic(planets)
-    vedic_yogas = analyze_vedic_yogas(planets, house_lords)
-    yogas = _build_yogas(planets, house_lords)
+    yoga_planets = (
+        planets
+        if birth_time_status == "known"
+        else _moon_relative_planets(planets)
+    )
+    vedic_yogas = analyze_vedic_yogas(yoga_planets, house_lords)
+    yogas = _build_yogas(yoga_planets, house_lords)
     d9 = _build_d9(planets, asc_data)
-    dasha = _dasha_chain_from_moon(nak_no, 1.0 - progress, dt_utc, datetime.now(timezone.utc))
+    dasha = _dasha_chain_from_moon(nak_no, 1.0 - progress, dt_utc, as_of_utc)
     dasha["active_themes"] = _active_dasha_themes(dasha, planets, house_lords_placement)
+    if moon_day_stability is not None:
+        dasha["reliability"] = (
+            "provisional"
+            if moon_day_stability["moon_nakshatra_stable_all_day"]
+            else "low"
+        )
+        if not moon_day_stability["moon_nakshatra_stable_all_day"]:
+            dasha["scenarios"] = _dasha_scenarios(
+                moon_day_stability,
+                dt_utc,
+                as_of_utc,
+            )
+    dasha_timeline = _build_dasha_timeline(
+        nak_no,
+        1.0 - progress,
+        dt_utc,
+        as_of_utc,
+        forecast_until_utc,
+        planets,
+        house_lords,
+    )
 
     nakshatra_summary = {
         "moon": {
@@ -1245,7 +1740,13 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             summary_flags["spiritual"].append(theme)
 
     gochara = build_vedic_gochara(
-        transit_date=payload.get("gochara_date") or payload.get("target_date") or datetime.now(JST).date(),
+        transit_date=gochara_dt_utc,
+        natal_moon_rashi_no=int(planets["Moon"]["rashi_no"]),
+        natal_asc_rashi_no=(
+            int(asc_data["rashi_no"])
+            if asc_data is not None
+            else None
+        ),
     )
 
     out: Dict[str, Any] = {
@@ -1278,8 +1779,67 @@ def calc_vedic_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "vedic_yogas_handoff": summarize_vedic_yogas_for_handoff(vedic_yogas),
         "varga": {"D9": d9},
         "dasha": dasha,
+        "dasha_timeline": dasha_timeline,
         "gochara": gochara,
         "summary_flags": summary_flags,
+    }
+
+    sections = (
+        _known_time_sections()
+        if birth_time_status == "known"
+        else _unknown_time_sections(moon_day_stability or {})
+    )
+    sections["dasha_timeline"] = dict(sections["dasha"])
+
+    if birth_time_status == "unknown":
+        for key in (
+            "ascendant",
+            "houses",
+            "houses_meta",
+            "house_lords",
+            "house_lords_placement",
+        ):
+            out.pop(key, None)
+        for planet in out["planets"]:
+            planet.pop("house_no", None)
+        for planet in out["planets_map"].values():
+            planet.pop("house_no", None)
+        d9.pop("ascendant", None)
+        nakshatra_summary.pop("ascendant", None)
+        assert moon_day_stability is not None
+        moon_rashi_candidates = (
+            sections["chandra_lagna"].get("candidates")
+            or [planets["Moon"]["rashi_name"]]
+        )
+        out["chandra_lagna"] = {
+            "rashi_name": planets["Moon"]["rashi_name"],
+            "candidates": moon_rashi_candidates,
+        }
+
+    out["input_reliability"] = {
+        "birth_time_status": birth_time_status,
+        "overall": "high" if birth_time_status == "known" else "limited",
+        "reasons": [] if birth_time_status == "known" else ["birth_time_unknown"],
+    }
+    if moon_day_stability is not None:
+        out["moon_day_stability"] = moon_day_stability
+    out["sections"] = sections
+    out["calculation_context"] = {
+        "as_of_utc": as_of_utc.isoformat(),
+        "as_of_source": as_of_source,
+        "gochara_at_utc": gochara_dt_utc.isoformat(),
+        "forecast_until_utc": forecast_until_utc.isoformat(),
+    }
+    out["assumptions"] = {
+        "ayanamsha": "lahiri",
+        "node_mode": "mean",
+        "node_aspect_policy": "rahu_ketu_5_7_9",
+        "dasha_year_basis": {
+            "days_per_year": 365.2425,
+            "rule_id": "vimshottari_tropical_year_v1",
+        },
+        "house_system": "whole_sign_from_asc",
+        "boundary_policy": "[start,end)",
     }
 
     if warnings:

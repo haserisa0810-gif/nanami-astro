@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -142,6 +143,7 @@ def _build_vedic_focus_summary(astro_data: dict[str, Any], meta2: dict[str, Any]
     moon_nak = vedic.get("moon_nakshatra") or {}
     house_lords = vedic.get("house_lords_placement") or {}
     planets = vedic.get("planets") or []
+    sections = vedic.get("sections") or {}
 
     if isinstance(asc, dict):
         asc_sign = asc.get("rashi_name") or asc.get("sign") or ""
@@ -154,7 +156,74 @@ def _build_vedic_focus_summary(astro_data: dict[str, Any], meta2: dict[str, Any]
         moon_pada = moon_nak.get("pada") or ""
         moon_lord = moon_nak.get("lord") or ""
         if moon_nak_name:
-            parts.append(f"月のナクシャトラは{moon_nak_name}、パーダは{moon_pada}、支配星は{moon_lord}。")
+            moon_note = ""
+            dasha_section = sections.get("dasha") if isinstance(sections, dict) else {}
+            if isinstance(dasha_section, dict) and dasha_section.get("reliability") in {"low", "provisional"}:
+                moon_note = "（出生時刻不明のため暫定）"
+            parts.append(
+                f"月のナクシャトラは{moon_nak_name}、パーダは{moon_pada}、"
+                f"支配星は{moon_lord}{moon_note}。"
+            )
+
+    timeline = vedic.get("dasha_timeline") or {}
+    timeline_periods = timeline.get("periods") if isinstance(timeline, dict) else []
+    if isinstance(timeline_periods, list):
+        current_index = next(
+            (
+                index
+                for index, period in enumerate(timeline_periods)
+                if isinstance(period, dict) and period.get("is_current")
+            ),
+            None,
+        )
+        if current_index is not None:
+            current = timeline_periods[current_index]
+            current_antaras = current.get("antara") or []
+            current_antara_index = next(
+                (
+                    index
+                    for index, period in enumerate(current_antaras)
+                    if isinstance(period, dict) and period.get("is_current")
+                ),
+                None,
+            )
+            current_antara = (
+                current_antaras[current_antara_index]
+                if current_antara_index is not None
+                else {}
+            )
+            if (
+                current_antara_index is not None
+                and current_antara_index + 1 < len(current_antaras)
+            ):
+                following_lord = current_antaras[current_antara_index + 1].get("lord", "")
+                switch_value = current_antara.get("end_utc")
+            elif current_index + 1 < len(timeline_periods):
+                following_lord = timeline_periods[current_index + 1].get("lord", "")
+                switch_value = current.get("end_utc")
+            else:
+                following_lord = ""
+                switch_value = None
+            try:
+                switch_at = datetime.fromisoformat(
+                    str(switch_value or "").replace("Z", "+00:00")
+                )
+            except ValueError:
+                switch_at = None
+            if switch_at is not None and following_lord:
+                reliability = sections.get("dasha_timeline") or sections.get("dasha")
+                provisional_note = (
+                    "（出生時刻不明のため暫定）"
+                    if isinstance(reliability, dict)
+                    and reliability.get("reliability") in {"provisional", "low"}
+                    else ""
+                )
+                parts.append(
+                    f"現在は{current.get('lord', '')}期"
+                    f"（{current_antara.get('lord', '')}アンタラ）。"
+                    f"次の切替は{switch_at.year}年{switch_at.month}月頃に"
+                    f"{following_lord}期へ。{provisional_note}"
+                )
 
     if isinstance(house_lords, dict):
         for house_key in ("1", "12", "7", "9"):
@@ -710,6 +779,8 @@ def generate_report(
 
 【最終強制指示】
 今回はインド占星術発火ケースです。
+sections で available: false の項目には言及しないでください。
+reliability: provisional または low の項目は確定事項として断定しないでください。
 本文を西洋占星術のみで完結させることを禁止します。
 少なくとも2か所で、インド占星術の視点を本文に自然に統合してください。
 特に「なぜ同じ流れが続きやすいか」「表面では説明しきれない背景」を補ってください。
