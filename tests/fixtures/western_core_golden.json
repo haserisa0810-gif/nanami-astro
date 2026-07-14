@@ -1,0 +1,54 @@
+{
+  "version": "2026.07.14-w0",
+  "cases": [
+    {
+      "name": "applying_square",
+      "planets": [{"name": "A", "lon": 10.0, "speed": 1.0}, {"name": "B", "lon": 101.0, "speed": 0.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "square", "orb": 1.0, "signed_deviation": 1.0, "applying": true, "phase": "applying"}]
+    },
+    {
+      "name": "separating_square",
+      "planets": [{"name": "A", "lon": 10.0, "speed": 0.0}, {"name": "B", "lon": 101.0, "speed": 1.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "square", "applying": false, "phase": "separating"}]
+    },
+    {
+      "name": "unknown_speed",
+      "planets": [{"name": "A", "lon": 10.0, "speed": null}, {"name": "B", "lon": 101.0, "speed": null}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "square", "applying": null, "phase": "unknown"}]
+    },
+    {
+      "name": "exact_zero",
+      "planets": [{"name": "A", "lon": 10.0, "speed": 1.0}, {"name": "B", "lon": 100.0, "speed": 0.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "square", "orb": 0.0, "signed_deviation": 0.0, "applying": null, "phase": "exact"}]
+    },
+    {
+      "name": "exact_within_threshold",
+      "planets": [{"name": "A", "lon": 10.0, "speed": 1.0}, {"name": "B", "lon": 100.04, "speed": 0.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "square", "orb": 0.04, "signed_deviation": 0.04, "applying": null, "phase": "exact"}]
+    },
+    {
+      "name": "outside_exact_threshold",
+      "planets": [{"name": "A", "lon": 10.0, "speed": 1.0}, {"name": "B", "lon": 100.06, "speed": 0.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "square", "orb": 0.06, "signed_deviation": 0.06, "applying": true, "phase": "applying"}]
+    },
+    {
+      "name": "wrap_conjunction",
+      "planets": [{"name": "A", "lon": 359.0, "speed": 1.0}, {"name": "B", "lon": 1.0, "speed": 0.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "conjunction", "actual_angle": 2.0, "signed_deviation": 2.0, "applying": true, "phase": "applying"}]
+    },
+    {
+      "name": "wrap_opposition",
+      "planets": [{"name": "A", "lon": 359.0, "speed": 1.0}, {"name": "B", "lon": 179.06, "speed": 0.0}],
+      "expected": [{"planet1": "A", "planet2": "B", "type": "opposition", "actual_angle": 179.94, "signed_deviation": -0.06, "applying": true, "phase": "applying"}]
+    },
+    {
+      "name": "multiple_aspects",
+      "planets": [{"name": "A", "lon": 0.0, "speed": 0.0}, {"name": "B", "lon": 60.0, "speed": 0.0}, {"name": "C", "lon": 120.0, "speed": 0.0}],
+      "expected": [
+        {"planet1": "A", "planet2": "B", "type": "sextile", "applying": null, "phase": "exact"},
+        {"planet1": "A", "planet2": "C", "type": "trine", "applying": null, "phase": "exact"},
+        {"planet1": "B", "planet2": "C", "type": "sextile", "applying": null, "phase": "exact"}
+      ]
+    }
+  ]
+}

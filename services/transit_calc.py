@@ -9,7 +9,8 @@ from zoneinfo import ZoneInfo
 from typing import Any
 from itertools import combinations
 
-from services.western_calc import calc_western_from_payload, angle_diff, aspect_applying
+from services.western_calc import calc_western_from_payload
+from services.western_core import angle_diff, aspect_applying, aspect_phase
 
 TRANSIT_TIMEZONE = ZoneInfo("Asia/Tokyo")
 
@@ -99,6 +100,13 @@ def _match_aspects(
             for asp_name, ang in TRANSIT_ASPECTS.items():
                 orb = abs(d - ang)
                 if orb <= orb_limit:
+                    deviation = d - ang
+                    applying = aspect_applying(
+                        t["lon"], t.get("speed"), n["lon"], 0.0, ang
+                    )
+                    phase = aspect_phase(deviation, applying)
+                    if phase == "exact":
+                        applying = None
                     hits.append({
                         "transit_planet": t["name"],
                         "natal_planet":   n["name"],
@@ -109,11 +117,10 @@ def _match_aspects(
                         "label":          label_prefix,
                         "exact_angle":    ang,
                         "actual_angle":   round(d, 2),
-                        "signed_deviation": round(d - ang, 2),
+                        "signed_deviation": round(deviation, 2),
                         "orb_limit":      orb_limit,
-                        "applying":       aspect_applying(
-                            t["lon"], t.get("speed"), n["lon"], 0.0, ang
-                        ),
+                        "applying":       applying,
+                        "phase":          phase,
                     })
     return sorted(hits, key=lambda x: x["orb"])
 

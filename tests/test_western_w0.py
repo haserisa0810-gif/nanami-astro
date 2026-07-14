@@ -37,8 +37,11 @@ def test_applying_formula_examples_true_false_and_unknown():
     ])
 
     assert _aspect(applying, "square")["applying"] is True
+    assert _aspect(applying, "square")["phase"] == "applying"
     assert _aspect(separating, "square")["applying"] is False
+    assert _aspect(separating, "square")["phase"] == "separating"
     assert _aspect(unknown, "square")["applying"] is None
+    assert _aspect(unknown, "square")["phase"] == "unknown"
 
 
 def test_signed_deviation_absolute_value_matches_existing_orb():
@@ -84,7 +87,7 @@ def test_real_western_result_contains_speed_rules_quality_and_new_aspect_fields(
     assert all(planet["retrograde"] is (planet["speed"] < 0) for planet in moving_bodies)
     required = {
         "planet1", "planet2", "type", "orb", "exact_angle", "actual_angle",
-        "signed_deviation", "orb_limit", "applying",
+        "signed_deviation", "orb_limit", "applying", "phase",
     }
     assert result["aspects"]
     assert all(required.issubset(item) for item in result["aspects"])
@@ -181,6 +184,7 @@ def test_transit_match_adds_applying_with_natal_speed_fixed_at_zero():
 
     square = next(item for item in hits if item["aspect"] == "square")
     assert square["applying"] is True
+    assert square["phase"] == "applying"
     assert square["exact_angle"] == 90
     assert square["signed_deviation"] == 1.0
     assert square["orb_limit"] == 2.0
