@@ -16,3 +16,7 @@ venv/
 .env
 *.db
 *.csv
+
+# 日本語ファイル名は gcloud のソースアーカイブで文字化けし
+# Cloud Run の container import が失敗するため除外する
+prompts/*コピー*
