@@ -487,6 +487,9 @@ def _select_prompt_files(astrology_system: str, rt: str, output_style: str, them
                 "timing":       "single_web_claude_w_shichu_timing.txt",
             }
             single_web_name = _w_shichu_style_map.get(reading_style, "single_web_claude_w_shichu.txt")
+        elif sys_name == "shichusuimei":
+            # 四柱推命単独：西洋前提の汎用プロンプトを使うとホロスコープを捏造するため専用プロンプトを使う
+            single_web_name = "single_web_claude_shichu.txt"
         else:
             single_web_name = _style_map.get(reading_style, "single_web_claude.txt")
     else:
@@ -662,6 +665,9 @@ def generate_report(
         guard = _read_prompt_file("guard_integrated.txt").strip()
     elif astrology_system in {"integrated3", "integrated_3"}:
         guard = _read_prompt_file("guard_integrated3.txt").strip()
+    elif astrology_system == "shichusuimei":
+        # Claude/Gemini どちらの経路でも西洋・インド要素の捏造を防ぐ
+        guard = _read_prompt_file("guard_shichu.txt").strip()
     if guard:
         single_web_prompt += "\n\n" + guard
         single_line_prompt += "\n\n" + guard
