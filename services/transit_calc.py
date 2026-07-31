@@ -11,6 +11,7 @@ from itertools import combinations
 
 from services.western_calc import calc_western_from_payload
 from services.western_core import angle_diff, aspect_applying, aspect_phase
+from services.astronomical_events import eclipse_year_summary, events_near_date
 
 TRANSIT_TIMEZONE = ZoneInfo("Asia/Tokyo")
 
@@ -162,7 +163,8 @@ def calc_global_transit_snapshot(
     """個人出生図を使わず、その日の全体トランジットだけを返す。"""
     today_planets = _calc_today_planets(target_date, lat, lng)
     aspects = _match_transit_to_transit_aspects(today_planets)
-    transit_date = _target_datetime(target_date).strftime("%Y-%m-%d")
+    target_datetime = _target_datetime(target_date)
+    transit_date = target_datetime.strftime("%Y-%m-%d")
 
     return {
         "transit_date": transit_date,
@@ -172,6 +174,8 @@ def calc_global_transit_snapshot(
         ],
         "aspects": aspects,
         "aspect_count": len(aspects),
+        "astronomical_events": events_near_date(target_datetime.date()),
+        "eclipse_year_summary": eclipse_year_summary(target_datetime.year),
     }
 
 def calc_transits_single(

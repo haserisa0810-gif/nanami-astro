@@ -147,6 +147,28 @@
         <p class="muted">{{ result.transit_context.snapshot_count }}日分を確認。Claudeには以下の抽出結果だけを渡しています。</p>
         <div class="transit-grid">
           <div class="transit-box">
+            <strong>日食・月食・空のイベント</strong>
+            <ul>
+              {% for item in result.transit_context.astronomical_events %}
+                <li>
+                  {{ item.local_date }}
+                  {% if item.type == "solar_eclipse" %}
+                    {% if item.subtype == "total" %}皆既{% elif item.subtype == "partial" %}部分{% elif item.subtype == "annular" %}金環{% elif item.subtype == "hybrid" %}金環皆既{% endif %}日食
+                  {% elif item.type == "lunar_eclipse" %}
+                    {% if item.subtype == "total" %}皆既{% elif item.subtype == "partial" %}部分{% elif item.subtype == "penumbral" %}半影{% endif %}月食
+                  {% else %}
+                    {{ item.name_ja or item.type }}
+                  {% endif %}
+                  {% if item.position %}（{{ item.position.sign }} {{ item.position.degree }}°{{ "%02d"|format(item.position.minute or 0) }}′）{% endif %}
+                </li>
+              {% else %}<li>該当なし</li>{% endfor %}
+            </ul>
+            {% set eclipse_summary = result.transit_context.eclipse_year_summary %}
+            {% if eclipse_summary and eclipse_summary.year %}
+              <p class="muted" style="margin:8px 0 0">{{ eclipse_summary.year }}年：食{{ eclipse_summary.eclipse_count }}回／食シーズン{{ eclipse_summary.eclipse_season_count }}回</p>
+            {% endif %}
+          </div>
+          <div class="transit-box">
             <strong>主要アスペクト</strong>
             <ul>
               {% for item in result.transit_context.major_aspects[:5] %}

@@ -29,6 +29,51 @@ def _snapshot_loader(*, target_date):
     }
 
 
+def _event_loader(year, month):
+    if (year, month) != (2026, 8):
+        return []
+    return [
+        {
+            "id": "perseids-2026",
+            "type": "meteor_shower",
+            "subtype": "perseids",
+            "name_ja": "ペルセウス座流星群",
+            "local_datetime": "2026-08-13T01:47:23+09:00",
+            "local_date": "2026-08-13",
+            "astrology_role": "editorial_sky_note",
+        },
+        {
+            "id": "solar-eclipse-20260812T1745Z",
+            "type": "solar_eclipse",
+            "subtype": "total",
+            "phase": "new_moon",
+            "local_datetime": "2026-08-13T02:45:59+09:00",
+            "local_date": "2026-08-13",
+            "position": {"sign": "Leo", "degree": 20, "minute": 2},
+            "visibility": {"reference_location": "Tokyo", "visible": False},
+        },
+        {
+            "id": "lunar-eclipse-20260828T0412Z",
+            "type": "lunar_eclipse",
+            "subtype": "partial",
+            "phase": "full_moon",
+            "local_datetime": "2026-08-28T13:12:57+09:00",
+            "local_date": "2026-08-28",
+            "position": {"sign": "Pisces", "degree": 4, "minute": 51},
+            "visibility": {"reference_location": "Tokyo", "visible": False},
+        },
+    ]
+
+
+def _eclipse_summary_loader(year):
+    return {
+        "year": year,
+        "eclipse_count": 4,
+        "eclipse_season_count": 2,
+        "wording_note": "食の回数と食シーズンの回数を混同しないこと。",
+    }
+
+
 class _TextBlock:
     type = "text"
     text = """
@@ -88,27 +133,38 @@ class _FakeClient:
 
 def test_build_social_flow_context_month():
     context = build_social_flow_context(
-        base_date="2026-07-01",
+        base_date="2026-08-01",
         period="month",
         snapshot_loader=_snapshot_loader,
+        event_loader=_event_loader,
+        eclipse_summary_loader=_eclipse_summary_loader,
     )
 
-    assert context["period_label"] == "2026年7月"
-    assert context["target_range"] == {"start_date": "2026-07-01", "end_date": "2026-07-31"}
+    assert context["period_label"] == "2026年8月"
+    assert context["target_range"] == {"start_date": "2026-08-01", "end_date": "2026-08-31"}
     assert context["snapshot_count"] == 31
     assert context["major_aspects"]
+    assert [event["type"] for event in context["astronomical_events"]] == [
+        "meteor_shower",
+        "solar_eclipse",
+        "lunar_eclipse",
+    ]
+    assert context["eclipse_year_summary"]["eclipse_count"] == 4
+    assert context["eclipse_year_summary"]["eclipse_season_count"] == 2
 
 
 def test_generate_social_flow_with_fake_client(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
     result = generate_social_flow(
-        base_date="2026-07-01",
+        base_date="2026-08-01",
         period="month",
         theme="overall",
         output_type="all",
         model_key="sonnet",
         snapshot_loader=_snapshot_loader,
+        event_loader=_event_loader,
+        eclipse_summary_loader=_eclipse_summary_loader,
         client_factory=_FakeClient,
     )
 
@@ -116,3 +172,10 @@ def test_generate_social_flow_with_fake_client(monkeypatch):
     assert result["generated"]["note_draft"]["social_theme"]
     assert "future_verification" in result["yaml_preview"]
     assert "社会の流れ" in result["yaml_preview"]
+    assert "astronomical_events" in result["yaml_preview"]
+    assert "eclipse_year_summary" in result["yaml_preview"]
+    assert "caution_dates" in result["yaml_preview"]
+    prompt = _FakeClient.messages.last_kwargs["messages"][0]["content"]
+    assert "皆既日食" in prompt
+    assert "部分月食" in prompt
+    assert "食4回、食シーズン2回" in prompt

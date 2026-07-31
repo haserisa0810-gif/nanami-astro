@@ -24,6 +24,7 @@ from services.note_article_service import (
 )
 from services.text_formatter import fix_punctuation, normalize_layout
 from services.transit_calc import calc_global_transit_snapshot
+from services.astronomical_events import eclipse_year_summary, events_for_month
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -137,9 +138,27 @@ def _merge_contexts(contexts: list[dict[str, Any]], *, base: date, period: str) 
                 "month": context.get("month_label"),
                 "theme_candidates": context.get("theme_candidates", [])[:3],
                 "major_aspects": context.get("major_aspects", [])[:5],
+                "astronomical_events": context.get("astronomical_events", []),
                 "month_flow": context.get("month_flow", []),
             }
         )
+
+    astronomical_events: list[dict[str, Any]] = []
+    seen_event_ids: set[str] = set()
+    year_summaries: dict[int, dict[str, Any]] = {}
+    for context in contexts:
+        for event in context.get("astronomical_events", []) or []:
+            event_id = str(event.get("id") or "")
+            if not event_id or event_id in seen_event_ids:
+                continue
+            seen_event_ids.add(event_id)
+            astronomical_events.append(event)
+        summary = context.get("eclipse_year_summary") or {}
+        if isinstance(summary, dict) and summary.get("year"):
+            year_summaries[int(summary["year"])] = summary
+    astronomical_events.sort(
+        key=lambda item: str(item.get("local_datetime") or item.get("local_date") or "")
+    )
 
     major = merged("major_aspects", 18 if period == "year" else 12)
     return _prune_empty(
@@ -150,6 +169,12 @@ def _merge_contexts(contexts: list[dict[str, Any]], *, base: date, period: str) 
             "target_range": _target_range(base, period),
             "month_keys": [context.get("target_month") for context in contexts],
             "snapshot_count": sum(int(context.get("snapshot_count") or 0) for context in contexts),
+            "astronomical_events": astronomical_events,
+            "eclipse_year_summary": (
+                next(iter(year_summaries.values()))
+                if len(year_summaries) == 1
+                else {"years": list(year_summaries.values())}
+            ),
             "major_aspects": major,
             "tight_aspects": merged("tight_aspects", 12),
             "change_aspects": merged("change_aspects", 10),
@@ -172,15 +197,60 @@ def build_social_flow_context(
     base_date: str,
     period: str,
     snapshot_loader: Callable[..., dict[str, Any]] = calc_global_transit_snapshot,
+    event_loader: Callable[[int, int], list[dict[str, Any]]] = events_for_month,
+    eclipse_summary_loader: Callable[[int], dict[str, Any]] = eclipse_year_summary,
 ) -> dict[str, Any]:
     base = _validate_base_date(base_date)
     if period not in PERIODS:
         raise SocialFlowError("期間が不正です。")
-    contexts = [
-        extract_monthly_transit_context(month_key, snapshot_loader=snapshot_loader)
-        for month_key in _month_keys_for_period(base, period)
-    ]
+    contexts = []
+    for month_key in _month_keys_for_period(base, period):
+        year, month = (int(part) for part in month_key.split("-"))
+        context = extract_monthly_transit_context(
+            month_key,
+            snapshot_loader=snapshot_loader,
+        )
+        context["astronomical_events"] = event_loader(year, month)
+        context["eclipse_year_summary"] = eclipse_summary_loader(year)
+        contexts.append(context)
     return _merge_contexts(contexts, base=base, period=period)
+
+
+def _astronomical_event_line(event: dict[str, Any]) -> str:
+    subtype_labels = {
+        "total": "皆既",
+        "partial": "部分",
+        "annular": "金環",
+        "hybrid": "金環皆既",
+        "penumbral": "半影",
+    }
+    event_type = str(event.get("type") or "")
+    subtype = subtype_labels.get(str(event.get("subtype") or ""), "")
+    if event_type == "solar_eclipse":
+        label = f"{subtype}日食"
+    elif event_type == "lunar_eclipse":
+        label = f"{subtype}月食"
+    elif event_type == "meteor_shower":
+        label = str(event.get("name_ja") or "流星群")
+    else:
+        label = event_type or "天文イベント"
+
+    position = event.get("position") or {}
+    position_text = ""
+    if isinstance(position, dict) and position.get("sign"):
+        position_text = (
+            f"、{position.get('sign')} {position.get('degree')}°"
+            f"{int(position.get('minute') or 0):02d}′"
+        )
+    visibility = event.get("visibility") or {}
+    visibility_text = ""
+    if isinstance(visibility, dict) and visibility.get("reference_location"):
+        state = {True: "観測可", False: "観測不可", None: "未判定"}.get(
+            visibility.get("visible"),
+            "未判定",
+        )
+        visibility_text = f"、{visibility.get('reference_location')}基準{state}"
+    return f"{event.get('local_date')}: {label}{position_text}{visibility_text}"
 
 
 def _context_for_prompt(context: dict[str, Any]) -> str:
@@ -192,11 +262,40 @@ def _context_for_prompt(context: dict[str, Any]) -> str:
     for row in context.get("period_flow", []) or []:
         aspects = " / ".join(_event_line(item) for item in row.get("major_aspects", [])[:3]) or "主要アスペクトなし"
         themes = " / ".join(row.get("theme_candidates", [])[:2]) or "候補なし"
-        month_blocks.append(f"- {row.get('month')}: {themes} | {aspects}")
+        sky_events = (
+            " / ".join(
+                _astronomical_event_line(item)
+                for item in row.get("astronomical_events", [])
+            )
+            or "主要天文イベントなし"
+        )
+        month_blocks.append(
+            f"- {row.get('month')}: {themes} | {sky_events} | {aspects}"
+        )
+
+    astronomical_lines = [
+        f"- {_astronomical_event_line(item)}"
+        for item in context.get("astronomical_events", []) or []
+    ]
+    eclipse_summary = context.get("eclipse_year_summary") or {}
+    if eclipse_summary.get("year"):
+        eclipse_summary_line = (
+            f"- {eclipse_summary.get('year')}年: "
+            f"食{eclipse_summary.get('eclipse_count')}回、"
+            f"食シーズン{eclipse_summary.get('eclipse_season_count')}回"
+        )
+    else:
+        eclipse_summary_line = "- 該当なし"
 
     return f"""対象期間: {context.get('period_label')}
 範囲: {(context.get('target_range') or {}).get('start_date')} 〜 {(context.get('target_range') or {}).get('end_date')}
 確認日数: {context.get('snapshot_count')}
+
+日食・月食・主要な空のイベント:
+{chr(10).join(astronomical_lines) or '- 該当なし'}
+
+食の年間集計:
+{eclipse_summary_line}
 
 主要アスペクト:
 {lines('major_aspects')}
@@ -335,6 +434,8 @@ def generate_social_flow(
     output_type: str,
     model_key: str = "sonnet",
     snapshot_loader: Callable[..., dict[str, Any]] = calc_global_transit_snapshot,
+    event_loader: Callable[[int, int], list[dict[str, Any]]] = events_for_month,
+    eclipse_summary_loader: Callable[[int], dict[str, Any]] = eclipse_year_summary,
     client_factory: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     if period not in PERIODS:
@@ -352,7 +453,13 @@ def generate_social_flow(
     if Anthropic is None and client_factory is None:
         raise SocialFlowError("Anthropic SDKを読み込めません。社会の流れ生成の依存関係を確認してください。")
 
-    context = build_social_flow_context(base_date=base_date, period=period, snapshot_loader=snapshot_loader)
+    context = build_social_flow_context(
+        base_date=base_date,
+        period=period,
+        snapshot_loader=snapshot_loader,
+        event_loader=event_loader,
+        eclipse_summary_loader=eclipse_summary_loader,
+    )
     prompt = _render_prompt(
         _load_prompt(),
         {

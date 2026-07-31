@@ -280,6 +280,41 @@ def _build_aspect_summary(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines) if lines else "（主要アスペクトなし）"
 
 
+def _build_event_summary(snapshot: dict[str, Any]) -> str:
+    subtype_ja = {
+        "total": "皆既", "partial": "部分", "annular": "金環",
+        "hybrid": "金環皆既", "penumbral": "半影",
+    }
+    relation_ja = {"today": "当日", "upcoming": "接近中", "recent": "直後"}
+    lines: list[str] = []
+    for event in snapshot.get("astronomical_events", []) or []:
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_type == "solar_eclipse":
+            label = f"{subtype_ja.get(str(event.get('subtype')), '')}日食"
+        elif event_type == "lunar_eclipse":
+            label = f"{subtype_ja.get(str(event.get('subtype')), '')}月食"
+        elif event_type == "meteor_shower":
+            label = str(event.get("name_ja") or "流星群")
+        else:
+            continue
+        position = event.get("position") or {}
+        degree = ""
+        if isinstance(position, dict) and position.get("sign"):
+            degree = f" / {position.get('sign')} {position.get('degree')}°{position.get('minute')}′"
+        relation = relation_ja.get(str(event.get("relation") or ""), "")
+        lines.append(f"- {label}（{relation}・{event.get('local_date')}）{degree}")
+
+    year_summary = snapshot.get("eclipse_year_summary") or {}
+    if isinstance(year_summary, dict) and year_summary:
+        lines.append(
+            f"- {year_summary.get('year')}年は食{year_summary.get('eclipse_count')}回・"
+            f"食シーズン{year_summary.get('eclipse_season_count')}回"
+        )
+    return "\n".join(lines) if lines else "- 対象日前後に優先表示する食・主要流星群なし"
+
+
 def _find_planet(snapshot: dict[str, Any], planet_name: str) -> dict[str, Any] | None:
     for p in snapshot.get("today_planets", []) or []:
         if isinstance(p, dict) and str(p.get("name") or "").strip() == planet_name:
@@ -481,6 +516,9 @@ def _pick_daily_theme_type(snapshot: dict[str, Any], target_date: str, axis: str
     mercury = _find_planet(snapshot, "Mercury")
     venus = _find_planet(snapshot, "Venus")
     mars = _find_planet(snapshot, "Mars")
+
+    if snapshot.get("astronomical_events"):
+        return "astronomical_event"
 
     if strong_aspects:
         top = strong_aspects[0]
@@ -781,6 +819,19 @@ def _deterministic_theme_from_snapshot(
     moon_sign = _sign_label_ja(str(moon_obj.get("sign") or "").strip()) if moon_obj else ""
 
     summary_parts: list[str] = []
+
+    astronomical_events = snapshot.get("astronomical_events") or []
+    if astronomical_events and isinstance(astronomical_events[0], dict):
+        first_event = astronomical_events[0]
+        event_type = str(first_event.get("type") or "")
+        event_label = {
+            "solar_eclipse": "日食を伴う新月",
+            "lunar_eclipse": "月食を伴う満月",
+            "meteor_shower": str(first_event.get("name_ja") or "流星群"),
+        }.get(event_type, "大きな天文イベント")
+        summary_parts.append(
+            f"今日は{event_label}の節目が通常の天体配置より強く前景化し、切り替わりを意識しやすい空気です。"
+        )
 
     if theme_type == "sign_focus" and sign_focus:
         summary_parts.append(
@@ -1181,6 +1232,7 @@ async def daily_theme_generate(request: Request):
 
         planet_summary = _build_planet_summary(snapshot)
         aspect_summary = _build_aspect_summary(snapshot)
+        event_summary = _build_event_summary(snapshot)
 
         transit_date = str(snapshot.get("transit_date") or date_str or "").strip()
 
@@ -1193,6 +1245,7 @@ async def daily_theme_generate(request: Request):
                 "axis": axis,
                 "planet_summary": planet_summary,
                 "aspect_summary": aspect_summary,
+                "event_summary": event_summary,
             },
         )
 
@@ -1227,6 +1280,9 @@ async def daily_theme_generate(request: Request):
             "transit_date": transit_date,
             "planet_summary": planet_summary,
             "aspect_summary": aspect_summary,
+            "event_summary": event_summary,
+            "astronomical_events": snapshot.get("astronomical_events", []),
+            "eclipse_year_summary": snapshot.get("eclipse_year_summary", {}),
         }
         result_payload["regional_houses"] = regional_houses
         if regional_sns_line:
