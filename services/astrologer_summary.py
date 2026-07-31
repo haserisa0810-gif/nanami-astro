@@ -208,6 +208,24 @@ def _vedic_themes(vedic: dict[str, Any], vedic_structure: dict[str, Any], vedic_
     hlp = _as_dict(vedic_structure.get("house_lords_placement"))
     yogas = _as_list(vedic_structure.get("yogas"))
     dasha = _as_dict(vedic_structure.get("dasha"))
+    sections = _as_dict(vedic.get("sections") or vedic_structure.get("sections"))
+
+    def section_is_assertable(name: str) -> bool:
+        section = _as_dict(sections.get(name))
+        # Preserve legacy callers that do not provide reliability metadata.
+        if not section:
+            return True
+        return bool(section.get("available")) and section.get("reliability") in {
+            "high",
+            "medium",
+        }
+
+    if not section_is_assertable("house_lords"):
+        hlp = {}
+    if not section_is_assertable("yogas"):
+        yogas = []
+    if not section_is_assertable("dasha"):
+        dasha = {}
 
     lord7 = _as_dict(hlp.get("7") or hlp.get(7))
     lord10 = _as_dict(hlp.get("10") or hlp.get(10))

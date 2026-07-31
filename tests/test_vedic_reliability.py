@@ -8,6 +8,7 @@ import pytest
 
 from services.ai_report import _build_vedic_focus_summary
 from services.astrologer_summary import build_full_astrologer_summary
+from services.structure_engine import analyze_vedic_structure, derive_vedic_flags
 from services.vedic_calc import (
     ASC_DEPENDENT_YOGA_SLUGS,
     _moon_day_stability,
@@ -206,6 +207,34 @@ def test_consumers_accept_unknown_time_vedic_output():
     assert isinstance(focus, str)
     assert "暫定" in focus
     assert isinstance(summary, dict)
+
+
+def test_structure_consumers_do_not_assert_provisional_yoga_or_dasha():
+    vedic = calc_vedic_from_payload(
+        _payload(2024, 1, 1, birth_time=None),
+        as_of=AS_OF,
+    )
+    structure = analyze_vedic_structure(vedic)
+    flags = derive_vedic_flags(structure)
+    summary = build_full_astrologer_summary({
+        "vedic": {
+            **vedic,
+            "derived": {
+                "vedic_structure": structure,
+                "vedic_flags": flags,
+            },
+        }
+    })
+
+    assert structure["sections"] == vedic["sections"]
+    assert not {
+        "inner_isolation_tendency",
+        "emotional_cycle_activation",
+    } & {flag["id"] for flag in flags}
+    assert not {
+        "vedic_yoga_context",
+        "vedic_timing",
+    } & {theme["id"] for theme in summary["vedic"]["themes"]}
 
 
 def test_vedic_prompt_guard_respects_section_availability_and_reliability():

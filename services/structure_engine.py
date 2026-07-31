@@ -375,6 +375,8 @@ def analyze_vedic_structure(vedic: dict[str, Any]) -> dict[str, Any]:
         "vedic_yogas_handoff": vedic.get("vedic_yogas_handoff") or {},
         "dasha": vedic.get("dasha") or {},
         "summary_flags": vedic.get("summary_flags") or {},
+        "sections": vedic.get("sections") or {},
+        "input_reliability": vedic.get("input_reliability") or {},
     }
 
     if houses:
@@ -391,6 +393,18 @@ def derive_vedic_flags(vedic_structure: dict[str, Any]) -> list[dict[str, Any]]:
     yogas = vedic_structure.get("yogas") or []
     dasha = vedic_structure.get("dasha") or {}
     house_lords_placement = vedic_structure.get("house_lords_placement") or {}
+    sections = vedic_structure.get("sections") or {}
+
+    def section_is_assertable(name: str) -> bool:
+        section = sections.get(name) if isinstance(sections, dict) else None
+        # Legacy structures did not carry section metadata. Preserve their
+        # behavior; only reliability-aware payloads are filtered here.
+        if not isinstance(section, dict):
+            return True
+        return bool(section.get("available")) and section.get("reliability") in {
+            "high",
+            "medium",
+        }
 
     if vedic_structure.get("moon_12h"):
         flags.append({
@@ -466,7 +480,11 @@ def derive_vedic_flags(vedic_structure: dict[str, Any]) -> list[dict[str, Any]]:
     except Exception:
         pass
 
-    yoga_names = {str((y or {}).get("name") or "") for y in yogas if isinstance(y, dict)}
+    yoga_names = (
+        {str((y or {}).get("name") or "") for y in yogas if isinstance(y, dict)}
+        if section_is_assertable("yogas")
+        else set()
+    )
 
     if any("Viparita" in y for y in yoga_names):
         flags.append({
@@ -490,7 +508,11 @@ def derive_vedic_flags(vedic_structure: dict[str, Any]) -> list[dict[str, Any]]:
             "countermeasures": "一人で抱える前提にせず、共有相手を固定しておく",
         })
 
-    antara = (dasha.get("antara") or {}).get("lord")
+    antara = (
+        (dasha.get("antara") or {}).get("lord")
+        if section_is_assertable("dasha")
+        else None
+    )
     if antara == "Moon":
         flags.append({
             "id": "emotional_cycle_activation",
