@@ -25,6 +25,7 @@ from services.type_catalog import (
     get_type_subtype_groups_for_prompt,
 )
 from services.vedic_calc import build_vedic_gochara_points
+from services.zodiac_context import build_zodiac_context
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -72,6 +73,19 @@ CHANGE_PLANETS = {"Uranus", "Neptune", "Pluto"}
 INNER_REVIEW_PLANETS = {"Moon", "Mercury", "Saturn"}
 HARD_ASPECTS = {"square", "opposition"}
 FLOW_ASPECTS = {"trine", "sextile"}
+
+ZODIAC_WRITING_RULE = (
+    "12星座別運勢は、zodiac_context を使って星座ごとに書き分ける。"
+    "各星座で主役を1〜2個に絞る。優先順位は、"
+    "(1) angular_aspects にあるアスペクト（アングルに当たるもの）、"
+    "(2) planets_in_sign にある天体、"
+    "(3) 支配星の状態（逆行・留・サイン移動）。"
+    "ハウスの意味（1=自分、2=お金・価値、3=身近な会話、4=家・拠り所、5=楽しみ・恋愛、"
+    "6=日々の仕事・体調、7=向き合う相手、8=分け合うもの・深い結びつき、9=学び・遠い世界、"
+    "10=仕事・社会での立場、11=仲間・これから、12=休息・ひとりの時間）を生活の言葉に置き換えて書く。"
+    "主役でない配置は軽く触れるだけにする。12星座で同じ文を使い回さない。"
+    "月のアスペクト（1日で終わるもの）は主役にしない。"
+)
 
 
 class NoteArticleError(RuntimeError):
@@ -362,11 +376,12 @@ def extract_monthly_transit_context(
     movement = _dedupe_dates(
         [event for event in events if event["aspect"] in FLOW_ASPECTS and event["orb"] <= 1.25]
     )
+    daily_snapshots = [_snapshot_for_yaml(snapshot) for snapshot in snapshots]
 
     return {
         "target_month": target_month,
         "month_label": f"{year}年{month}月",
-        "daily_snapshots": [_snapshot_for_yaml(snapshot) for snapshot in snapshots],
+        "daily_snapshots": daily_snapshots,
         "major_aspects": major,
         "tight_aspects": tight,
         "love_aspects": love,
@@ -385,6 +400,9 @@ def extract_monthly_transit_context(
             inner_review=inner_review,
         ),
         "snapshot_count": len(snapshots),
+        "zodiac_context": build_zodiac_context(
+            {"target_month": target_month, "major_aspects": major, "daily_snapshots": daily_snapshots}
+        ),
     }
 
 
@@ -416,6 +434,7 @@ def build_note_article_yaml(result: dict[str, Any]) -> str:
                 "caution_dates": context.get("caution_dates"),
                 "movement_dates": context.get("movement_dates"),
                 "daily_snapshots": context.get("daily_snapshots"),
+                "zodiac_context": context.get("zodiac_context"),
             }
         }
     )
@@ -440,6 +459,7 @@ def build_note_article_yaml(result: dict[str, Any]) -> str:
                 "use_only_provided_data": True,
                 "do_not_recalculate": True,
                 "missing_sections_mean_not_available": True,
+                "zodiac_writing_rule": ZODIAC_WRITING_RULE,
             },
         }
     )
