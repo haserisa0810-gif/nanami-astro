@@ -26,6 +26,10 @@ from services.type_catalog import (
 )
 from services.vedic_calc import build_vedic_gochara_points
 from services.zodiac_context import build_zodiac_context
+from services.planetary_motion import calc_monthly_station_events
+from services.note_writing_contract import (
+    ZODIAC_HANDOFF_REQUEST, ZODIAC_READING_GUIDE, ZODIAC_WRITING_RULE,
+)
 
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -73,19 +77,6 @@ CHANGE_PLANETS = {"Uranus", "Neptune", "Pluto"}
 INNER_REVIEW_PLANETS = {"Moon", "Mercury", "Saturn"}
 HARD_ASPECTS = {"square", "opposition"}
 FLOW_ASPECTS = {"trine", "sextile"}
-
-ZODIAC_WRITING_RULE = (
-    "12星座別運勢は、zodiac_context を使って星座ごとに書き分ける。"
-    "各星座で主役を1〜2個に絞る。優先順位は、"
-    "(1) angular_aspects にあるアスペクト（アングルに当たるもの）、"
-    "(2) planets_in_sign にある天体、"
-    "(3) 支配星の状態（逆行・留・サイン移動）。"
-    "ハウスの意味（1=自分、2=お金・価値、3=身近な会話、4=家・拠り所、5=楽しみ・恋愛、"
-    "6=日々の仕事・体調、7=向き合う相手、8=分け合うもの・深い結びつき、9=学び・遠い世界、"
-    "10=仕事・社会での立場、11=仲間・これから、12=休息・ひとりの時間）を生活の言葉に置き換えて書く。"
-    "主役でない配置は軽く触れるだけにする。12星座で同じ文を使い回さない。"
-    "月のアスペクト（1日で終わるもの）は主役にしない。"
-)
 
 
 class NoteArticleError(RuntimeError):
@@ -211,12 +202,12 @@ def _prune_empty(value: Any) -> Any:
         cleaned = {
             key: _prune_empty(item)
             for key, item in value.items()
-            if item not in (None, "", [], {})
+            if item not in (None, "", [], {}) or (key == "retrograde" and item is None)
         }
         return {
             key: item
             for key, item in cleaned.items()
-            if item not in (None, "", [], {})
+            if item not in (None, "", [], {}) or (key == "retrograde" and item is None)
         }
     if isinstance(value, list):
         return [
@@ -344,6 +335,7 @@ def extract_monthly_transit_context(
     target_month: str,
     *,
     snapshot_loader: Callable[..., dict[str, Any]] = calc_global_transit_snapshot,
+    station_loader: Callable[[int, int], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     year, month = validate_target_month(target_month)
     snapshots = _daily_snapshots(year, month, snapshot_loader)
@@ -377,6 +369,17 @@ def extract_monthly_transit_context(
         [event for event in events if event["aspect"] in FLOW_ASPECTS and event["orb"] <= 1.25]
     )
     daily_snapshots = [_snapshot_for_yaml(snapshot) for snapshot in snapshots]
+    # Do not mix live ephemeris events with a custom/fixture snapshot source.
+    if station_loader is None and snapshot_loader is calc_global_transit_snapshot:
+        station_loader = calc_monthly_station_events
+    station_events = station_loader(year, month) if station_loader else []
+    motion_data = {
+        "retrograde": "calculated_flags_only; missing_is_unknown",
+        "stations": "calculated" if station_loader else "unavailable",
+        "station_planets": ["Mercury", "Venus", "Mars"],
+        "timezone": "Asia/Tokyo",
+        "snapshot_time": "12:00",
+    }
 
     return {
         "target_month": target_month,
@@ -400,8 +403,11 @@ def extract_monthly_transit_context(
             inner_review=inner_review,
         ),
         "snapshot_count": len(snapshots),
+        "station_events": station_events,
+        "motion_data": motion_data,
         "zodiac_context": build_zodiac_context(
-            {"target_month": target_month, "major_aspects": major, "daily_snapshots": daily_snapshots}
+            {"target_month": target_month, "major_aspects": major, "daily_snapshots": daily_snapshots,
+             "station_events": station_events}
         ),
     }
 
@@ -434,6 +440,8 @@ def build_note_article_yaml(result: dict[str, Any]) -> str:
                 "caution_dates": context.get("caution_dates"),
                 "movement_dates": context.get("movement_dates"),
                 "daily_snapshots": context.get("daily_snapshots"),
+                "station_events": context.get("station_events"),
+                "motion_data": context.get("motion_data"),
                 "zodiac_context": context.get("zodiac_context"),
             }
         }
@@ -441,7 +449,7 @@ def build_note_article_yaml(result: dict[str, Any]) -> str:
     payload = _prune_empty(
         {
             "version": "note-article-yaml-v1",
-            "purpose": "Claudeでnote記事を作成・加筆するための計算済み占術データ",
+            "purpose": "Claude・CodexなどのAIでnote記事を作成・加筆するための計算済み占術データと執筆基準",
             "note_article": {
                 "target_month": result.get("target_month"),
                 "article_type": result.get("article_type"),
@@ -460,6 +468,8 @@ def build_note_article_yaml(result: dict[str, Any]) -> str:
                 "do_not_recalculate": True,
                 "missing_sections_mean_not_available": True,
                 "zodiac_writing_rule": ZODIAC_WRITING_RULE,
+                "zodiac_reading_guide": ZODIAC_READING_GUIDE,
+                "zodiac_handoff_request": ZODIAC_HANDOFF_REQUEST,
             },
         }
     )
@@ -516,6 +526,24 @@ Python判定の中心テーマ:
 中心テーマの根拠:
 {theme_evidence}
 """
+
+
+def _zodiac_for_prompt(context: dict[str, Any]) -> str:
+    zodiac = context.get("zodiac_context") or {}
+    if not zodiac:
+        return "星座別の計算済みデータがありません。星座別の配置・ハウス・逆行状態を推測して補わないでください。"
+    # Keep the same brief and facts in the API request and the portable YAML.
+    payload = {
+        "writing_instruction": {
+            "zodiac_writing_rule": ZODIAC_WRITING_RULE,
+            "zodiac_reading_guide": ZODIAC_READING_GUIDE,
+        },
+        "motion_data": context.get("motion_data"),
+        "zodiac_context": zodiac,
+    }
+    return "12星座別の計算済み根拠と執筆基準:\n" + yaml.safe_dump(
+        payload, allow_unicode=True, sort_keys=False, width=120
+    )
 
 
 def _vedic_gochara_for_prompt(vedic_context: dict[str, Any] | None) -> str:
@@ -641,11 +669,11 @@ article_body には、指定された親タイプ × サブタイプの短いMar
 - article_body を長文記事にしない。各組み合わせは「根拠2個まで」と「今月の読み2〜3文」まで。
 """
     zodiac_instruction = (
-        """zodiac_fortunes には牡羊座から魚座まで12星座を順番に、各80〜140字で必ず含める。
-12星座別運勢では出生図データを使わないため、主役は「その月、その星座に効くトランジット」としてください。
-外惑星（木星・土星・天王星・海王星・冥王星）のアスペクトを主役候補とし、最も影響の大きいもの1つを軸にしてください。
-内惑星（月・水星・金星）の動きは前振り・例外として従属させてください。
-日付を均等に並べず、主役トランジットの日を軸に、他の日付は前振り・余波・例外として配置してください。"""
+        """zodiac_fortunes には牡羊座から魚座まで12星座を順番に、各500〜750字を目安に含める。
+星座名を独立した行に置き、その下に短い段落で本文を書く。noteへ貼る本文に # や ** の記号は使わない。
+zodiac_reading_guide に従い、主役の配置から生活場面・迷い・具体的な行動までつなげて書く。
+共通の全体の流れは article_body にまとめ、各星座の本文で繰り返さない。article_body は800字以内にする。
+星座別データがない場合は zodiac_fortunes を空文字にし、計算済みデータの不足を article_body で伝える。"""
         if article_type == "zodiac_fortunes"
         else "zodiac_fortunes は空文字にする。"
     )
@@ -655,6 +683,7 @@ article_body には、指定された親タイプ × サブタイプの短いMar
 任意テーマ: {custom_line}
 
 {_context_for_prompt(context)}
+{_zodiac_for_prompt(context) if article_type == "zodiac_fortunes" else ""}
 {_vedic_gochara_for_prompt(vedic_context)}
 {type_fortune_instruction}
 
@@ -925,7 +954,7 @@ def generate_note_article(
 
     response = client.messages.create(
         model=model,
-        max_tokens=7000 if article_type == "zodiac_fortunes" else 5000,
+        max_tokens=14000 if article_type == "zodiac_fortunes" else 5000,
         temperature=0.65,
         system=_load_system_prompt(),
         messages=[

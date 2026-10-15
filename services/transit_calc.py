@@ -169,7 +169,8 @@ def calc_global_transit_snapshot(
     return {
         "transit_date": transit_date,
         "today_planets": [
-            {"name": p["name"], "sign": p["sign"], "degree": round(p["degree"], 2)}
+            {"name": p["name"], "sign": p["sign"], "degree": round(p["degree"], 2),
+             "retrograde": p["retrograde"]}
             for p in today_planets if p["name"] in TRANSIT_BODIES
         ],
         "aspects": aspects,

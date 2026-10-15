@@ -2,7 +2,8 @@
 
 入力: transits dict（target_month, major_aspects, daily_snapshots を含む）
 出力: {"Aries": {...}, ...} を transits["zodiac_context"] に入れる
-天体計算は行わない。daily_snapshots の sign / degree だけを使う。
+天体計算は行わない。サイン・計算済み逆行状態・計算済み留イベントを使う。
+丸めた度数しかない古いデータでは逆行・留を推測しない。
 """
 from datetime import date, timedelta
 
@@ -24,45 +25,23 @@ def house_from(sign_idx: int, planet_sign: str) -> int:
     return (SIGNS.index(planet_sign) - sign_idx) % 12 + 1
 
 
-def lon(p: dict) -> float:
-    return SIGNS.index(p["sign"]) * 30 + p["degree"]
-
-
 def _snap_index(snapshots):
     return {s["date"]: {p["name"]: p for p in s["planet_positions"]} for s in snapshots}
 
 
-STATION_PLANETS = {"Mercury", "Venus", "Mars"}  # 留の日付を出すのはこの3つだけ
-EPS = 0.02       # 小数2桁データの丸め誤差。これ未満の変化は「動いていない」とみなす
-WINDOW = 3       # 逆行判定は前後3日の度数差で見る
-WINDOW_SLOW = 7  # 木星より遠い天体は1日の移動が丸めに埋もれるため前後7日で見る
-SLOW = {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"}
-
-
-def motion_events(snapshots):
-    """逆行状態・留・サイン移動を判定する。
-
-    - 逆行: 前後WINDOW日（外惑星はWINDOW_SLOW日）の黄経差で判定（月初・月末は片側のみ）。差がEPS未満なら None（留付近）
-    - 留: 水星・金星・火星のみ。前日比がEPSを超える日の向きが切り替わった日
-      （外惑星は1日の移動が小数2桁の丸めに埋もれ、留の日付が数日ぶれるため出さない）
-    - サイン移動: 月以外
-    """
+def motion_events(snapshots, station_events=()):
+    """Use calculated motion; infer only sampled sign changes (not exact ingress times)."""
     idx = _snap_index(snapshots)
     dates = sorted(idx)
     retro = {}
-    for j, d in enumerate(dates):
-        for name in idx[d]:
-            w = WINDOW_SLOW if name in SLOW else WINDOW
-            a, b = dates[max(0, j - w)], dates[min(len(dates) - 1, j + w)]
-            if name in NO_RETRO or name not in idx[a] or name not in idx[b]:
-                continue
-            diff = (lon(idx[b][name]) - lon(idx[a][name]) + 180) % 360 - 180
-            retro[(d, name)] = None if abs(diff) < EPS else diff < 0
+    for d in dates:
+        for name, position in idx[d].items():
+            value = position.get("retrograde")
+            retro[(d, name)] = False if name in NO_RETRO else value if isinstance(value, bool) else None
 
-    stations, ingresses, prev_dir = [], [], {}
+    ingresses = []
     for d0, d1 in zip(dates, dates[1:]):
         if date.fromisoformat(d1) - date.fromisoformat(d0) != timedelta(days=1):
-            prev_dir.clear()
             continue
         for name, p1 in idx[d1].items():
             p0 = idx[d0].get(name)
@@ -70,18 +49,7 @@ def motion_events(snapshots):
                 continue
             if p0["sign"] != p1["sign"] and name != "Moon":
                 ingresses.append({"planet": name, "date": d1, "from": p0["sign"], "to": p1["sign"]})
-            if name not in STATION_PLANETS:
-                continue
-            diff = (lon(p1) - lon(p0) + 180) % 360 - 180
-            if abs(diff) < EPS:
-                continue
-            is_r = diff < 0
-            if name in prev_dir and prev_dir[name] != is_r:
-                stations.append({"planet": name, "date": d0,
-                                 "turn": "retrograde" if is_r else "direct",
-                                 "sign": p0["sign"]})
-            prev_dir[name] = is_r
-    return retro, stations, ingresses
+    return retro, list(station_events), ingresses
 
 
 def build_zodiac_context(transits: dict, max_aspects: int = 12) -> dict:
@@ -91,7 +59,7 @@ def build_zodiac_context(transits: dict, max_aspects: int = 12) -> dict:
     dates = sorted(idx)
     if not dates or any(not set(RULER) <= set(idx[d]) for d in (dates[0], dates[-1])):
         return {}
-    retro, stations, ingresses = motion_events(snaps)
+    retro, stations, ingresses = motion_events(snaps, transits.get("station_events") or [])
     first, last = dates[0], dates[-1]
 
     # アスペクトの成立日のサインを daily_snapshots から引く
@@ -108,7 +76,7 @@ def build_zodiac_context(transits: dict, max_aspects: int = 12) -> dict:
         # 月初・月末の天体配置（ハウス）
         def placements(d):
             return {n: {"sign": p["sign"], "house": house_from(i, p["sign"]),
-                        "retrograde": retro.get((d, n), False)}
+                        "retrograde": retro.get((d, n))}
                     for n, p in idx[d].items() if n != "Moon"}
 
         asp_list = []
@@ -131,15 +99,17 @@ def build_zodiac_context(transits: dict, max_aspects: int = 12) -> dict:
         rp_first, rp_last = idx[first][ruler], idx[last][ruler]
         ruler_info = {
             "planet": ruler,
-            "month_start": {"sign": rp_first["sign"], "house": house_from(i, rp_first["sign"])},
+            "month_start": {"sign": rp_first["sign"], "house": house_from(i, rp_first["sign"]),
+                            "retrograde": retro.get((first, ruler))},
             "month_end": {"sign": rp_last["sign"], "house": house_from(i, rp_last["sign"]),
-                          "retrograde": retro.get((last, ruler), False)},
+                          "retrograde": retro.get((last, ruler))},
             "stations": [s for s in stations if s["planet"] == ruler],
         }
         if i in TRAD_RULER:
             t = TRAD_RULER[i]
             ruler_info["traditional"] = {"planet": t, "sign": idx[last][t]["sign"],
-                                         "house": house_from(i, idx[last][t]["sign"])}
+                                         "house": house_from(i, idx[last][t]["sign"]),
+                                         "retrograde": retro.get((last, t))}
 
         ctx[key] = {
             "sign_ja": SIGN_JA[i],

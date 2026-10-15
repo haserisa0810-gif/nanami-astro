@@ -113,7 +113,7 @@
 
       <section class="card">
         <h2>Pythonで抽出した根拠</h2>
-        <p class="muted">{{ result.transit_context.snapshot_count }}日分を確認。Claudeには以下の抽出結果だけを渡しています。</p>
+        <p class="muted">{{ result.transit_context.snapshot_count }}日分を確認。12星座別運勢では、星座ごとの配置と書き分け方も生成に使います。</p>
         <div class="transit-grid">
           <div class="transit-box">
             <strong>タイトなアスペクト</strong>
@@ -155,7 +155,7 @@
           <div class="output-head">
             <div>
               <h2>YAMLコピー</h2>
-              <p class="muted">記事本文とは別枠です。Claudeへ貼り付ける計算済みデータだけをコピーできます。</p>
+              <p class="muted">Claude・Codexへ渡す計算済みデータと執筆基準です。「writing_instruction に従い、星座ごとの読みを深めて書いて」と添えて渡してください。</p>
             </div>
             <div class="copy-actions"><span class="copy-feedback"></span><button class="secondary copy-btn" type="button" data-copy-target="yaml-preview">YAMLをコピー</button></div>
           </div>

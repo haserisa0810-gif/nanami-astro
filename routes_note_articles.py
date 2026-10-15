@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -15,6 +17,7 @@ from services.note_article_service import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
 
 
@@ -83,7 +86,11 @@ def note_articles_generate(
     except NoteArticleError as exc:
         error = str(exc)
     except Exception:
-        error = "note記事生成中にエラーが発生しました。入力とClaude API設定を確認してください。"
+        logger.exception(
+            "note article generation failed (target_month=%s, article_type=%s, model_key=%s)",
+            target_month, article_type, model_key,
+        )
+        error = "note記事の生成に失敗しました。再度お試しください。続く場合は、対象月・モデル・発生時刻を管理者へお知らせください。"
 
     return templates.TemplateResponse(
         request=request,
