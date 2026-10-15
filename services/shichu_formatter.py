@@ -216,4 +216,12 @@ def render_shichu_summary_html(data: dict[str, Any]) -> str:
             parts.append("神殺：" + html.escape("・".join(labels)))
     if not parts:
         return ""
-    return "<div class=\"reading-text\">" + "<br>".join(parts) + "</div>"
+    from services.shichu_annual_reading import build_annual_themes
+    annual_blocks = []
+    for theme in build_annual_themes(_dict(data.get("raw"))):
+        lines = [*theme["evidence"], *theme["reasons"]]
+        annual_blocks.append(
+            '<details class="shichu-annual"><summary>' + html.escape(theme["label"] + "：" + theme["summary"]) +
+            '</summary><ul>' + ''.join('<li>' + html.escape(line) + '</li>' for line in lines) + '</ul></details>'
+        )
+    return "<div class=\"reading-text\">" + "<br>".join(parts) + "</div>" + ''.join(annual_blocks)

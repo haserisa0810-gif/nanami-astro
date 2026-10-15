@@ -188,6 +188,21 @@ def detect_interactions(
     return items
 
 
+def detect_three_punishments(branches: Iterable[NamedSymbol], *, hour_known: bool = True) -> list[dict]:
+    """三支が揃う刑を、成立に使った三つの柱を保持して返す。"""
+    entries = _normalize(branches)
+    input_order = {pillar: i for i, (pillar, _) in enumerate(entries)}
+    return [
+        _interaction(
+            rule_id="branch_three_punishments_v1", type_="三刑", category="branch",
+            entries=group, input_order=input_order, hour_known=hour_known,
+            tags=["friction", "self_undermining"], detail={"complete": True},
+        )
+        for group in combinations(entries, 3)
+        if frozenset(symbol for _, symbol in group) in _PUNISHMENT_GROUPS
+    ]
+
+
 def _shinsatsu_item(
     name: str, rule_id: str, basis: str, matches: Sequence[NamedSymbol], *, hour_known: bool, tags: list[str],
 ) -> dict:

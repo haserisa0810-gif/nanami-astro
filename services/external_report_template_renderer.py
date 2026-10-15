@@ -487,6 +487,11 @@ def chapter_specs(plan: str, options: dict[str, bool] | None = None) -> list[dic
 def build_chapter_json_prompt(order: Any, *, plan: str, handoff_yaml: str, report_options: dict[str, bool]) -> str:
     specs = chapter_specs(plan, report_options)
     specs_text = "\n".join([f"- {s['num']} {s['title']}" for s in specs])
+    shichu_year_rules = ""
+    if any(s["title"] == "今年・来年の運勢" for s in specs):
+        shichu_year_rules = (TEMPLATE_DIR.parent / "prompts" / "shichu_full_depth.txt").read_text(encoding="utf-8").replace(
+            "{shichu_annual_reading}", "入力YAMLの structure_summary.shichusuimei.normalized_data.timing と annual_fortune を参照。"
+        )
     premium_integration_rules = ""
     if plan == "premium":
         premium_integration_rules = """
@@ -638,6 +643,8 @@ HTML全体・CSS・ホロスコープ図・命式表は出力しません。
 - トランジットは「主役 → 今どこが刺激されているか → だから何が起きやすいか」の順で読む
 
 {premium_integration_rules}
+
+{shichu_year_rules}
 
 【今回出力する章】
 {specs_text}

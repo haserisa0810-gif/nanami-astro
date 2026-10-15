@@ -558,6 +558,9 @@ def build_option_instruction(plan: str, options: dict[str, bool]) -> str:
         lines.append("  - transitデータがYAMLにある場合は時期読みの根拠として使ってください。")
     else:
         lines.append("  - トランジット時期読みは入れないでください。現在時期の断定的予測も避けてください。")
+    if year:
+        lines.append("  - 四柱推命の年運は structure_summary.shichusuimei.normalized_data.timing.ryunen.items と annual_fortune を使い、今年・来年それぞれの干支、通変星、十二運、命式との合冲刑害破・伏吟反吟、その年の current_daiun を根拠に掘り下げてください。出生の傾向、大運の背景、流年の刺激、相談に即した行動案を区別してください。")
+        lines.append("  - 年運の区切りは立春（starts_at / ends_at）。daiun_changes_in_year が true なら年内の大運切替前後を分け、初回大運を現在とみなさないでください。合化・吉凶の断定や未検出の作用の補完は禁止。出生時刻不明の provisional な根拠と簡易起運の不確かさを残してください。")
     return "\n".join(lines)
 
 

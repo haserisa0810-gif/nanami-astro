@@ -923,9 +923,15 @@ def _pillar_dict(kanshi: str) -> dict[str, Any]:
     }
 
 
+def _hour_is_known(payload: dict[str, Any]) -> bool:
+    if "birth_time" in payload:
+        return payload["birth_time"] is not None and str(payload["birth_time"]).strip() not in ("", "不明")
+    return payload.get("hour") not in (None, "", "不明")
+
+
 def _build_unknowns(payload: dict[str, Any], *, day_change_at_23: bool) -> list[str]:
     unknowns: list[str] = []
-    if payload.get("hour") in (None, "", "不明"):
+    if not _hour_is_known(payload):
         unknowns.append("出生時刻が未入力のため 12:00 を仮置きして計算")
     if payload.get("minute") in (None, "", "不明"):
         unknowns.append("出生分が未入力のため 00 分として計算")
@@ -1034,7 +1040,7 @@ def calc_shichusuimei_from_payload(
     """
     raw_hour = payload.get("hour")
     raw_minute = payload.get("minute", 0)
-    hour_known = raw_hour not in (None, "", "不明")
+    hour_known = _hour_is_known(payload)
     hour = 12 if not hour_known else int(raw_hour)
     minute = 0 if raw_minute in (None, "", "不明") else int(raw_minute)
     dt = datetime(
@@ -1091,7 +1097,7 @@ def calc_shichusuimei_from_payload(
         "rules_version": "v1",
         "items": shinsatsu_items,
     }
-    from services.shichu_timing import build_timing
+    from services.shichu_timing import annual_fortune_from_timing, build_timing
 
     effective_target_date = target_date or datetime.now(ZoneInfo(tz_name)).date()
     timing = build_timing(
@@ -1102,6 +1108,7 @@ def calc_shichusuimei_from_payload(
         tz_name=tz_name,
         hour_known=hour_known,
     )
+    annual_fortune = annual_fortune_from_timing(timing)
     from services.shichu_structure import build_structure_analysis
 
     birth_local = dt.replace(tzinfo=ZoneInfo(tz_name))
@@ -1135,6 +1142,7 @@ def calc_shichusuimei_from_payload(
         "interactions": interactions,
         "shinsatsu": shinsatsu,
         "timing": timing,
+        "annual_fortune": annual_fortune,
     }
 
     structure_report = _build_structure_report(
@@ -1225,6 +1233,7 @@ def calc_shichusuimei_from_payload(
             "twelve_fortune": tf,
             "strength": strength,
             "daiun": normalized_data["daiun"],
+            "annual_fortune": annual_fortune,
             "hidden_stems": hidden_all,
             "main_hidden_stems": hidden_main,
             "kubo": kubo,

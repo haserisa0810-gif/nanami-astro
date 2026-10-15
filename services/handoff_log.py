@@ -171,6 +171,8 @@ def _extract_shichu_summary(ss: Any) -> dict[str, Any]:
     features = raw.get("features") if isinstance(raw.get("features"), dict) else {}
     five = features.get("five_elements") if isinstance(features.get("five_elements"), dict) else {}
     ten = features.get("ten_gods") if isinstance(features.get("ten_gods"), dict) else {}
+    normalized = raw.get("normalized_data") or {}
+    timing = normalized.get("timing") or raw.get("timing") or {}
     day_master = raw.get("day_master") or raw.get("day_stem") or (raw.get("normalized_data") or {}).get("day_master") or ""
 
     status = "ok" if (day_master or pillars or five or ten) else "partial"
@@ -182,6 +184,8 @@ def _extract_shichu_summary(ss: Any) -> dict[str, Any]:
         "pillars": pillars,
         "has_five_elements": bool(five),
         "has_ten_gods": bool(ten),
+        "timing": timing,
+        "annual_fortune": normalized.get("annual_fortune") or features.get("annual_fortune") or {},
     }
 
 

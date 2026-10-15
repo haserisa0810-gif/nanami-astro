@@ -1108,6 +1108,38 @@
     }
     return lines.join('\n').trim()||'ホロスコープ結果はありません。';
   }
+  function shichuTimingEntries(src){
+    var timing=((src.normalized_data||{}).timing)||src.timing||{};
+    var labels={year:'年柱',month:'月柱',day:'日柱',hour:'時柱',daiun:'大運',ryunen:'流年'};
+    var entries=[];
+    var current=timing.current_daiun;
+    if(current) entries.push({title:'基準日の大運',lines:[(timing.target_date||'')+'：'+current.kanshi+'（'+(current.stem_ten_god||'')+'・'+(current.branch_twelve_fortune||'')+'）',String(current.age_from)+'歳頃〜'+String(current.age_to)+'歳頃（簡易起運）']});
+    ((timing.ryunen||{}).items||[]).forEach(function(item){
+      var lines=['年干の通変星：'+(item.stem_ten_god||'-')+' / 十二運：'+(item.branch_twelve_fortune||'-')];
+      if(item.starts_at) lines.push('期間：'+item.starts_at+' 〜 '+item.ends_at+'（終端を含まない）');
+      if(item.reference_date) lines.push('大運の参照日：'+item.reference_date);
+      var d=item.current_daiun;
+      lines.push(d?'参照日時点の大運：'+d.kanshi+'（'+(d.stem_ten_god||'')+'）':'参照日時点の大運：未確定／起運前・計算範囲外');
+      if(item.hidden_stems) lines.push('流年の蔵干：'+item.hidden_stems.map(function(h){return h.stem+'（'+h.ten_god+'）';}).join('・'));
+      ['interactions_natal','interactions_daiun','interactions_combined','special_natal','special_daiun','three_punishments'].forEach(function(key){
+        (item[key]||[]).forEach(function(r){
+          lines.push((r.pillars||[]).map(function(p){return labels[p]||p;}).join('・')+'：'+(r.members||[]).join('・')+' '+(r.type||'')+(r.provisional?' ※時刻未確定':''));
+        });
+      });
+      if(item.kubo) lines.push('日柱基準の空亡に該当（吉凶の断定には使わない）');
+      if(item.daiun_changes_in_year){
+        lines.push('年内に起運・大運切替の目安あり：'+(item.daiun_overlaps||[]).map(function(d){return d.kanshi;}).join(' → '));
+        (item.daiun_overlaps||[]).forEach(function(d){
+          ['interactions_daiun','interactions_combined','special_daiun','three_punishments'].forEach(function(key){
+            (d[key]||[]).forEach(function(r){lines.push(d.kanshi+'の期間：'+(r.pillars||[]).map(function(p){return labels[p]||p;}).join('・')+' '+(r.members||[]).join('・')+' '+r.type+(r.provisional?' ※時刻未確定':''));});
+          });
+        });
+      }
+      if(timing.hour_known===false) lines.push('出生時刻不明：時柱を含む作用と起運の目安は暫定');
+      entries.push({title:item.year+'年 '+item.kanshi+'（立春基準）'+(item.is_current?'・基準日の流年':''),lines:Array.from(new Set(lines))});
+    });
+    return entries;
+  }
   function formatShichuText(obj){
     var src=getShichuSource(obj);
     if(!src) return '四柱推命結果はありません。';
@@ -1150,6 +1182,10 @@
     if(strength.label) lines.push('身強弱: '+strength.label + (strength.score!==undefined&&strength.score!==null&&strength.score!=='' ? '（'+strength.score+'）' : ''));
     if(Array.isArray(kubo)) lines.push('空亡: '+kubo.filter(Boolean).join('・'));
     else if(typeof kubo==='string' && kubo.trim()) lines.push('空亡: '+kubo.trim());
+    shichuTimingEntries(src).forEach(function(entry){
+      lines.push('','【'+entry.title+'】');
+      entry.lines.forEach(function(line){lines.push(line);});
+    });
     return lines.join('\n').trim()||'四柱推命結果はありません。';
   }
   function renderShichuVisual(obj){
@@ -1208,6 +1244,11 @@
     html +=     '</div>';
     html +=   '</div>';
     html += '</div>';
+    shichuTimingEntries(src).forEach(function(entry){
+      html += '<details class="shichu-report-card" open style="padding:18px;margin-top:12px"><summary>'+escapeHtml(entry.title)+'</summary><ul>';
+      entry.lines.forEach(function(line){html += '<li>'+escapeHtml(line)+'</li>';});
+      html += '</ul></details>';
+    });
     root.innerHTML=html;
   }
   function renderEngineInfo(obj){

@@ -112,6 +112,9 @@
             <p><strong>相談者向けの言い方:</strong> {{ t.client_text }}</p>
             <p><strong>占い師向け説明:</strong> {{ t.reader_explanation }}</p>
             {% if t.reasons %}<div><strong>理由</strong><ul>{% for r in t.reasons if r %}<li>{{ r }}</li>{% endfor %}</ul></div>{% endif %}
+            {% if t.evidence %}<details><summary>計算根拠と適用期間</summary><ul>{% for e in t.evidence if e %}<li>{{ e }}</li>{% endfor %}</ul></details>{% endif %}
+            {% if t.questions %}<div><strong>現状確認の質問</strong><ul>{% for q in t.questions %}<li>{{ q }}</li>{% endfor %}</ul></div>{% endif %}
+            {% if t.misread_risk %}<p class="sub">{{ t.misread_note }}</p>{% endif %}
           </article>
           {% endfor %}
         {% else %}<p class="empty">四柱推命データはありません。</p>{% endif %}

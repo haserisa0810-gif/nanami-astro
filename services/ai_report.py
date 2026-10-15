@@ -376,6 +376,9 @@ def _build_structure_summary(astro_data: Any) -> str:
             v = astro_data.get(k)
             if v is not None:
                 picked[k] = v
+        # 単独四柱も統合鑑定と同じ形で全データを引き継ぐ。
+        if astro_data.get("system") == "shichusuimei" or astro_data.get("module") == "shichusuimei":
+            picked["shichusuimei"] = {k: v for k, v in astro_data.items() if k not in {"meta", "_meta"}}
         if derived:
             picked["_derived"] = derived
         if not picked:
@@ -701,8 +704,13 @@ def generate_report(
         "age_system_prompt": prompt_controls["age_system_prompt"],
     }
     # 四柱推命データを明示的に取り出してプロンプトに渡す
-    _shichu_raw = astro_data.get("shichusuimei") or astro_data.get("pillars") or ss_obj.get("shichusuimei") or ss_obj.get("pillars")
+    _shichu_raw = astro_data.get("shichusuimei") or ss_obj.get("shichusuimei")
+    if not _shichu_raw and (astro_data.get("system") == "shichusuimei" or astro_data.get("module") == "shichusuimei"):
+        _shichu_raw = astro_data
     ctx["shichu_data"] = json.dumps(_shichu_raw, ensure_ascii=False) if _shichu_raw else ""
+    if isinstance(_shichu_raw, dict):
+        from services.shichu_annual_reading import build_annual_themes
+        ctx["shichu_annual_reading"] = json.dumps(build_annual_themes(_shichu_raw), ensure_ascii=False)
 
     if must_use_vedic and vedic_focus_summary:
         ctx["user_message"] = (
@@ -720,6 +728,8 @@ def generate_report(
     prompt_prefix = (ctx.get("age_system_prompt", "") + "\n\n" + ctx.get("role_prompt", "")).strip()
 
     def _with_prefix(body: str) -> str:
+        if _shichu_raw:
+            body += "\n\n" + _render_prompt(_read_prompt_file("shichu_full_depth.txt"), ctx)
         return (prompt_prefix + "\n\n" + body).strip() if prompt_prefix else body
 
     single_web_prompt = _with_prefix(_render_prompt(_read_prompt_file(prompt_files["single_web"]), ctx))

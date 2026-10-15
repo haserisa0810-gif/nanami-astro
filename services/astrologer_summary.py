@@ -431,11 +431,12 @@ def _shichu_themes(shichu: dict[str, Any]) -> list[dict[str, Any]]:
             reasons.append("大運は逆行で進み、通常とは逆順でテーマが巡っていく見方を取ります。")
         if start_age_text:
             reasons.append(f"大運の切り替わりはおおよそ {start_age_text} 頃から始まる目安です。")
-        items = _as_list(daiun.get("items"))
-        if items:
-            current = items[0]
-            if isinstance(current, dict) and current.get("kanshi"):
-                reasons.append(f"現在の主な流れは「{current.get('kanshi')}」で、時期による濃淡も読みの補助線になります。")
+        timing = _as_dict(normalized.get("timing") or shichu.get("timing"))
+        current = _as_dict(timing.get("current_daiun"))
+        if current.get("kanshi"):
+            reasons.append(f"現在の主な流れは「{current.get('kanshi')}」（{current.get('stem_ten_god', '')}）で、時期による濃淡も読みの補助線になります。")
+        else:
+            reasons.append("現在の大運は起運前・計算範囲外・データ未取得のため特定できません。初回大運を現在の大運として扱わないでください。")
         themes.append({
             "id": "shichu_timing",
             "label": "運の流れ（四柱推命）",
@@ -446,6 +447,9 @@ def _shichu_themes(shichu: dict[str, Any]) -> list[dict[str, Any]]:
             "evidence": [x for x in [daiun.get("direction"), daiun.get("start_age_text")] if x],
             "misread_risk": False,
         })
+    from services.shichu_annual_reading import build_annual_themes, build_structure_themes
+    themes.extend(build_structure_themes(shichu))
+    themes.extend(build_annual_themes(shichu))
     return themes
 
 
@@ -486,9 +490,9 @@ def _detect_vedic(raw: dict[str, Any], structure_summary: dict[str, Any]) -> dic
 def _detect_shichu(raw: dict[str, Any], structure_summary: dict[str, Any]) -> dict[str, Any]:
     if isinstance(raw.get("shichusuimei"), dict):
         return raw["shichusuimei"]
-    if raw.get("module") == "shichusuimei":
+    if raw.get("module") == "shichusuimei" or raw.get("system") == "shichusuimei":
         return raw
-    return _as_dict(raw.get("shichu") or structure_summary.get("shichu"))
+    return _as_dict(raw.get("shichu") or structure_summary.get("shichusuimei") or structure_summary.get("shichu"))
 
 
 def _western_flags(source: dict[str, Any]) -> list[dict[str, Any]]:
@@ -597,6 +601,10 @@ def _render_theme_block(theme: dict[str, Any]) -> list[str]:
     if evidence:
         lines.append("根拠:")
         lines.extend([f"- {e}" for e in evidence])
+    questions = _as_list(theme.get("questions"))
+    if questions:
+        lines.append("現状確認の質問:")
+        lines.extend(f"- {q}" for q in questions)
     note = str(theme.get("misread_note") or "").strip()
     if theme.get("misread_risk") and note:
         lines.append(f"違和感が出やすい点: {note}")
