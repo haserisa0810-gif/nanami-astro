@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{{ title }} | 通常鑑定</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; background: #f5f3f0; color: #222; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.8; }
+    main { max-width: 640px; margin: 12vh auto 0; padding: clamp(24px, 5vw, 40px); background: #fff; border: 1px solid #e7e2dc; border-radius: 24px; }
+    h1 { margin: 0 0 20px; font-size: clamp(22px, 5vw, 28px); line-height: 1.5; }
+    .message { margin: 12px 0; overflow-wrap: anywhere; }
+    .hint { color: #5f6470; font-size: 14px; }
+    .back { display: inline-block; margin-top: 16px; padding: 12px 20px; border-radius: 12px; background: #222; color: #fff; text-decoration: none; font-weight: 700; }
+    .back:focus-visible { outline: 3px solid #8866cc; outline-offset: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{ title }}</h1>
+    {% for message in messages %}
+    <p class="message">{{ message }}</p>
+    {% endfor %}
+    <p class="hint">入力画面に戻り、内容を確認してから「解析する」を押してください。</p>
+    <a class="back" id="back-to-form" href="/">入力画面に戻る</a>
+  </main>
+  <script>
+    document.getElementById("back-to-form").addEventListener("click", function (event) {
+      // Use browser history to retain the form values when coming from this site.
+      // The normal link remains usable with JavaScript disabled or no history.
+      try {
+        if (window.history.length > 1 && new URL(document.referrer).origin === window.location.origin) {
+          event.preventDefault();
+          window.history.back();
+        }
+      } catch (_) { /* Follow the link if there is no valid referrer. */ }
+    });
+  </script>
+</body>
+</html>

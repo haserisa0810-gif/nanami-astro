@@ -8,8 +8,9 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from routes_shared import templates
+from services.analyze_form_errors import AnalyzeFormRoute
 
-router = APIRouter()
+router = APIRouter(route_class=AnalyzeFormRoute)
 logger = logging.getLogger(__name__)
 
 AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3", "integrated_w_shichu"]
