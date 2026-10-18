@@ -1,6 +1,6 @@
 {#
   スタッフ共通ナビ。どの画面からでも同じ位置・同じ名前で移動できるようにする。
-  active_main_nav: dashboard / analyze / orders / products / admin / settings
+  active_main_nav: dashboard / analyze / orders / products / admin / reader
   active_sub_nav : 各サブメニューのキー
   ログイン判定は表示用（StaffNavMiddleware が cookie から role を入れる）。権限チェックは各ルートで行う。
 #}
@@ -40,7 +40,7 @@
       {% if _nav_role == 'admin' %}
       <a href="/admin/dashboard" class="{% if _main == 'admin' %}active{% endif %}">管理</a>
       {% else %}
-      <a href="/reader/profile" class="{% if _main == 'settings' %}active{% endif %}">設定</a>
+      <a href="/reader/dashboard" class="{% if _main == 'reader' %}active{% endif %}">マイページ</a>
       {% endif %}
       <span class="snav-spacer"></span>
       <a href="/logout" class="snav-logout">ログアウト</a>
@@ -60,6 +60,13 @@
       <a href="/products/social-scenarios" class="{% if _sub == 'products_social' %}active{% endif %}">SNS素材</a>
       <a href="/products/templates" class="{% if _sub == 'products_templates' %}active{% endif %}">テンプレ</a>
       <a href="/products/jobs" class="{% if _sub == 'products_jobs' %}active{% endif %}">ジョブ</a>
+    </nav>
+    {% elif _main == 'reader' %}
+    <nav class="snav-sub" aria-label="マイページメニュー">
+      <a href="/reader/dashboard" class="{% if _sub == 'reader_dashboard' %}active{% endif %}">ダッシュボード</a>
+      <a href="/reader/orders" class="{% if _sub == 'reader_orders' %}active{% endif %}">担当案件</a>
+      <a href="/reader/payouts" class="{% if _sub == 'reader_payouts' %}active{% endif %}">報酬</a>
+      <a href="/reader/profile" class="{% if _sub == 'reader_profile' %}active{% endif %}">プロフィール</a>
     </nav>
     {% elif _main == 'admin' %}
     <nav class="snav-sub" aria-label="管理メニュー">

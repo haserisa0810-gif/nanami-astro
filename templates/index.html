@@ -760,7 +760,7 @@
 
         <div class="row">
           <label>観測事実（任意） <span class="pill">ユーザー申告 / 確認済みの事実だけ</span></label>
-          <textarea name="observations_text" rows="4" placeholder="例）\n睡眠: 5-6h\nストレス時の衝動買い: たまに\nクレカ比率: 高め\n（※解釈ではなく事実だけ）"></textarea>
+          <textarea name="observations_text" rows="4" placeholder="例）&#10;睡眠: 5-6h&#10;ストレス時の衝動買い: たまに&#10;クレカ比率: 高め&#10;（※解釈ではなく事実だけ）"></textarea>
         </div>
 
         <input type="hidden" name="output_style" id="output_style" value="normal">
@@ -924,7 +924,7 @@
           <div style="display:grid; gap:10px;">
             <label class="checkbox-line"><input type="checkbox" name="include_reader" value="true" style="width:auto;" /> 占い師向けメモを生成する</label>
             <label class="checkbox-line"><input type="checkbox" name="include_transit" id="include_transit" value="true" checked style="width:auto;" /> トランジットを鑑定に含める（今日の天体×出生図）</label>
-            <div class="hint" style="margin:4px 0 0;">通常はOFF推奨です。待ち時間とGemini利用量を抑えられます。</div>
+            <div class="hint" style="margin:4px 0 0;">トランジットを含めると、今の時期・これからの流れを具体的に書けます。そのぶん生成に少し時間がかかります。</div>
           </div>
         </div>
 
