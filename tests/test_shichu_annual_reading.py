@@ -49,7 +49,7 @@ def test_future_year_uses_its_own_daiun_and_keeps_switch_contexts():
         {"kanshi": "乙丑", "age_from": 15, "age_to": 25},
         {"kanshi": "丙寅", "age_from": 25, "age_to": 35},
     ]}, target=date(2024, 10, 15))
-    this_year, next_year, _ = result["ryunen"]["items"]
+    this_year, next_year = result["ryunen"]["items"][:2]
     assert result["current_daiun"]["kanshi"] == "乙丑"
     assert this_year["current_daiun"]["kanshi"] == "乙丑"
     assert next_year["current_daiun"]["kanshi"] == "丙寅"
@@ -108,7 +108,8 @@ def test_reader_uses_current_daiun_and_exposes_deep_evidence(chart):
     assert any("格局候補" in e for e in depth["evidence"])
     assert any("保留" in e for e in depth["evidence"])
     annuals = [t for t in themes if t["id"].startswith("shichu_annual_")]
-    assert len(annuals) == 3
+    assert len(annuals) == 10
+    assert annuals[-1]["id"] == "shichu_annual_2035"
     assert all(t["questions"] and t["evidence"] for t in annuals)
     assert "2026年の年運" in render_astrologer_memo(summary)
     assert "現状確認の質問" in render_astrologer_memo(summary)
@@ -142,7 +143,8 @@ def test_structure_summary_and_full_handoff_preserve_annual_data(chart, integrat
     assert ss["shichusuimei"]["normalized_data"]["annual_fortune"]["kanshi"] == "丙午"
     assert ss["shichusuimei"]["structure_report"]["yojin_candidates"]
     log = build_handoff(inputs_view={}, payload_view={}, unknowns=[], structure_summary=ss, reports={}, mode="full")
-    assert len(log["shichu"]["timing"]["ryunen"]["items"]) == 3
+    assert len(log["shichu"]["timing"]["ryunen"]["items"]) == 10
+    assert log["shichu"]["timing"]["ryunen"]["items"][-1]["year"] == 2035
     assert log["shichu"]["annual_fortune"]["effective_year"] == 2026
     # 保存済み構造要約から占い師画面を開いた場合も年運が復元できる。
     assert any(t["id"] == "shichu_annual_2026" for t in build_full_astrologer_summary({}, ss)["shichu"]["themes"])
@@ -157,6 +159,55 @@ def test_reader_template_and_export_include_annual_evidence(chart):
     export = render_shichu_summary_html(extract_shichu_data(chart))
     assert "2026年の年運" in export and "丙午" in export and "立春基準" in export
     assert "2028年の年運" in export
+    assert "2035年の年運" in rendered and "2035年の年運" in export
+
+
+def render_result(raw, structure=None):
+    env = Environment(loader=FileSystemLoader("templates"), autoescape=True)
+    return env.get_template("result.html").render(
+        raw_json=raw, structure_summary_json=structure or {}, inputs_json={}, payload_json={},
+        reader_text="", ai_text="AI本文の確認用", transit_data=None, include_reader=False,
+        handoff_json="", handoff_yaml="", handoff_json_full="", handoff_yaml_full="",
+        handoff_json_delta="", handoff_yaml_delta="", unknowns=[], from_order_code=None,
+    )
+
+
+@pytest.mark.parametrize("integrated", [False, True])
+def test_ten_annual_rows_are_in_the_default_result_panel_without_javascript(chart, integrated):
+    from bs4 import BeautifulSoup
+    raw = {"shichusuimei": chart} if integrated else chart
+    page = BeautifulSoup(render_result(raw), "html.parser")
+    panel = page.select_one("#pg_result.active #shichuAnnualOverview")
+    assert panel is not None
+    assert "四柱推命の年運（10年分）" in panel.get_text()
+    cards = panel.select(".annual-year-card")
+    assert [card["id"] for card in cards] == [f"shichu-year-{y}" for y in range(2026, 2036)]
+    assert "2035年" in cards[-1].select_one("summary").get_text()
+    assert "命式・大運との作用" in cards[-1].get_text()
+    # 本文の表示処理・チャート用JSが失敗しても年運は既にHTML内にある。
+    assert not panel.find("script")
+    assert "丁丑" in cards[0].get_text()
+
+
+def test_saved_shorter_data_is_not_filled_with_invented_years(chart):
+    import copy
+    from bs4 import BeautifulSoup
+    old = copy.deepcopy(chart)
+    old["normalized_data"]["timing"]["ryunen"]["items"] = old["normalized_data"]["timing"]["ryunen"]["items"][:3]
+    page = BeautifulSoup(render_result({}, {"shichusuimei": old}), "html.parser")
+    panel = page.select_one("#shichuAnnualOverview")
+    assert len(panel.select(".annual-year-card")) == 3
+    assert "再解析すると10年分" in panel.get_text()
+    assert "2035年" not in panel.get_text()
+
+
+def test_result_explains_how_to_enable_four_pillars_when_not_selected():
+    from bs4 import BeautifulSoup
+    page = BeautifulSoup(render_result({"system": "western"}), "html.parser")
+    panel = page.select_one("#pg_result.active #shichuAnnualOverview")
+    assert "この解析には四柱推命が含まれていません" in panel.get_text()
+    assert "手動カスタム" in panel.get_text()
+    assert not panel.select(".annual-year-card")
 
 
 @pytest.mark.parametrize("system", ["shichusuimei", "integrated_w_shichu", "integrated3"])
@@ -174,6 +225,7 @@ def test_ai_reader_prompt_receives_full_annual_context(monkeypatch, chart, syste
     assert "年運" in prompt and "立春切替" in prompt
     assert "daiun_changes_in_year" in prompt and "2027" in prompt
     assert "丁丑" in prompt and "現状確認の質問" in prompt
+    assert "shichu_annual_2035" in prompt and "含まれる全年度" in prompt
     assert "{shichu_annual_reading}" not in prompt
 
 

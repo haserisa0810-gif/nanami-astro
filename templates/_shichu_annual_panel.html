@@ -1,0 +1,91 @@
+{# 年運は最初に開く鑑定結果にHTMLとして描画し、チャート用JSに依存させない。 #}
+{% set annual_raw = raw_json if raw_json is mapping else {} %}
+{% set annual_saved = structure_summary_json if structure_summary_json is mapping else {} %}
+{% set annual_source = annual_raw.get('shichusuimei') or (annual_raw if annual_raw.get('system') == 'shichusuimei' or annual_raw.get('module') == 'shichusuimei' else {}) or annual_saved.get('shichusuimei') or {} %}
+{% set annual_normalized = annual_source.get('normalized_data') or {} %}
+{% set annual_timing = annual_normalized.get('timing') or annual_source.get('timing') or {} %}
+{% set annual_items = ((annual_timing.get('ryunen') or {}).get('items') or []) | selectattr('year', 'defined') | list %}
+{% set annual_labels = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '時柱', 'daiun': '大運', 'ryunen': '流年'} %}
+<style>
+  .annual-panel { margin:0 0 28px; border:1px solid #dcd2ee; border-radius:16px; background:#fcfaff; overflow:hidden; }
+  .annual-panel-header { padding:20px 22px; border-bottom:1px solid #e7dff0; }
+  .annual-panel h2 { margin:0 0 6px; font-size:21px; }
+  .annual-panel p { margin:6px 0; }
+  .annual-panel-note { color:#62566d; font-size:13px; }
+  .annual-panel-range { color:#51405e; font-weight:700; }
+  .annual-year-card { background:#fff; border-bottom:1px solid #ebe5f0; }
+  .annual-year-card:last-child { border-bottom:0; }
+  .annual-year-card > summary { padding:13px 22px; cursor:pointer; line-height:1.8; }
+  .annual-year-card > summary:hover { background:#f4eefb; }
+  .annual-year-card > summary:focus-visible { outline:2px solid #765592; outline-offset:-3px; }
+  .annual-year-number { display:inline-block; min-width:80px; font-size:17px; font-weight:700; }
+  .annual-year-kanshi { display:inline-block; margin-right:12px; font-weight:700; }
+  .annual-year-pill { display:inline-block; padding:1px 9px; margin:0 6px 0 0; border-radius:20px; background:#eee5f7; font-size:12px; }
+  .annual-year-meta { display:inline-block; margin-right:10px; color:#62566d; font-size:13px; }
+  .annual-year-body { padding:0 22px 18px; overflow-wrap:break-word; }
+  .annual-year-body h3 { font-size:14px; margin:16px 0 5px; }
+  .annual-year-body ul { margin:6px 0; padding-left:22px; }
+  .annual-year-body li { margin:4px 0; font-size:14px; }
+  .annual-panel-empty { padding:16px 22px; }
+  @media (max-width:600px) {
+    .annual-panel-header, .annual-year-card > summary { padding:14px; }
+    .annual-year-body, .annual-panel-empty { padding:0 14px 14px; }
+    .annual-year-number { min-width:72px; }
+    .annual-year-meta { font-size:12px; }
+  }
+</style>
+<section id="shichuAnnualOverview" class="annual-panel" aria-labelledby="shichuAnnualTitle">
+  <header class="annual-panel-header">
+    <h2 id="shichuAnnualTitle">四柱推命の年運{% if annual_items %}（{{ annual_items | length }}年分）{% else %}（10年分）{% endif %}</h2>
+    {% if annual_items %}
+      <p class="annual-panel-range">{{ annual_items[0].year }}年〜{{ annual_items[-1].year }}年 · 立春基準</p>
+      <p class="annual-panel-note">各年を開くと、通変星・十二運・大運、命式との作用と根拠を確認できます。基準日：{{ annual_timing.get('target_date') or '保存データに記録なし' }}</p>
+      {% set annual_current_daiun = annual_timing.get('current_daiun') or {} %}
+      {% if annual_current_daiun %}<p>現在の大運：<strong>{{ annual_current_daiun.kanshi }}</strong>（{{ annual_current_daiun.stem_ten_god }}・{{ annual_current_daiun.age_from }}歳頃〜）</p>{% endif %}
+      {% if annual_items | length < 10 %}<p class="annual-panel-note">この保存データの年運は{{ annual_items | length }}年分です。再解析すると10年分を確認できます。</p>{% endif %}
+      {% if annual_timing.get('hour_known') == false %}<p class="annual-panel-note">出生時刻不明のため、時柱を含む作用と起運の目安は暫定です。</p>{% endif %}
+    {% endif %}
+  </header>
+  {% if annual_items %}
+    {% for annual in annual_items %}
+      {% set annual_daiun = annual.get('current_daiun') or {} %}
+      <details class="annual-year-card" id="shichu-year-{{ annual.year }}">
+        <summary>
+          <span class="annual-year-number">{{ annual.year }}年</span>
+          <span class="annual-year-kanshi">{{ annual.kanshi }}</span>
+          <span class="annual-year-pill">{{ annual.stem_ten_god or '通変星未取得' }}</span>
+          <span class="annual-year-meta">十二運：{{ annual.branch_twelve_fortune or '未取得' }}</span>
+          {% if annual_daiun %}<span class="annual-year-meta">大運：{{ annual_daiun.kanshi }}</span>{% endif %}
+          {% if annual.get('is_current') %}<span class="annual-year-pill">基準日の流年</span>{% endif %}
+          {% if annual.get('daiun_changes_in_year') %}<span class="annual-year-pill">大運切替の目安あり</span>{% endif %}
+        </summary>
+        <div class="annual-year-body">
+          {% if annual.get('starts_at') %}<p class="annual-panel-note">適用期間：{{ annual.starts_at[:16] | replace('T', ' ') }} 〜 {{ annual.ends_at[:16] | replace('T', ' ') }}{% if annual_timing.get('timezone') == 'Asia/Tokyo' %}（日本時間）{% endif %}。翌年の立春で切り替わります。</p>{% endif %}
+          <p>この年の大運：{% if annual_daiun %}<strong>{{ annual_daiun.kanshi }}</strong>（{{ annual_daiun.stem_ten_god }}）{% else %}起運前・計算範囲外・未取得のため未確定{% endif %}</p>
+          {% if annual.get('reference_date') %}<p class="annual-panel-note">大運の参照日：{{ annual.reference_date }}。起運は簡易換算による目安です。</p>{% endif %}
+          {% if annual.get('hidden_stems') %}<p>流年支の蔵干：{% for hidden in annual.hidden_stems %}{{ hidden.stem }}（{{ hidden.ten_god }}）{% if not loop.last %}・{% endif %}{% endfor %}</p>{% endif %}
+          {% if annual.get('kubo') %}<p>日柱基準の空亡に該当。吉凶の断定には使いません。</p>{% endif %}
+          <h3>命式・大運との作用</h3>
+          {% set annual_relations = (annual.get('interactions_natal') or []) + (annual.get('interactions_daiun') or []) + (annual.get('interactions_combined') or []) + (annual.get('special_natal') or []) + (annual.get('special_daiun') or []) + (annual.get('three_punishments') or []) %}
+          {% if annual_relations %}
+            <ul>{% for relation in annual_relations %}<li>{% for pillar in relation.pillars %}{{ annual_labels.get(pillar, pillar) }}{% if not loop.last %}・{% endif %}{% endfor %}：{{ relation.members | join('・') }} {{ relation.type }}{% if relation.provisional %} ※出生時刻不明のため暫定{% endif %}</li>{% endfor %}</ul>
+          {% else %}<p class="annual-panel-note">この組み合わせで検出された作用はありません。</p>{% endif %}
+          {% if annual.get('daiun_changes_in_year') %}
+            <h3>年内の大運切替前後</h3>
+            {% for overlap in annual.get('daiun_overlaps') or [] %}
+              <p><strong>{{ overlap.kanshi }}</strong>（{{ overlap.age_from }}〜{{ overlap.age_to }}歳頃）</p>
+              {% set overlap_relations = (overlap.get('interactions_daiun') or []) + (overlap.get('interactions_combined') or []) + (overlap.get('special_daiun') or []) + (overlap.get('three_punishments') or []) %}
+              {% if overlap_relations %}<ul>{% for relation in overlap_relations %}<li>{% for pillar in relation.pillars %}{{ annual_labels.get(pillar, pillar) }}{% if not loop.last %}・{% endif %}{% endfor %}：{{ relation.members | join('・') }} {{ relation.type }}{% if relation.provisional %} ※時刻未確定{% endif %}</li>{% endfor %}</ul>{% endif %}
+            {% endfor %}
+          {% endif %}
+          <p class="annual-panel-note">合や三合は合化の成立を意味しません。作用は現状と照らし合わせて読み、出来事を断定しません。</p>
+        </div>
+      </details>
+    {% endfor %}
+  {% else %}
+    <div class="annual-panel-empty">
+      {% if annual_source %}<p>この保存結果には年運データがありません。再解析すると10年分を確認できます。</p>
+      {% else %}<p>この解析には四柱推命が含まれていません。</p><p class="annual-panel-note">入力画面の「手動カスタム」で「四柱推命」または四柱推命を含む統合鑑定を選ぶと、ここに10年分の年運を表示します。</p>{% endif %}
+    </div>
+  {% endif %}
+</section>

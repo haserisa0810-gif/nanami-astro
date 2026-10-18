@@ -86,7 +86,7 @@ def build_timing(
     target_date: date,
     tz_name: str,
     hour_known: bool,
-    n_ryunen: int = 3,
+    n_ryunen: int = 10,
 ) -> dict[str, Any]:
     """大運の深化情報と、基準日から始まる流年を生成する。"""
     tz = ZoneInfo(tz_name)
