@@ -541,75 +541,78 @@ def _upsert_stores_payment(db: Session, parsed: dict[str, Any]) -> None:
     })
 
 
-def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]:
-    _ensure_stores_payment_table(db)
-
+def _fetch_imap_order_messages(*, senders: list[str], limit: int) -> list[bytes]:
     host = os.getenv("STORES_MAIL_IMAP_HOST", "imap.gmail.com")
     port = int(os.getenv("STORES_MAIL_IMAP_PORT", "993"))
     username = (os.getenv("STORES_MAIL_USERNAME") or "").strip()
     password = (os.getenv("STORES_MAIL_PASSWORD") or "").strip()
+    if not username or not password:
+        raise RuntimeError("STORES_MAIL_USERNAME または STORES_MAIL_PASSWORD が未設定です。")
+
+    conn = imaplib.IMAP4_SSL(host, port)
+    try:
+        conn.login(username, password)
+        status, _ = conn.select("INBOX", readonly=True)
+        if status != "OK":
+            raise RuntimeError("IMAP INBOX選択に失敗しました。")
+
+        search_ids: list[bytes] = []
+        for candidate in dict.fromkeys(sender for sender in senders if sender):
+            candidate_status, candidate_data = conn.search(None, 'FROM', f'"{candidate}"')
+            if candidate_status == "OK" and candidate_data and candidate_data[0]:
+                search_ids.extend(candidate_data[0].split())
+        if not search_ids:
+            status, data = conn.search(None, "ALL")
+            if status == "OK" and data and data[0]:
+                search_ids = data[0].split()
+        if status != "OK":
+            raise RuntimeError("IMAP検索に失敗しました。")
+
+        ids = sorted(set(search_ids), key=lambda item: int(item))
+        recent_ids = list(reversed(ids[-limit:]))
+        raw_messages: list[bytes] = []
+        for message_id in recent_ids:
+            fetch_status, payload = conn.fetch(message_id, "(BODY.PEEK[])")
+            if fetch_status != "OK" or not payload or not payload[0]:
+                continue
+            raw_messages.append(payload[0][1])
+        return raw_messages
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+
+def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]:
+    _ensure_stores_payment_table(db)
+
+    backend = (os.getenv("STORES_MAIL_BACKEND") or "imap").strip().lower()
     from_filter = (os.getenv("STORES_MAIL_FROM_FILTER", STORES_FROM_DEFAULT) or "").strip()
     payhip_from_filter = (os.getenv("PAYHIP_MAIL_FROM_FILTER", PAYHIP_FROM_DEFAULT) or "").strip()
-
-    if not username or not password:
-        return {
-            "ok": False,
-            "fetched": 0,
-            "parsed": 0,
-            "upserted": 0,
-            "skipped": 0,
-            "errors": 1,
-            "message": "STORES_MAIL_USERNAME または STORES_MAIL_PASSWORD が未設定です。",
-        }
 
     fetched = 0
     parsed_count = 0
     upserted = 0
     skipped = 0
     errors = 0
-    conn = None
-
     try:
-        conn = imaplib.IMAP4_SSL(host, port)
-        conn.login(username, password)
-        conn.select("INBOX")
+        senders = [from_filter, payhip_from_filter]
+        if backend == "gmail_api":
+            from services.gmail_mail_api import fetch_order_messages
 
-        search_status = "OK"
-        search_ids: list[bytes] = []
-        for candidate in dict.fromkeys([from_filter, payhip_from_filter]):
-            if not candidate:
-                continue
-            candidate_status, candidate_data = conn.search(None, 'FROM', f'"{candidate}"')
-            if candidate_status == "OK" and candidate_data and candidate_data[0]:
-                search_ids.extend(candidate_data[0].split())
+            raw_messages = fetch_order_messages(senders=senders, limit=limit)
+        elif backend == "zoho_api":
+            from services.zoho_mail_api import fetch_order_messages
 
-        if not search_ids:
-            search_status, data = conn.search(None, "ALL")
-            if search_status == "OK" and data and data[0]:
-                search_ids = data[0].split()
+            raw_messages = fetch_order_messages(senders=senders, limit=limit)
+        elif backend == "imap":
+            raw_messages = _fetch_imap_order_messages(senders=senders, limit=limit)
+        else:
+            raise RuntimeError(f"Unsupported STORES_MAIL_BACKEND: {backend}")
 
-        if search_status != "OK":
-            return {
-                "ok": False,
-                "fetched": 0,
-                "parsed": 0,
-                "upserted": 0,
-                "skipped": 0,
-                "errors": 1,
-                "message": "IMAP検索に失敗しました。",
-            }
-
-        ids = sorted(set(search_ids), key=lambda item: int(item))
-        recent_ids = list(reversed(ids[-limit:]))
-
-        for msg_id in recent_ids:
-            status, payload = conn.fetch(msg_id, "(RFC822)")
-            if status != "OK" or not payload or not payload[0]:
-                errors += 1
-                continue
-
+        for raw_email in raw_messages:
             fetched += 1
-            raw_email = payload[0][1]
             msg = email.message_from_bytes(raw_email)
 
             from_value = _decode_header_value(msg.get("From"))
@@ -668,12 +671,6 @@ def sync_stores_order_emails(db: Session, *, limit: int = 100) -> dict[str, Any]
             "errors": errors + 1,
             "message": str(e),
         }
-    finally:
-        if conn is not None:
-            try:
-                conn.logout()
-            except Exception:
-                pass
 
 
 def _get_stores_payment_row(db: Session, order_no: str):
