@@ -168,7 +168,7 @@ def test_generate_social_flow_with_fake_client(monkeypatch):
         client_factory=_FakeClient,
     )
 
-    assert result["model_label"] == "Claude Sonnet 5 相当（標準）"
+    assert result["model_label"] == "Claude Sonnet 5.5（標準）"
     assert result["generated"]["note_draft"]["social_theme"]
     assert "future_verification" in result["yaml_preview"]
     assert "社会の流れ" in result["yaml_preview"]

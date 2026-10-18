@@ -41,9 +41,13 @@ FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
 FLASH_MODEL = "gemini-2.5-flash"
 ALLOWED_MODEL_NAMES = {"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"}
 
-CLAUDE_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-CLAUDE_SONNET_MODEL = "claude-sonnet-4-6"
-CLAUDE_ALLOWED_MODEL_NAMES = {"claude-haiku-4-5-20251001", "claude-4-5-haiku-latest", "claude-sonnet-4-5", "claude-sonnet-4-6"}
+# 鑑定文は顧客にそのまま届く日本語の文章なので Sonnet を標準にし、Haiku は軽量版として選べるようにする。
+CLAUDE_SONNET_MODEL = "claude-sonnet-5-5"
+CLAUDE_HAIKU_MODEL = "claude-haiku-5-5"
+CLAUDE_DEFAULT_MODEL = CLAUDE_SONNET_MODEL
+CLAUDE_ALLOWED_MODEL_NAMES = {CLAUDE_SONNET_MODEL, CLAUDE_HAIKU_MODEL}
+# 新世代モデルは思考（thinking）が常にON。鑑定文は深い推論より文章量が中心なので medium に抑える。
+CLAUDE_EFFORT = "medium"
 
 _PROMPTS_DIR = (Path(__file__).resolve().parents[1] / "prompts").resolve()
 logger = logging.getLogger(__name__)
@@ -447,9 +451,9 @@ def _normalize_requested_model(value: Any) -> str | None:
 def _normalize_requested_claude_model(value: Any) -> str | None:
     raw = str(value or "").strip().lower()
     aliases = {
-        "haiku": CLAUDE_DEFAULT_MODEL,
-        "sonnet": "claude-sonnet-4-6",
-        "pro": "claude-sonnet-4-6",
+        "haiku": CLAUDE_HAIKU_MODEL,
+        "sonnet": CLAUDE_SONNET_MODEL,
+        "pro": CLAUDE_SONNET_MODEL,
     }
     if not raw or raw == "auto":
         return None
@@ -604,13 +608,21 @@ _CLAUDE_SYSTEM_PROMPT = (
 
 
 def _generate_once_claude(*, client: Any, model_name: str, prompt: str, max_tokens: int, system_prompt: str | None = None) -> str:
-    resp = client.messages.create(
+    # 新世代モデルは temperature を受け付けない（400）。文体のばらつきはプロンプトで調整する。
+    # 思考分も max_tokens に含まれ出力が長くなるため、タイムアウトしにくいストリーミングで受け取る。
+    with client.messages.stream(
         model=model_name,
         max_tokens=max_tokens,
-        temperature=0.75,
+        output_config={"effort": CLAUDE_EFFORT},
         system=(system_prompt or _CLAUDE_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": prompt}],
-    )
+    ) as stream:
+        resp = stream.get_final_message()
+    stop_reason = getattr(resp, "stop_reason", None)
+    if stop_reason == "refusal":
+        raise RuntimeError("claude_refusal")
+    if stop_reason == "max_tokens":
+        logger.warning("claude_output_truncated model=%s max_tokens=%s", model_name, max_tokens)
     buf: list[str] = []
     for block in getattr(resp, "content", []) or []:
         if getattr(block, "type", "") == "text":
@@ -811,7 +823,8 @@ reliability: provisional または low の項目は確定事項として断定�
             return _public_ai_unavailable("anthropic_client_init_failed", e)
 
         model_name, model_source = _resolve_claude_model_name(meta2, astrology_system)
-        max_tokens = 3000 if ("line" in rt or output_style == "line") else 16000
+        # 思考分を含むため旧モデル時代（LINE 3000 / Web 16000）より余裕を持たせる
+        max_tokens = 8000 if ("line" in rt or output_style == "line") else 32000
         model_candidates = [model_name]
         provider_name = "claude"
         dynamic_system_prompt = (_CLAUDE_SYSTEM_PROMPT + "\n\n" + ctx.get("age_system_prompt", "") + "\n\n" + ctx.get("role_prompt", "")).strip()

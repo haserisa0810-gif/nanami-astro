@@ -55,12 +55,12 @@ OUTPUT_TYPES = {
 
 CLAUDE_MODELS = {
     "sonnet": {
-        "label": "Claude Sonnet 5 相当（標準）",
-        "model": os.getenv("CLAUDE_SONNET_5_MODEL", "claude-sonnet-4-6"),
+        "label": "Claude Sonnet 5.5（標準）",
+        "model": os.getenv("CLAUDE_SONNET_5_MODEL", "claude-sonnet-5-5"),
     },
     "opus": {
-        "label": "Claude Opus 4.8（高品質）",
-        "model": os.getenv("CLAUDE_OPUS_4_8_MODEL", "claude-opus-4-8"),
+        "label": "Claude Opus 5.5（高品質）",
+        "model": os.getenv("CLAUDE_OPUS_4_8_MODEL", "claude-opus-5-5"),
     },
 }
 
@@ -477,8 +477,9 @@ def generate_social_flow(
     model = CLAUDE_MODELS[model_key]["model"]
     response = client.messages.create(
         model=model,
-        max_tokens=4500,
-        temperature=0.55,
+        # 新世代モデルは temperature 非対応。思考分も max_tokens に含まれるため余裕を持たせる。
+        max_tokens=12000,
+        output_config={"effort": "medium"},
         system="あなたは七海先生の運用チーム向けに、マンデン占星術ベースの下書きを作る編集アシスタントです。",
         messages=[{"role": "user", "content": prompt}],
     )

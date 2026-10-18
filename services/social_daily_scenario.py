@@ -21,7 +21,8 @@ except Exception:  # pragma: no cover
 from services.transit_calc import calc_global_transit_snapshot
 
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+# SNS素材は量産する短文なので軽量な Haiku で十分。
+DEFAULT_MODEL = "claude-haiku-5-5"
 DEFAULT_OUTPUT_DIR = Path("outputs/social_scenarios")
 DEFAULT_VOICEVOX_URL = "http://127.0.0.1:50021"
 DEFAULT_VOICEVOX_SPEAKER = 3
@@ -192,8 +193,9 @@ def generate_scenario(aspects: list[dict[str, Any]]) -> str:
     client = Anthropic(api_key=api_key)
     response = client.messages.create(
         model=os.getenv("SOCIAL_SCENARIO_CLAUDE_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
-        max_tokens=900,
-        temperature=0.75,
+        # 新世代モデルは temperature 非対応。思考分も max_tokens に含まれるため余裕を持たせる。
+        max_tokens=4000,
+        output_config={"effort": "low"},
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": _build_user_prompt(normalized)}],
     )

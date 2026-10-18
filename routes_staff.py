@@ -925,7 +925,7 @@ def staff_generate_ai_report(
     order.report_mode = plan
     order.report_generation_plan = plan
     order.report_generation_status = "generating"
-    order.report_generation_model = os.getenv("EXTERNAL_REPORT_CLAUDE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6"
+    order.report_generation_model = os.getenv("EXTERNAL_REPORT_CLAUDE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-5-5"
     order.report_generated_at = datetime.utcnow()
     order.report_last_error = None
     db.commit()

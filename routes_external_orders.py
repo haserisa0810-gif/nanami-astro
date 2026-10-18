@@ -448,7 +448,7 @@ async def external_order_create(
         status="draft",
         report_generation_plan=report_plan if report_plan in REPORT_PLAN_OPTIONS else "standard",
         report_generation_status="not_started",
-        report_generation_model="claude-sonnet-4-6",
+        report_generation_model="claude-sonnet-5-5",
     )
     _apply_report_options(order, _report_options_from_form(order.report_generation_plan or "standard", option_asteroids, option_transit, option_special_points, option_year_forecast))
     db.add(order)
@@ -678,7 +678,7 @@ def external_order_generate_report(
         order.report_generation_plan = plan
         order.report_generation_status = "generating"
         order.report_generated_at = datetime.utcnow()
-        order.report_generation_model = os.getenv("EXTERNAL_REPORT_CLAUDE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6"
+        order.report_generation_model = os.getenv("EXTERNAL_REPORT_CLAUDE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-5-5"
         order.last_error = None
         _apply_report_options(order, options)
         db.commit()

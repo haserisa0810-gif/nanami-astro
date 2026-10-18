@@ -912,10 +912,10 @@
               <option value="gemini">Gemini</option>
             </select>
             <select name="ai_model" id="ai_model" style="width:auto;">
-              <option value="haiku" selected>Claude Haiku（軽量・高速）</option>
-              <option value="sonnet">Claude Sonnet（高品質）</option>
+              <option value="sonnet" selected>Claude Sonnet 5.5（標準・高品質）</option>
+              <option value="haiku">Claude Haiku 5.5（軽量・高速）</option>
             </select>
-            <span class="hint" id="ai_model_hint" style="margin:0;">Claude: Haiku=高速, Sonnet=高品質</span>
+            <span class="hint" id="ai_model_hint" style="margin:0;">Claude: Sonnet=標準（高品質）, Haiku=軽量・高速</span>
           </div>
         </div>
 
@@ -1726,8 +1726,8 @@
 
   const MODEL_OPTIONS = {
     claude: [
-      { value: "haiku", label: "Claude Haiku（軽量・高速）" },
-      { value: "sonnet", label: "Claude Sonnet（高品質）" },
+      { value: "sonnet", label: "Claude Sonnet 5.5（標準・高品質）" },
+      { value: "haiku", label: "Claude Haiku 5.5（軽量・高速）" },
     ],
     gemini: [
       { value: "flash-lite", label: "Gemini Flash-Light" },
@@ -1736,7 +1736,7 @@
     ],
   };
   const MODEL_HINTS = {
-    claude: "Claude: Haiku=高速, Sonnet=高品質",
+    claude: "Claude: Sonnet=標準（高品質）, Haiku=軽量・高速",
     gemini: "Gemini: Flash-Light=軽量, Flash=高速, Pro=高精度",
   };
 

@@ -53,7 +53,9 @@ REPORT_OPTION_DEFAULTS = {
 
 PREMIUM_ALL_INCLUDED_OPTIONS = dict(REPORT_OPTION_DEFAULTS["premium"])
 
-DEFAULT_CLAUDE_REPORT_MODEL = "claude-sonnet-4-6"
+DEFAULT_CLAUDE_REPORT_MODEL = "claude-sonnet-5-5"
+# 鑑定書は長文JSON。思考は常にONなので medium に抑えて時間と費用を安定させる。
+CLAUDE_REPORT_EFFORT = "medium"
 DEFAULT_EXTERNAL_REPORT_CLAUDE_TIMEOUT_SECONDS = 600
 CLAUDE_STREAM_PROGRESS_INTERVAL_SECONDS = 30
 logger = logging.getLogger(__name__)
@@ -694,6 +696,7 @@ def generate_text_with_claude(prompt: str, *, max_tokens: int | None = None) -> 
     with client.messages.stream(
         model=model,
         max_tokens=resolved_max,
+        output_config={"effort": CLAUDE_REPORT_EFFORT},
         system="あなたは星月七海の鑑定書制作担当です。必ず指定形式のJSONだけを返してください。",
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
