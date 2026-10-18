@@ -1,4 +1,4 @@
-{# 年運は最初に開く鑑定結果にHTMLとして描画し、チャート用JSに依存させない。 #}
+{# 年運は結果画面の「年運」タブにHTMLとして描画し、チャート用JSに依存させない。 #}
 {% set annual_raw = raw_json if raw_json is mapping else {} %}
 {% set annual_saved = structure_summary_json if structure_summary_json is mapping else {} %}
 {% set annual_source = annual_raw.get('shichusuimei') or (annual_raw if annual_raw.get('system') == 'shichusuimei' or annual_raw.get('module') == 'shichusuimei' else {}) or annual_saved.get('shichusuimei') or {} %}

@@ -173,11 +173,14 @@ def render_result(raw, structure=None):
 
 
 @pytest.mark.parametrize("integrated", [False, True])
-def test_ten_annual_rows_are_in_the_default_result_panel_without_javascript(chart, integrated):
+def test_ten_annual_rows_are_in_the_annual_tab_without_javascript(chart, integrated):
     from bs4 import BeautifulSoup
     raw = {"shichusuimei": chart} if integrated else chart
     page = BeautifulSoup(render_result(raw), "html.parser")
-    panel = page.select_one("#pg_result.active #shichuAnnualOverview")
+    # 鑑定結果タブの先頭には出さず、専用の「年運」タブにまとめる。
+    assert page.select_one("#pg_result #shichuAnnualOverview") is None
+    assert page.select_one('.pg-tab[data-pg="pg_annual"]').get_text(strip=True) == "年運"
+    panel = page.select_one("#pg_annual #shichuAnnualOverview")
     assert panel is not None
     assert "四柱推命の年運（10年分）" in panel.get_text()
     cards = panel.select(".annual-year-card")
@@ -201,13 +204,11 @@ def test_saved_shorter_data_is_not_filled_with_invented_years(chart):
     assert "2035年" not in panel.get_text()
 
 
-def test_result_explains_how_to_enable_four_pillars_when_not_selected():
+def test_annual_tab_is_hidden_when_four_pillars_not_included():
     from bs4 import BeautifulSoup
     page = BeautifulSoup(render_result({"system": "western"}), "html.parser")
-    panel = page.select_one("#pg_result.active #shichuAnnualOverview")
-    assert "この解析には四柱推命が含まれていません" in panel.get_text()
-    assert "手動カスタム" in panel.get_text()
-    assert not panel.select(".annual-year-card")
+    assert page.select_one('.pg-tab[data-pg="pg_annual"]') is None
+    assert page.select_one("#shichuAnnualOverview") is None
 
 
 @pytest.mark.parametrize("system", ["shichusuimei", "integrated_w_shichu", "integrated3"])

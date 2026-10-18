@@ -747,8 +747,13 @@
       {% endif %}
 
       <!-- ページタブバー -->
+      {# 年運タブは四柱推命のデータがある解析だけに出す（判定は _shichu_annual_panel.html と同じ） #}
+      {% set _annual_raw = raw_json if raw_json is mapping else {} %}
+      {% set _annual_saved = structure_summary_json if structure_summary_json is mapping else {} %}
+      {% set has_shichu_annual = (_annual_raw.get('shichusuimei') or (_annual_raw if _annual_raw.get('system') == 'shichusuimei' or _annual_raw.get('module') == 'shichusuimei' else {}) or _annual_saved.get('shichusuimei')) and true or false %}
       <div class="pg-tabs" role="tablist">
         <button class="pg-tab active" data-pg="pg_result"   role="tab" aria-selected="true">鑑定結果</button>
+        {% if has_shichu_annual %}<button class="pg-tab"        data-pg="pg_annual"   role="tab" aria-selected="false">年運</button>{% endif %}
         {% if include_reader %}<button class="pg-tab"        data-pg="pg_memo"     role="tab" aria-selected="false">占い師メモ</button>{% endif %}
         {% if transit_data %}<button class="pg-tab"        data-pg="pg_transit"  role="tab" aria-selected="false">トランジット</button>{% endif %}
         <button class="pg-tab"        data-pg="pg_data"     role="tab" aria-selected="false">データ</button>
@@ -756,7 +761,6 @@
 
       <!-- ─── TAB 1: 鑑定結果 ─────────────────────────────────────── -->
       <div id="pg_result" class="pg-panel active" role="tabpanel">
-        {% include "_shichu_annual_panel.html" %}
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
           <h2 style="margin:0;">占い結果（AI）</h2>
           <button type="button" onclick="copyYamlQuick()" id="yamlQuickBtn"
@@ -770,6 +774,13 @@
           <span id="aiCount" class="meta-text"></span>
         </div>
       </div>
+
+      {% if has_shichu_annual %}
+      <!-- ─── 年運（四柱推命） ─────────────────────────────────── -->
+      <div id="pg_annual" class="pg-panel" role="tabpanel">
+        {% include "_shichu_annual_panel.html" %}
+      </div>
+      {% endif %}
 
       <!-- ─── TAB 2: 占い師メモ ──────────────────────────────────── -->
       <div id="pg_memo" class="pg-panel" role="tabpanel">
