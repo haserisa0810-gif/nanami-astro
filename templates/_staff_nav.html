@@ -45,10 +45,14 @@
       <span class="snav-spacer"></span>
       <a href="/logout" class="snav-logout">ログアウト</a>
     </nav>
-    {% if _main == 'orders' %}
+    {% if _main == 'analyze' %}
+    <nav class="snav-sub" aria-label="鑑定メニュー">
+      <a href="/" class="{% if _sub == 'analyze_normal' %}active{% endif %}">通常鑑定</a>
+      <a href="/free-reading/start" class="{% if _sub == 'analyze_free' %}active{% endif %}">無料鑑定</a>
+    </nav>
+    {% elif _main == 'orders' %}
     <nav class="snav-sub" aria-label="案件メニュー">
       <a href="/staff/orders" class="{% if _sub == 'orders_all' %}active{% endif %}">全案件</a>
-      <a href="/free-reading/start" class="{% if _sub == 'orders_free' %}active{% endif %}">無料鑑定</a>
       <a href="/staff/external-orders" class="{% if _sub == 'orders_external' %}active{% endif %}">外部受注</a>
     </nav>
     {% elif _main == 'products' %}

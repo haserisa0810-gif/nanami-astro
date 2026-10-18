@@ -1,5 +1,5 @@
 
-{% extends "platform_base.html" %}{% set title = "無料鑑定結果" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_free" %}{% block content %}
+{% extends "platform_base.html" %}{% set title = "無料鑑定結果" %}{% set active_main_nav = "analyze" %}{% set active_sub_nav = "analyze_free" %}{% block content %}
 {% set status_value = order.ai_status or '-' %}
 {% set status_label = {'queued':'生成待ち','running':'生成中','completed':'完了','failed':'失敗'}.get(status_value, status_value) %}
 {% set status_class = {'queued':'warning','running':'warning','completed':'success','failed':'danger'}.get(status_value, 'secondary') %}
