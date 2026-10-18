@@ -277,6 +277,11 @@ def analyze(
         suggested_style = str((recommendation or {}).get("suggested_reading_style") or "").strip().lower()
         suggested_system = str((recommendation or {}).get("suggested_astrology_system") or "").strip().lower()
 
+        # 総合鑑定は、自動・手動どちらでも出生図の判定で構造読解の指示を付けるか決める。
+        from services.style_prompts import resolve_reading_style
+
+        reading_style = resolve_reading_style(reading_style, suggested_style)
+
         if analysis_mode != "manual":
             if auto_option_mode_flag and isinstance(rec_opts, dict):
                 include_chiron_flag = bool(rec_opts.get("include_chiron", include_chiron_flag))
@@ -284,8 +289,6 @@ def analyze(
                 include_vertex_flag = bool(rec_opts.get("include_vertex", include_vertex_flag))
                 include_asteroids_flag = bool(rec_opts.get("include_asteroids", include_asteroids_flag))
 
-            if reading_style in {"general", "structured", ""} and suggested_style in {"general", "structured"}:
-                reading_style = suggested_style
             if astrology_system in {"western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"} and suggested_system in {"western", "vedic", "integrated", "integrated_w_shichu", "integrated3", "shichusuimei"}:
                 astrology_system = suggested_system  # type: ignore[assignment]
         else:
@@ -533,7 +536,7 @@ def analyze(
                     "analysis_type": analysis_type,
                     "analysis_mode": analysis_mode,
                     "astrology_system": astrology_system,
-                    "reading_style": reading_style,
+                    "reading_style": "general" if reading_style == "structured" else reading_style,
                     "ai_provider": ai_provider,
                     "ai_model": ai_model,
                     "name": name,

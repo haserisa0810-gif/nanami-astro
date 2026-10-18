@@ -95,3 +95,20 @@ STYLE_PROMPTS = {
 説明より体感重視で書くこと。
 """
 }
+
+
+GENERAL_READING_STYLES = {"general", "structured", ""}
+
+
+def resolve_reading_style(reading_style: str | None, suggested_style: str | None) -> str:
+    """鑑定スタイルを確定する。
+
+    画面上は「総合鑑定」1つだけを選ばせ、構造読解（structured）の指示を付けるかは
+    出生図の判定（suggested_reading_style）で決める。手動モードでも同じ。
+    旧画面・過去データの "structured" も総合鑑定として扱い直す。
+    恋愛・仕事などの特化スタイルはそのまま返す。
+    """
+    style = (reading_style or "general").strip().lower()
+    if style not in GENERAL_READING_STYLES:
+        return style
+    return "structured" if (suggested_style or "").strip().lower() == "structured" else "general"

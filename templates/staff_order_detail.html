@@ -216,8 +216,8 @@
                   <label><input type="checkbox" name="include_transit" id="include_transit" value="true"> トランジットを鑑定に含める</label>
                   <label><input type="checkbox" name="day_change_at_23" id="day_change_at_23" value="true"> 四柱推命で子刻後半を前日扱い</label>
                   <input type="hidden" name="auto_option_mode" id="auto_option_mode" value="true">
-                  <div class="muted" style="margin-left:0">案件詳細では自動判定のみ使用します。占術構成・読解モード・西洋オプションは入力内容から自動反映されます。</div>
-                  <div id="option_recommendation_status" class="muted" style="margin-left:24px">{% if option_recommendation %}自動設定済み: {{ option_recommendation.dominant_label or 'バランス型' }} / {{ '構造読解（自動判定メニュー）' if option_recommendation.mode == 'structured' else '総合鑑定（自動判定メニュー）' }} / 配合 W{{ option_recommendation.distribution.western if option_recommendation.distribution else '-' }} : S{{ option_recommendation.distribution.shichu if option_recommendation.distribution else '-' }} / システム {{ option_recommendation.suggested_astrology_system or '-' }}{% else %}生年月日と出生地から、自動判定メニューとして配合判定・読解モード判定・インド発火判定を行います{% endif %}</div>
+                  <div class="muted" style="margin-left:0">案件詳細では自動判定のみ使用します。占術構成・構造読解の指示の有無・西洋オプションは入力内容から自動反映されます。</div>
+                  <div id="option_recommendation_status" class="muted" style="margin-left:24px">{% if option_recommendation %}自動設定済み: {{ option_recommendation.dominant_label or 'バランス型' }} / {{ '総合鑑定（構造読解の指示あり）' if option_recommendation.suggested_reading_style == 'structured' else '総合鑑定' }} / 配合 W{{ option_recommendation.distribution.western if option_recommendation.distribution else '-' }} : S{{ option_recommendation.distribution.shichu if option_recommendation.distribution else '-' }} / システム {{ option_recommendation.suggested_astrology_system or '-' }}{% else %}生年月日と出生地から、自動判定メニューとして配合判定・読解モード判定・インド発火判定を行います{% endif %}</div>
                   <label><input type="checkbox" name="include_chiron" id="include_chiron" value="true" {% if option_recommendation and option_recommendation.options.include_chiron %}checked{% elif not option_recommendation %}checked{% endif %}> Chiron を含める</label>
                   <label><input type="checkbox" name="include_lilith" id="include_lilith" value="true" {% if option_recommendation and option_recommendation.options.include_lilith %}checked{% endif %}> Lilith を含める</label>
                   <label><input type="checkbox" name="include_vertex" id="include_vertex" value="true" {% if option_recommendation and option_recommendation.options.include_vertex %}checked{% endif %}> Vertex を含める</label>
@@ -696,7 +696,8 @@ let staffLastOptionSignature = '';
 let staffPendingRecommendation = false;
 
 function formatStaffReadingStyleLabel(value) {
-  return value === 'structured' ? '構造読解（自動判定メニュー）' : '総合鑑定（自動判定メニュー）';
+  // 鑑定スタイルは「総合鑑定」に統合。構造読解は出生図の判定で付く追加指示として表示する。
+  return value === 'structured' ? '総合鑑定（構造読解の指示あり）' : '総合鑑定';
 }
 
 function formatStaffAstrologySystemLabel(value) {
@@ -704,7 +705,7 @@ function formatStaffAstrologySystemLabel(value) {
     western: '西洋（tropical）',
     vedic: 'インド（sidereal / Lahiri）',
     integrated: '統合（西洋＋インド）',
-    shichusuimei: '四柱推命（β：日柱＋時柱）',
+    shichusuimei: '四柱推命（四柱・大運・年運10年）',
     integrated3: '統合（西洋＋インド＋四柱）',
     integrated_w_shichu: '統合（西洋＋四柱）',
   };
@@ -794,7 +795,7 @@ async function refreshStaffOptionRecommendation() {
     const staffAstrologySystem = document.getElementById('astrology_system');
     if (staffReadingStyle && suggestedStyle && ['general', 'structured'].includes(suggestedStyle)) staffReadingStyle.value = suggestedStyle;
     if (staffAstrologySystem && suggestedSystem && ['western', 'vedic', 'integrated', 'integrated_w_shichu', 'integrated3', 'shichusuimei'].includes(suggestedSystem)) staffAstrologySystem.value = suggestedSystem;
-    const modeLabel = formatStaffReadingStyleLabel(data.mode === 'structured' ? 'structured' : 'general');
+    const modeLabel = formatStaffReadingStyleLabel(suggestedStyle === 'structured' ? 'structured' : 'general');
     const reasonText = Object.entries(data.reasons || {})
       .filter(([, arr]) => Array.isArray(arr) && arr.length)
       .map(([key, arr]) => `・${key.replace('include_','')}: ${arr.join(' / ')}`)

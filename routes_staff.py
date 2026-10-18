@@ -1325,8 +1325,8 @@ def staff_auto_generate(
                 include_vertex = 'true' if rec_opts.get('include_vertex') else ''
                 include_asteroids = 'true' if rec_opts.get('include_asteroids') else ''
             suggested_style = str((rec or {}).get('suggested_reading_style') or '').strip().lower()
-            if (reading_style or 'general').strip().lower() in {'general', 'structured', ''} and suggested_style in {'general', 'structured'}:
-                reading_style = suggested_style
+            from services.style_prompts import resolve_reading_style
+            reading_style = resolve_reading_style(reading_style, suggested_style)
             suggested_system = str((rec or {}).get('suggested_astrology_system') or '').strip().lower()
             if (astrology_system or 'western').strip().lower() in {'western', 'vedic', 'integrated', 'integrated_w_shichu', 'integrated3', 'shichusuimei'} and suggested_system in {'western', 'vedic', 'integrated', 'integrated_w_shichu', 'integrated3', 'shichusuimei'}:
                 astrology_system = suggested_system
