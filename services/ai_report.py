@@ -48,6 +48,8 @@ CLAUDE_DEFAULT_MODEL = CLAUDE_SONNET_MODEL
 CLAUDE_ALLOWED_MODEL_NAMES = {CLAUDE_SONNET_MODEL, CLAUDE_HAIKU_MODEL}
 # 新世代モデルは思考（thinking）が常にON。鑑定文は深い推論より文章量が中心なので medium に抑える。
 CLAUDE_EFFORT = "medium"
+# 無料鑑定は費用を抑えるため軽量な Haiku を低い effort で使う（旧: Gemini 2.5 Flash-Lite）。
+CLAUDE_FREE_READING_EFFORT = "low"
 
 _PROMPTS_DIR = (Path(__file__).resolve().parents[1] / "prompts").resolve()
 logger = logging.getLogger(__name__)
@@ -510,9 +512,6 @@ def _should_use_claude(meta2: dict[str, Any], astrology_system: str) -> bool:
     if env_force in {"claude", "anthropic"}:
         return True
 
-    if _truthy(meta2.get("is_free_reading")) or _truthy(meta2.get("free_reading")):
-        return False
-
     sys_name = (astrology_system or "western").strip().lower()
     return sys_name in {"western", "integrated", "integrated3", "integrated_3", "integrated_w_shichu"}
 
@@ -548,7 +547,9 @@ def _debug_model_info(model_name: str, model_source: str, fallback_used: bool = 
 def _select_prompt_files(astrology_system: str, rt: str, output_style: str, theme: str, use_claude: bool = False, reading_style: str = "general") -> dict[str, str]:
     sys_name = (astrology_system or "western").strip().lower()
     use_legacy_integrated = sys_name in {"integrated", "integrated3", "integrated_3"}
-    if use_claude:
+    if use_claude and theme == "free_reading":
+        single_web_name = "free_reading_web.txt"
+    elif use_claude:
         _style_map = {
             "love":         "single_web_claude_love.txt",
             "work":         "single_web_claude_work.txt",
@@ -607,13 +608,13 @@ _CLAUDE_SYSTEM_PROMPT = (
 )
 
 
-def _generate_once_claude(*, client: Any, model_name: str, prompt: str, max_tokens: int, system_prompt: str | None = None) -> str:
+def _generate_once_claude(*, client: Any, model_name: str, prompt: str, max_tokens: int, system_prompt: str | None = None, effort: str = CLAUDE_EFFORT) -> str:
     # 新世代モデルは temperature を受け付けない（400）。文体のばらつきはプロンプトで調整する。
     # 思考分も max_tokens に含まれ出力が長くなるため、タイムアウトしにくいストリーミングで受け取る。
     with client.messages.stream(
         model=model_name,
         max_tokens=max_tokens,
-        output_config={"effort": CLAUDE_EFFORT},
+        output_config={"effort": effort},
         system=(system_prompt or _CLAUDE_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
@@ -827,6 +828,8 @@ reliability: provisional または low の項目は確定事項として断定�
         max_tokens = 8000 if ("line" in rt or output_style == "line") else 32000
         model_candidates = [model_name]
         provider_name = "claude"
+        is_free_reading = theme == "free_reading" or _truthy(meta2.get("is_free_reading"))
+        claude_effort = CLAUDE_FREE_READING_EFFORT if is_free_reading else CLAUDE_EFFORT
         dynamic_system_prompt = (_CLAUDE_SYSTEM_PROMPT + "\n\n" + ctx.get("age_system_prompt", "") + "\n\n" + ctx.get("role_prompt", "")).strip()
     else:
         api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
@@ -852,7 +855,7 @@ reliability: provisional または low の項目は確定事項として断定�
             try:
                 current_max_tokens = max_tokens if candidate == model_name else 4500
                 if use_claude:
-                    text1 = _generate_once_claude(client=client, model_name=candidate, prompt=prompt, max_tokens=current_max_tokens, system_prompt=dynamic_system_prompt)
+                    text1 = _generate_once_claude(client=client, model_name=candidate, prompt=prompt, max_tokens=current_max_tokens, system_prompt=dynamic_system_prompt, effort=claude_effort)
                 else:
                     text1 = _generate_once(client=client, model_name=candidate, prompt=prompt, max_tokens=current_max_tokens)
                 if not text1:

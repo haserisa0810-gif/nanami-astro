@@ -65,3 +65,13 @@ def test_model_aliases(requested, expected):
 def test_default_model_is_sonnet():
     model, _ = ai_report._resolve_claude_model_name({}, "western")
     assert model == "claude-sonnet-5-5"
+
+
+def test_free_reading_uses_haiku_with_free_prompt():
+    meta = {"ai_provider": "claude", "ai_model": "haiku", "allow_manual_ai_model": True, "is_free_reading": True}
+    assert ai_report._should_use_claude(meta, "western") is True
+    model, _ = ai_report._resolve_claude_model_name(meta, "western")
+    assert model == "claude-haiku-5-5"
+    files = ai_report._select_prompt_files("western", "single_web", "web", "free_reading", use_claude=True)
+    assert files["single_web"] == "free_reading_web.txt"
+    assert ai_report.CLAUDE_FREE_READING_EFFORT == "low"

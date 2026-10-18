@@ -132,8 +132,8 @@ def process_free_reading(order_id: int) -> None:
                 observations_text=None,
                 analysis_type='single',
                 astrology_system='western',
-                ai_provider='gemini',
-                ai_model='gemini-2.5-flash-lite',
+                ai_provider='claude',
+                ai_model='haiku',  # 無料鑑定は Claude Haiku 5.5（effort low）
                 day_change_at_23=False,
                 name=order.user_name,
                 name_b=None,
@@ -141,7 +141,7 @@ def process_free_reading(order_id: int) -> None:
                 gender_b='4',
                 reading_style='general',
             )
-            base_meta["is_free_reading"] = True  # Gemini + free_reading_web.txt を使用する
+            base_meta["is_free_reading"] = True  # 無料鑑定用プロンプト（free_reading_web.txt）と低い effort を使う
             astro_result, payload_view, report_web, report_line, report_raw, report_reader, guard_meta = run_single(
                 'western', payload_a, base_meta, order.consultation_text, False, False
             )
