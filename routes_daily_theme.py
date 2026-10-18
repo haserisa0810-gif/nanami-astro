@@ -8,11 +8,14 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
-router = APIRouter()
+from auth import get_current_staff
+
+# /daily-theme/generate* はGeminiを呼ぶため、スタッフログイン必須。
+router = APIRouter(dependencies=[Depends(get_current_staff)])
 templates = Jinja2Templates(directory="templates")
 
 SOFT_ACTION_LINE = "少し整える時間を先に確保すると、流れを立て直しやすくなります。"

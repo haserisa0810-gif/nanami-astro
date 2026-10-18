@@ -7,10 +7,13 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-router = APIRouter()
+from auth import get_current_staff
+
+# /transit/interpret はAIを呼ぶため、スタッフログイン必須。
+router = APIRouter(dependencies=[Depends(get_current_staff)])
 
 
 def _parse_target_date(date_str: str | None):

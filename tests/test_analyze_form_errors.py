@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import routes_analyze
+from auth import get_current_staff
 from services.analyze_form_errors import AnalyzeFormRoute
 
 
@@ -13,7 +14,18 @@ def client(monkeypatch):
     monkeypatch.setattr(routes_analyze, "_recommend_helpers", lambda: lambda **kwargs: {})
     app = FastAPI()
     app.include_router(routes_analyze.router)
+    app.dependency_overrides[get_current_staff] = lambda: {"role": "admin"}
     return TestClient(app)
+
+
+@pytest.mark.parametrize("path", ["/analyze", "/analyze/recommend-options"])
+def test_analysis_requires_staff_login(path):
+    app = FastAPI()
+    app.include_router(routes_analyze.router)
+
+    response = TestClient(app).post(path, data={"birth_date": "1990-01-15"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
 
 
 def assert_readable_html(response, status, message):

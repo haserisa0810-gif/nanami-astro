@@ -4,13 +4,17 @@ import json
 import os
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from auth import get_current_staff
 from prefs import PREF_LABELS
 from routes_shared import DEFAULT_INDEX_CONTEXT, build_full_astrologer_summary, templates
 
 router = APIRouter()
+
+# 解析フォームは内部ツールのため、スタッフログイン必須。
+_STAFF_ONLY = [Depends(get_current_staff)]
 
 
 def build_index_context(
@@ -29,7 +33,7 @@ def build_index_context(
     }
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def form_page(
     request: Request,
     analysis_type: str = "single",
@@ -46,7 +50,7 @@ def form_page(
     )
 
 
-@router.get("/analyze", response_class=HTMLResponse)
+@router.get("/analyze", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def analyze_page(
     request: Request,
     analysis_type: str = "single",
@@ -55,27 +59,27 @@ def analyze_page(
     return form_page(request, analysis_type=analysis_type, astrology_system=astrology_system)
 
 
-@router.get("/western", response_class=HTMLResponse)
+@router.get("/western", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def western_page(request: Request):
     return form_page(request, analysis_type="single", astrology_system="western")
 
 
-@router.get("/vedic", response_class=HTMLResponse)
+@router.get("/vedic", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def vedic_page(request: Request):
     return form_page(request, analysis_type="single", astrology_system="vedic")
 
 
-@router.get("/integrated", response_class=HTMLResponse)
+@router.get("/integrated", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def integrated_page(request: Request):
     return form_page(request, analysis_type="single", astrology_system="integrated3")
 
 
-@router.get("/shichu", response_class=HTMLResponse)
+@router.get("/shichu", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def shichu_page(request: Request):
     return form_page(request, analysis_type="single", astrology_system="shichusuimei")
 
 
-@router.get("/lite", response_class=HTMLResponse)
+@router.get("/lite", response_class=HTMLResponse, dependencies=_STAFF_ONLY)
 def lite_page(request: Request):
     return form_page(request, analysis_type="single", astrology_system="western")
 

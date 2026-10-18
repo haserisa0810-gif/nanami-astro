@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
+from auth import get_current_staff
 from services.analyze_save_service import save_analysis_result_to_order
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_staff)])
 
 
 @router.post("/analyze/save-to-order")

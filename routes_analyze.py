@@ -4,13 +4,15 @@ import logging
 import traceback
 from typing import Any, Literal
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from auth import get_current_staff
 from routes_shared import templates
 from services.analyze_form_errors import AnalyzeFormRoute
 
-router = APIRouter(route_class=AnalyzeFormRoute)
+# 解析はAI利用料が発生するため、スタッフ（管理者・占い師）ログイン必須。
+router = APIRouter(route_class=AnalyzeFormRoute, dependencies=[Depends(get_current_staff)])
 logger = logging.getLogger(__name__)
 
 AstrologySystem = Literal["western", "vedic", "integrated", "shichusuimei", "integrated3", "integrated_w_shichu"]

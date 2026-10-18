@@ -5,6 +5,7 @@ FastAPI の起動・共通設定・router 登録のみを担当する薄い層�
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -27,6 +28,8 @@ from routes_products import router as products_router
 from routes_social_flow import router as social_flow_router
 
 app = FastAPI()
+# 解析結果ページは1MBを超えるため圧縮して返す。
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
