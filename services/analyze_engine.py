@@ -278,6 +278,15 @@ def build_base_meta(
 
 # ── 相性分析 ─────────────────────────────────────────────────────────────────
 
+AI_TEXT_OFF_MESSAGE = "AI本文の生成はオフにしています。計算結果とYAMLログを確認してください。"
+
+
+def ai_text_enabled(meta: dict[str, Any] | None) -> bool:
+    """「AI本文も生成する」がオフ、または「YAMLのみ」のときは AI を呼ばない（料金と待ち時間の節約）。"""
+    meta = meta or {}
+    return meta.get("generate_ai", True) is not False and not meta.get("yaml_only")
+
+
 def run_compatibility(
     payload_a: dict[str, Any],
     birth_date_b: str,
@@ -338,7 +347,10 @@ def run_compatibility(
         effective_meta,
     )
 
-    report_web    = generate_report(astro_result, style="web", report_type="compat_web")
+    report_web    = (
+        generate_report(astro_result, style="web", report_type="compat_web")
+        if ai_text_enabled(base_meta) else AI_TEXT_OFF_MESSAGE
+    )
     report_line   = ""
     report_raw    = "（相性分析では占い師メモは未対応）" if include_reader else ""
     report_reader = ""
@@ -377,6 +389,12 @@ def run_single(
     # transit データをAIプロンプトに渡せるよう埋め込む
     if isinstance(transit_data, dict):
         astro_result["transit"] = transit_data
+
+    if not ai_text_enabled(base_meta):
+        payload_view = {**payload_a, "day_change_at_23": day_change_at_23}
+        reader_text = AI_TEXT_OFF_MESSAGE if include_reader else ""
+        skipped_guard = {"status": "skipped", "ok": True, "issues": [], "retries": 0}
+        return astro_result, payload_view, AI_TEXT_OFF_MESSAGE, "", "", reader_text, skipped_guard
 
     report_web  = generate_report(astro_result, style="web", report_type="single_web")
     _debug_report_snapshot("single_web:first", report_web)

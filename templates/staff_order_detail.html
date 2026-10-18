@@ -210,6 +210,7 @@
                 </div>
 
                 <div style="grid-column:1 / -1;display:grid;gap:8px">
+                  <input type="hidden" name="generate_ai" value="false"><!-- チェックを外したときに「オフ」を送る（チェック時は後ろの true が優先） -->
                   <label><input type="checkbox" name="generate_ai" id="generate_ai" value="true" checked> AI本文も生成する</label>
                   <label><input type="checkbox" name="yaml_only" id="yaml_only" value="true"> YAMLログのみ作成（本文なし）</label>
                   <label><input type="checkbox" name="include_reader" id="include_reader" value="true"> 占い師向けメモを生成する</label>

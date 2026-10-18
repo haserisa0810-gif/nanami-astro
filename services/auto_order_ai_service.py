@@ -251,13 +251,16 @@ def process_order_auto_reading(order_id: int, options: dict | None = None) -> No
                 gender_b=opts.get('gender_b', 'female'),
                 reading_style=opts.get('reading_style', 'general'),
             )
+            # AI本文オフ・YAMLのみのときは run_single 側で AI を呼ばない
+            base_meta['generate_ai'] = bool(opts.get('generate_ai', True))
+            base_meta['yaml_only'] = bool(opts.get('yaml_only'))
             astro_result, payload_view, report_web, report_line, report_raw, report_reader, guard_meta = run_single(
-                opts.get('astrology_system', 'western'),
-                payload_a,
-                base_meta,
-                order.consultation_text,
-                bool(opts.get('yaml_only')),
-                bool(opts.get('include_transit')),
+                astrology_system=opts.get('astrology_system', 'western'),
+                payload_a=payload_a,
+                base_meta=base_meta,
+                message=order.consultation_text,
+                include_reader=bool(opts.get('include_reader')),
+                day_change_at_23=bool(opts.get('day_change_at_23')),
             )
             report_web, report_raw, report_reader, report_line = format_reports(
                 report_web, report_raw, report_reader, report_line, 'standard', 'normal', bool(opts.get('include_reader'))
