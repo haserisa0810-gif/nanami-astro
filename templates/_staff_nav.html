@@ -1,0 +1,79 @@
+{#
+  スタッフ共通ナビ。どの画面からでも同じ位置・同じ名前で移動できるようにする。
+  active_main_nav: dashboard / analyze / orders / products / admin / settings
+  active_sub_nav : 各サブメニューのキー
+  ログイン判定は表示用（StaffNavMiddleware が cookie から role を入れる）。権限チェックは各ルートで行う。
+#}
+{% set _nav_role = request.state.nav_role if request is defined else none %}
+{% if _nav_role %}
+{% set _main = active_main_nav if active_main_nav is defined else "" %}
+{% set _sub = active_sub_nav if active_sub_nav is defined else "" %}
+<style>
+  .snav{background:#fff;border-bottom:1px solid #e7e1d9;position:sticky;top:0;z-index:50;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .snav-inner{max-width:1120px;margin:0 auto;padding:10px 16px}
+  .snav-main,.snav-sub{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .snav-sub{margin-top:8px;padding-top:8px;border-top:1px solid #f0ebe4}
+  .snav a{display:inline-flex;align-items:center;padding:8px 13px;border-radius:10px;text-decoration:none;color:#111;font-size:14px;line-height:1.2;border:1px solid transparent;white-space:nowrap}
+  .snav a:hover{background:#f6f4f1}
+  .snav-main a.active{background:#111;color:#fff;font-weight:700}
+  .snav-sub a{font-size:13px;padding:6px 11px;color:#444}
+  .snav-sub a.active{border-color:#111;color:#111;font-weight:700;background:#fff}
+  .snav-main .snav-cta{border-color:#111;font-weight:700}
+  .snav-main .snav-cta.active{border-color:#111}
+  .snav-spacer{flex:1}
+  .snav-logout{color:#666 !important;font-size:13px !important}
+  @media (max-width:768px){
+    .snav{position:static}
+    .snav-inner{padding:8px 12px}
+    .snav a{padding:7px 10px;font-size:13px}
+    .snav-spacer{display:none}
+    .snav-sub{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  }
+</style>
+<header class="snav">
+  <div class="snav-inner">
+    <nav class="snav-main" aria-label="メインメニュー">
+      <a href="/dashboard" class="{% if _main == 'dashboard' %}active{% endif %}">ダッシュボード</a>
+      <a href="/" class="snav-cta {% if _main == 'analyze' %}active{% endif %}">鑑定する</a>
+      <a href="/staff/orders" class="{% if _main == 'orders' %}active{% endif %}">案件</a>
+      <a href="/products/transit" class="{% if _main == 'products' %}active{% endif %}">商品運用</a>
+      {% if _nav_role == 'admin' %}
+      <a href="/admin/dashboard" class="{% if _main == 'admin' %}active{% endif %}">管理</a>
+      {% else %}
+      <a href="/reader/profile" class="{% if _main == 'settings' %}active{% endif %}">設定</a>
+      {% endif %}
+      <span class="snav-spacer"></span>
+      <a href="/logout" class="snav-logout">ログアウト</a>
+    </nav>
+    {% if _main == 'orders' %}
+    <nav class="snav-sub" aria-label="案件メニュー">
+      <a href="/staff/orders" class="{% if _sub == 'orders_all' %}active{% endif %}">全案件</a>
+      <a href="/free-reading/start" class="{% if _sub == 'orders_free' %}active{% endif %}">無料鑑定</a>
+      <a href="/staff/external-orders" class="{% if _sub == 'orders_external' %}active{% endif %}">外部受注</a>
+    </nav>
+    {% elif _main == 'products' %}
+    <nav class="snav-sub" aria-label="商品運用メニュー">
+      <a href="/products/transit" class="{% if _sub == 'products_transit' %}active{% endif %}">トランジット</a>
+      <a href="/daily-theme" class="{% if _sub == 'products_daily' %}active{% endif %}">今日の空気</a>
+      <a href="/products/social-flow" class="{% if _sub == 'products_social_flow' %}active{% endif %}">社会の流れ</a>
+      <a href="/products/note-articles" class="{% if _sub == 'products_note_articles' %}active{% endif %}">note記事</a>
+      <a href="/products/social-scenarios" class="{% if _sub == 'products_social' %}active{% endif %}">SNS素材</a>
+      <a href="/products/templates" class="{% if _sub == 'products_templates' %}active{% endif %}">テンプレ</a>
+      <a href="/products/jobs" class="{% if _sub == 'products_jobs' %}active{% endif %}">ジョブ</a>
+    </nav>
+    {% elif _main == 'admin' %}
+    <nav class="snav-sub" aria-label="管理メニュー">
+      <a href="/admin/dashboard" class="{% if _sub == 'admin_dashboard' %}active{% endif %}">管理トップ</a>
+      <a href="/admin/orders" class="{% if _sub == 'admin_orders' %}active{% endif %}">注文一覧</a>
+      <a href="/admin/payouts" class="{% if _sub == 'admin_payouts' %}active{% endif %}">報酬</a>
+      <a href="/admin/customers" class="{% if _sub == 'admin_customers' %}active{% endif %}">顧客</a>
+      <a href="/admin/yaml-logs" class="{% if _sub == 'admin_yaml_logs' %}active{% endif %}">YAMLログ</a>
+      <a href="/admin/astrologers" class="{% if _sub == 'admin_astrologers' %}active{% endif %}">占い師</a>
+      <a href="/admin/users" class="{% if _sub == 'admin_users' %}active{% endif %}">管理者</a>
+      <a href="/admin/account" class="{% if _sub == 'admin_account' %}active{% endif %}">アカウント</a>
+      <a href="/admin/audit-logs" class="{% if _sub == 'admin_audit_logs' %}active{% endif %}">監査ログ</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+{% endif %}

@@ -1,10 +1,4 @@
-{% extends "platform_base.html" %}{% set title = "管理者アカウント設定" %}{% block content %}
-<div class="topnav">
-  <a class="btn secondary" href="/admin/dashboard">管理画面</a>
-  <a class="btn secondary" href="/admin/users">管理者</a>
-  <a class="btn secondary" href="/admin/astrologers">占い師管理</a>
-  <a class="btn secondary" href="/admin/logout">ログアウト</a>
-</div>
+{% extends "platform_base.html" %}{% set title = "管理者アカウント設定" %}{% set active_main_nav = "admin" %}{% set active_sub_nav = "admin_account" %}{% block content %}
 {% if force_password %}<div class="card" style="border-color:#f6dea2;background:#fffaf0">初期パスワードのままです。先に新しいパスワードへ変更してください。</div>{% endif %}
 {% if error == 'password_too_short' %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">新しいパスワードは8文字以上で入力してください。</div>{% endif %}
 {% if error == 'password_mismatch' %}<div class="card" style="border-color:#f0c7c7;background:#fff5f5">新しいパスワードと確認用パスワードが一致しません。</div>{% endif %}

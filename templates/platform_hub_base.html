@@ -7,12 +7,6 @@
   <style>
     body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f4f1;color:#111;margin:0}
     .wrap{max-width:1120px;margin:24px auto;padding:0 16px 32px}
-    .shell-head{background:#fff;border-bottom:1px solid #e7e1d9;position:sticky;top:0;z-index:10}
-    .shell-inner{max-width:1120px;margin:0 auto;padding:14px 16px 10px}
-    .main-nav,.sub-nav{display:flex;gap:8px;flex-wrap:wrap}
-    .main-nav{margin-bottom:10px}.sub-nav{padding-top:10px;border-top:1px solid #f0ebe4}
-    .nav-pill{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:12px;text-decoration:none;border:1px solid #d7d1c8;background:#fff;color:#111;font-size:14px}
-    .nav-pill.active{background:#111;color:#fff;border-color:#111;font-weight:700}.nav-pill.ghost{background:#faf8f5}
     .card{background:#fff;border:1px solid #e7e1d9;border-radius:18px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.05);margin-bottom:18px}
     h1,h2,h3{margin:0 0 12px}.muted{color:#666}.row{display:flex;gap:12px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
     input,textarea,select{width:100%;padding:10px 12px;border:1px solid #d7d1c8;border-radius:10px;background:#fff;box-sizing:border-box}textarea{min-height:120px}
@@ -25,48 +19,12 @@
     .section-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.result-count{font-size:14px;color:#666;background:#faf8f5;border:1px solid #eee2d5;border-radius:999px;padding:8px 12px}.table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
     .filter-form{display:grid;gap:14px;margin:16px 0 18px}.filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.code{font-family:ui-monospace,SFMono-Regular,monospace;background:#faf8f5;border:1px solid #eee2d5;border-radius:8px;padding:2px 6px}
     .variant-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.variant-card{border:1px solid #e7e1d9;border-radius:16px;background:#fff;padding:16px;display:flex;flex-direction:column;gap:10px}.variant-card.disabled{opacity:.55}.variant-title{font-weight:700;font-size:18px}.variant-meta{color:#666;font-size:13px;line-height:1.6}.variant-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    @media (max-width: 768px){.wrap{margin:16px auto;padding:0 12px 24px}.card{padding:16px;border-radius:16px}h1{font-size:30px}.shell-inner{padding:12px}.nav-pill{padding:9px 12px;font-size:13px}.table-scroll table{min-width:720px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width: 768px){.wrap{margin:16px auto;padding:0 12px 24px}.card{padding:16px;border-radius:16px}h1{font-size:30px}.table-scroll table{min-width:720px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
   </style>
 {% include "_head_icons.html" %}
 </head>
 <body>
-  {% set has_staff = staff is defined and staff %}
-  {% set is_admin = has_staff and staff.role == 'admin' %}
-  <header class="shell-head">
-    <div class="shell-inner">
-      <nav class="main-nav">
-        <a class="nav-pill {% if active_main_nav == 'dashboard' %}active{% endif %}" href="/dashboard">ダッシュボード</a>
-        <a class="nav-pill {% if active_main_nav == 'orders' %}active{% endif %}" href="/staff/orders">受注管理</a>
-        <a class="nav-pill {% if active_main_nav == 'products' %}active{% endif %}" href="/products/transit">商品運用</a>
-        {% if is_admin %}
-          <a class="nav-pill {% if active_main_nav == 'settings' %}active{% endif %}" href="/admin/users">設定</a>
-        {% elif has_staff %}
-          <a class="nav-pill {% if active_main_nav == 'settings' %}active{% endif %}" href="/reader/profile">設定</a>
-        {% endif %}
-        {% if has_staff %}
-          <a class="nav-pill ghost" href="/logout">ログアウト</a>
-        {% endif %}
-      </nav>
-      {% if active_main_nav == 'orders' %}
-      <nav class="sub-nav">
-        <a class="nav-pill {% if active_sub_nav == 'orders_all' %}active{% endif %}" href="/staff/orders">全案件</a>
-        <a class="nav-pill {% if active_sub_nav == 'orders_free' %}active{% endif %}" href="/free-reading/start">無料鑑定</a>
-        <a class="nav-pill {% if active_sub_nav == 'orders_normal' %}active{% endif %}" href="/">通常鑑定</a>
-        <a class="nav-pill {% if active_sub_nav == 'orders_external' %}active{% endif %}" href="/staff/external-orders">外部受注</a>
-      </nav>
-      {% elif active_main_nav == 'products' %}
-      <nav class="sub-nav">
-        <a class="nav-pill {% if active_sub_nav == 'products_transit' %}active{% endif %}" href="/products/transit">トランジット</a>
-        <a class="nav-pill {% if active_sub_nav == 'products_daily' %}active{% endif %}" href="/daily-theme">今日の空気</a>
-        <a class="nav-pill {% if active_sub_nav == 'products_social_flow' %}active{% endif %}" href="/products/social-flow">社会の流れ</a>
-        <a class="nav-pill {% if active_sub_nav == 'products_note_articles' %}active{% endif %}" href="/products/note-articles">note記事</a>
-        <a class="nav-pill {% if active_sub_nav == 'products_social' %}active{% endif %}" href="/products/social-scenarios">SNS素材</a>
-        <a class="nav-pill {% if active_sub_nav == 'products_templates' %}active{% endif %}" href="/products/templates">テンプレ</a>
-        <a class="nav-pill {% if active_sub_nav == 'products_jobs' %}active{% endif %}" href="/products/jobs">ジョブ</a>
-      </nav>
-      {% endif %}
-    </div>
-  </header>
+  {% include "_staff_nav.html" %}
   <div class="wrap">{% block content %}{% endblock %}</div>
 </body>
 </html>

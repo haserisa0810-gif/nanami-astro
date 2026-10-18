@@ -8,7 +8,9 @@ from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import HTTPConnection
 
+from auth import staff_nav_role
 from line_webhook import router as line_router
 from routes_admin import router as admin_router
 from routes_analyze import router as analyze_router
@@ -27,7 +29,21 @@ from routes_note_articles import router as note_articles_router
 from routes_products import router as products_router
 from routes_social_flow import router as social_flow_router
 
+
+class StaffNavMiddleware:
+    """テンプレートの共通ナビ（_staff_nav.html）がログイン中の role を参照できるようにする。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            scope.setdefault("state", {})["nav_role"] = staff_nav_role(HTTPConnection(scope).cookies)
+        await self.app(scope, receive, send)
+
+
 app = FastAPI()
+app.add_middleware(StaffNavMiddleware)
 # 解析結果ページは1MBを超えるため圧縮して返す。
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory="static"), name="static")

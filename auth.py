@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -34,8 +35,7 @@ def verify_password(password: str, password_hash: str) -> bool:
     return pwd_context.verify(_normalize_password(password), password_hash)
 
 
-def _read_cookie(request: Request, cookie_name: str, serializer: URLSafeSerializer) -> dict[str, Any] | None:
-    raw = request.cookies.get(cookie_name)
+def _load_cookie(raw: str | None, serializer: URLSafeSerializer) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
@@ -43,6 +43,19 @@ def _read_cookie(request: Request, cookie_name: str, serializer: URLSafeSerializ
         return data if isinstance(data, dict) else None
     except BadSignature:
         return None
+
+
+def _read_cookie(request: Request, cookie_name: str, serializer: URLSafeSerializer) -> dict[str, Any] | None:
+    return _load_cookie(request.cookies.get(cookie_name), serializer)
+
+
+def staff_nav_role(cookies: Mapping[str, str]) -> str | None:
+    """共通ナビの表示切り替え用。署名付き cookie だけで判定し DB は見ない（権限チェックには使わない）。"""
+    if _load_cookie(cookies.get(ADMIN_COOKIE), admin_serializer):
+        return "admin"
+    if _load_cookie(cookies.get(READER_COOKIE), reader_serializer):
+        return "reader"
+    return None
 
 
 def _cookie_secure() -> bool:

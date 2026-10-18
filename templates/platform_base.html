@@ -59,6 +59,7 @@
 {% include "_head_icons.html" %}
 </head>
 <body>
+  {% if active_main_nav is defined %}{% include "_staff_nav.html" %}{% endif %}
   <div class="wrap">
     {% block content %}{% endblock %}
   </div>

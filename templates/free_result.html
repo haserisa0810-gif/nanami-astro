@@ -1,5 +1,5 @@
 
-{% extends "platform_base.html" %}{% set title = "無料鑑定結果" %}{% block content %}
+{% extends "platform_base.html" %}{% set title = "無料鑑定結果" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_free" %}{% block content %}
 {% set status_value = order.ai_status or '-' %}
 {% set status_label = {'queued':'生成待ち','running':'生成中','completed':'完了','failed':'失敗'}.get(status_value, status_value) %}
 {% set status_class = {'queued':'warning','running':'warning','completed':'success','failed':'danger'}.get(status_value, 'secondary') %}
@@ -12,10 +12,12 @@
       <h1>無料鑑定結果</h1>
       <p class="muted">受付番号 <span class="code">{{ order.order_code }}</span></p>
     </div>
+    {% if request.state.nav_role %}
     <div class="row">
-      <a class="btn secondary" href="/dashboard">管理画面</a>
-      <a class="btn secondary" href="/free-reading/start">無料鑑定画面に戻る</a>
+      <a class="btn" href="/staff/orders/{{ order.order_code }}">案件詳細を開く</a>
+      <a class="btn secondary" href="/free-reading/start">次の無料鑑定へ</a>
     </div>
+    {% endif %}
   </div>
   <div class="stats" style="margin-top:14px">
     <div class="stat"><div class="muted">受付番号</div><div style="margin-top:8px"><span class="code">{{ order.order_code }}</span></div></div>

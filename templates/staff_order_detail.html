@@ -1,12 +1,4 @@
-{% extends "platform_base.html" %}{% set title = "案件詳細" %}{% block content %}
-<div class="topnav">
-  <a class="btn secondary" href="/dashboard">管理画面</a>
-  <a class="btn secondary" href="/staff/orders">案件一覧</a>
-  <a class="btn secondary" href="/free-reading/start">無料鑑定</a>
-  <a class="btn secondary" href="/">通常鑑定</a>
-  <a class="btn secondary" href="/daily-theme">今日の空気</a>
-  <a class="btn secondary" href="/logout">ログアウト</a>
-</div>
+{% extends "platform_base.html" %}{% set title = "案件詳細" %}{% set active_main_nav = "orders" %}{% set active_sub_nav = "orders_all" %}{% block content %}
 
 {% if success %}<p style="margin-top:10px;padding:10px 14px;background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;font-size:13px;color:#2e7d32;">✅ {% if success == 'report_uploaded' %}保存済みHTMLを差し替えました。{% elif success == 'report_saved' %}鑑定書HTMLを保存し、公開URLを更新しました。{% elif success == 'report_queued' %}AI鑑定書生成を開始しました。{% elif success == 'pdf_generated' %}PDFを生成しました。{% elif success == 'report_status_reset' %}生成状態をリセットしました。{% else %}{{ success }}{% endif %}</p>{% endif %}
 {% if error %}<div class="error">{% if error == 'invalid_html' %}HTMLファイル（.html）を選択してください。{% elif error == 'no_html' %}HTMLの内容が空です。{% elif error == 'generate_failed' %}AI鑑定書生成に失敗しました。エラー内容を確認してください。{% else %}{{ error }}{% endif %}</div>{% endif %}

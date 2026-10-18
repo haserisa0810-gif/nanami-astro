@@ -70,7 +70,6 @@
     }
 
 
-    .top-nav{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
     .nav-btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:12px;text-decoration:none;background:rgba(255,255,255,.82);border:1px solid var(--line);color:#222;font-size:14px;font-weight:700;box-shadow:var(--shadow-soft);}
     .nav-btn:hover{border-color:var(--line-strong);transform:translateY(-1px);}
     .nav-btn.primary{background:#111;color:#fff;border-color:#111;}
@@ -557,15 +556,9 @@
 </head>
 
 <body>
+  {% set active_main_nav = "analyze" %}
+  {% include "_staff_nav.html" %}
   <div class="wrap">
-    <div class="top-nav">
-      <a href="/" class="nav-btn primary">通常鑑定</a>
-      <a href="/free-reading/start" class="nav-btn">無料鑑定</a>
-      <a href="/daily-theme" class="nav-btn">今日の空気</a>
-      <a href="/dashboard" class="nav-btn">管理画面</a>
-      <a href="/admin/login" class="nav-btn">管理者ログイン</a>
-      <a href="/reader/login" class="nav-btn">占い師ログイン</a>
-    </div>
     <div class="page-head">
       <h1>占い解析</h1>
       <div class="hero-links">

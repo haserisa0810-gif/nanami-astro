@@ -1,8 +1,4 @@
-{% extends "platform_base.html" %}{% set title = "顧客詳細" %}{% block content %}
-<div class="topnav">
-  <a class="btn secondary" href="/admin/customers">顧客一覧</a>
-  <a class="btn secondary" href="/admin/dashboard">管理画面</a>
-</div>
+{% extends "platform_base.html" %}{% set title = "顧客詳細" %}{% set active_main_nav = "admin" %}{% set active_sub_nav = "admin_customers" %}{% block content %}
 <div class="card">
   <h1>{{ customer.display_name or '名称未設定' }}</h1>
   <p class="muted">LINE: {{ customer.line_user_id or '-' }} / Email: {{ customer.email or '-' }} / Phone: {{ customer.phone or '-' }}</p>
