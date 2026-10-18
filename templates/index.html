@@ -224,6 +224,10 @@
       padding:0 2px;
     }
 
+    .page-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin:4px 0 16px; }
+    .page-head h1{ margin:0; font-size:24px; }
+    .page-head .hero-links{ margin-top:0; }
+    .form-section{ margin:22px 0 12px; padding-top:14px; border-top:1px solid var(--line, #e7e2dc); font-size:16px; }
     .section-divider{
       margin:8px 0 2px;
       padding-top:18px;
@@ -562,39 +566,11 @@
       <a href="/admin/login" class="nav-btn">管理者ログイン</a>
       <a href="/reader/login" class="nav-btn">占い師ログイン</a>
     </div>
-    <div class="hero">
-      <section class="hero-panel">
-        <div class="eyebrow">internal tool / astrology studio</div>
-        <h1>占い解析ワークスペース</h1>
-        <p class="lead">黒文字のままコピーしやすく、入力は構造抽出前提で整理。出生地は手入力に加えて、地図から座標を拾えるようにした内部用UIです。</p>
-        <div class="hero-links">
-          <a class="hero-link" href="/guide">利用ガイド</a>
-          <a class="hero-link" href="/guide#disclaimer">注意事項</a>
-          <a class="hero-link" href="/free-reading/start">無料鑑定フォーム</a>
-        </div>
-      </section>
-      <aside class="hero-side">
-        <div>
-          <div class="eyebrow">workflow</div>
-          <p class="lead" style="margin-top:12px;">入力 → 正規化 → 構造抽出 → レポート生成。Web 側では Google Maps から出生地の座標を拾えるようにしています。</p>
-          <div class="hero-links">
-            <a class="hero-link" href="/guide#yaml">YAMLをAIへ渡す手順</a>
-          </div>
-        </div>
-        <div class="hero-stats">
-          <div class="stat"><div class="stat-label">style</div><div class="stat-value">Black text</div></div>
-          <div class="stat"><div class="stat-label">mode</div><div class="stat-value">Form / Maps</div></div>
-        </div>
-      </aside>
-    </div>
-
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap">
-        <div>
-          <h2 style="margin:0 0 6px">無料鑑定の入口</h2>
-          <p class="lead" style="margin:0">ユーザー向けの無料鑑定導線を確認したいときは、ここから同じDBフローで進めます。</p>
-        </div>
-        <div><a href="/free-reading/start" class="nav-btn primary">無料鑑定を開く</a></div>
+    <div class="page-head">
+      <h1>占い解析</h1>
+      <div class="hero-links">
+        <a class="hero-link" href="/guide">利用ガイド</a>
+        <a class="hero-link" href="/guide#yaml">YAMLをAIへ渡す手順</a>
       </div>
     </div>
 
@@ -623,6 +599,184 @@
           </select>
         </div>
 
+        <h2 class="form-section">鑑定する人</h2>
+        <div class="row">
+          <label>氏名（任意）</label>
+          <input name="name" placeholder="例）さばめ">
+        </div>
+
+        <div class="row">
+          <label>生年月日</label>
+          <input name="birth_date" id="birth_date" type="date" required>
+        </div>
+
+        <div class="row">
+          <label>出生時刻（不明なら空）</label>
+          <input name="birth_time" id="birth_time" type="time">
+        </div>
+
+        <div class="row">
+          <label>性別</label>
+          <select name="gender" id="gender">
+            <option value="female" selected>女性</option>
+            <option value="male">男性</option>
+          </select>
+        </div>
+
+        <div class="hint">
+          出生地は必須です。都道府県を選ぶか、地図・緯度経度で地点を指定してください。<br>
+          県を選ぶと緯度経度入力はロック（グレーアウト）します。逆に緯度経度を入れるなら、県は未選択のままでOK。
+        </div>
+        <input type="hidden" name="birth_place" id="birth_place">
+
+        <div class="row">
+          <label>都道府県（地図・座標で指定済みなら省略可）</label>
+          <select name="prefecture" id="prefecture">
+            <option value="">（未選択）</option>
+            {% for v,l in prefs %}
+              <option value="{{ v }}">{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="row">
+          <label>緯度・経度（都道府県を選択済みなら省略可）</label>
+          <div class="two">
+            <input name="lat" id="lat" type="number" step="0.000001" placeholder="lat">
+            <input name="lon" id="lon" type="number" step="0.000001" placeholder="lon">
+          </div>
+        </div>
+
+        <div class="row">
+          <label>地図から選択</label>
+          <div class="map-stack">
+            {% if google_maps_api_key %}
+            <div class="map-load-box" id="map_load_box_a">
+              <button class="button-subtle map-load-trigger" type="button" data-map-target="a">地図を読み込む</button>
+              <div class="map-load-note">iPhone で重くなりやすいため、Google Maps は必要なときだけ読み込みます。都道府県だけで足りる場合は地図を開かなくても大丈夫です。</div>
+              <div class="map-shell" id="map_shell_a" hidden>
+                <div class="map-toolbar">
+                  <input id="map_search_a" class="map-input" type="text" placeholder="地名検索して移動（例: Tokyo Station, Fukuoka）">
+                  <button class="button-subtle" type="button" id="map_search_btn_a">検索</button>
+                  <button class="button-subtle" type="button" id="map_clear_btn_a">クリア</button>
+                </div>
+                <div id="map_a" class="map-canvas" aria-label="出生地マップ"></div>
+                <div id="map_status_a" class="map-status">地図をクリックすると、選択地点と緯度経度に反映されます。</div>
+                <div class="map-meta">
+                  <input id="map_label_a" class="coord-readonly" type="text" placeholder="選択された地点ラベル" readonly>
+                  <input id="map_place_id_a" type="hidden">
+                </div>
+                <div class="map-note">都道府県を選んでいても、地図で地点を確定すると都道府県選択は自動で解除され、座標が優先されます。</div>
+              </div>
+            </div>
+            {% else %}
+            <div class="map-status">Google Maps はまだ未設定です。環境変数 <code>GOOGLE_MAPS_API_KEY</code> を設定すると、この画面で地図選択が使えます。</div>
+            {% endif %}
+          </div>
+        </div>
+
+
+        <!-- 相性（相手）入力欄 -->
+        <div id="compat_block" style="display:none;">
+          <h3>相手（Person B）</h3>
+
+          <div class="row">
+            <label>相手の氏名（任意）</label>
+            <input name="name_b" placeholder="例）Aさん">
+          </div>
+
+          <div class="row">
+            <label>相手の生年月日</label>
+            <input name="birth_date_b" id="birth_date_b" type="date">
+          </div>
+
+          <div class="row">
+            <label>相手の出生時刻（不明なら空）</label>
+            <input name="birth_time_b" type="time">
+          </div>
+
+          <div class="row">
+            <label>相手の性別</label>
+            <select name="gender_b">
+              <option value="female" selected>女性</option>
+              <option value="male">男性</option>
+            </select>
+          </div>
+
+          <div class="hint">
+            相手の出生地も必須です。都道府県を選ぶか、地図・緯度経度で地点を指定してください。
+          </div>
+          <input type="hidden" name="birth_place_b" id="birth_place_b">
+
+          <div class="row">
+            <label>相手の都道府県（地図・座標で指定済みなら省略可）</label>
+            <select name="prefecture_b" id="prefecture_b">
+              <option value="">（未選択）</option>
+              {% for v,l in prefs %}
+                <option value="{{ v }}">{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="row">
+            <label>相手の緯度・経度（都道府県を選択済みなら省略可）</label>
+            <div class="two">
+              <input name="lat_b" id="lat_b" type="number" step="0.000001" placeholder="lat">
+              <input name="lon_b" id="lon_b" type="number" step="0.000001" placeholder="lon">
+            </div>
+          </div>
+
+          <div class="row">
+            <label>相手の地図選択</label>
+            <div class="map-stack">
+              {% if google_maps_api_key %}
+              <div class="map-load-box" id="map_load_box_b">
+                <button class="button-subtle map-load-trigger" type="button" data-map-target="b">相手側の地図を読み込む</button>
+                <div class="map-load-note">相性鑑定で必要なときだけ読み込みます。地図を開くまでページの負荷を抑えます。</div>
+                <div class="map-shell" id="map_shell_b" hidden>
+                  <div class="map-toolbar">
+                    <input id="map_search_b" class="map-input" type="text" placeholder="相手の出生地を検索して移動">
+                    <button class="button-subtle" type="button" id="map_search_btn_b">検索</button>
+                    <button class="button-subtle" type="button" id="map_clear_btn_b">クリア</button>
+                  </div>
+                  <div id="map_b" class="map-canvas" aria-label="相手の出生地マップ"></div>
+                  <div id="map_status_b" class="map-status">相手側も地図クリックで選択地点と緯度経度に反映できます。</div>
+                  <div class="map-meta">
+                    <input id="map_label_b" class="coord-readonly" type="text" placeholder="選択された地点ラベル" readonly>
+                    <input id="map_place_id_b" type="hidden">
+                  </div>
+                </div>
+              </div>
+              {% else %}
+              <div class="map-status">Google Maps 未設定のため、相手側の地図選択は表示されません。</div>
+              {% endif %}
+            </div>
+          </div>
+
+
+          <div class="hint">
+            相手側も、県を選ぶと緯度経度はロックされます。
+          </div>
+        </div>
+
+        <h2 class="form-section">相談内容</h2>
+        <div class="row">
+          <label>相談内容（任意）</label>
+          <textarea name="message" id="message" rows="4" placeholder="例）仕事相談"></textarea>
+        </div>
+
+        <div class="row">
+          <label>観測事実（任意） <span class="pill">ユーザー申告 / 確認済みの事実だけ</span></label>
+          <textarea name="observations_text" rows="4" placeholder="例）\n睡眠: 5-6h\nストレス時の衝動買い: たまに\nクレカ比率: 高め\n（※解釈ではなく事実だけ）"></textarea>
+        </div>
+
+        <input type="hidden" name="output_style" id="output_style" value="normal">
+
+        <input type="hidden" name="detail_level" id="detail_level" value="standard">
+
+        <input type="hidden" name="theme" id="theme" value="overall">
+
+        <h2 class="form-section">鑑定の設定</h2>
         <div class="row">
           <label>鑑定スタイル</label>
           <select name="reading_style" id="reading_style">
@@ -743,98 +897,6 @@
         </div>
 
         <div class="row">
-          <label>氏名（任意）</label>
-          <input name="name" placeholder="例）さばめ">
-        </div>
-
-        <div class="row">
-          <label>生年月日</label>
-          <input name="birth_date" id="birth_date" type="date" required>
-        </div>
-
-        <div class="row">
-          <label>出生時刻（不明なら空）</label>
-          <input name="birth_time" id="birth_time" type="time">
-        </div>
-
-        <div class="row">
-          <label>性別</label>
-          <select name="gender" id="gender">
-            <option value="female" selected>女性</option>
-            <option value="male">男性</option>
-          </select>
-        </div>
-
-        <div class="hint">
-          出生地は必須です。都道府県を選ぶか、地図・緯度経度で地点を指定してください。<br>
-          県を選ぶと緯度経度入力はロック（グレーアウト）します。逆に緯度経度を入れるなら、県は未選択のままでOK。
-        </div>
-        <input type="hidden" name="birth_place" id="birth_place">
-
-        <div class="row">
-          <label>都道府県（地図・座標で指定済みなら省略可）</label>
-          <select name="prefecture" id="prefecture">
-            <option value="">（未選択）</option>
-            {% for v,l in prefs %}
-              <option value="{{ v }}">{{ l }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <div class="row">
-          <label>緯度・経度（都道府県を選択済みなら省略可）</label>
-          <div class="two">
-            <input name="lat" id="lat" type="number" step="0.000001" placeholder="lat">
-            <input name="lon" id="lon" type="number" step="0.000001" placeholder="lon">
-          </div>
-        </div>
-
-        <div class="row">
-          <label>地図から選択</label>
-          <div class="map-stack">
-            {% if google_maps_api_key %}
-            <div class="map-load-box" id="map_load_box_a">
-              <button class="button-subtle map-load-trigger" type="button" data-map-target="a">地図を読み込む</button>
-              <div class="map-load-note">iPhone で重くなりやすいため、Google Maps は必要なときだけ読み込みます。都道府県だけで足りる場合は地図を開かなくても大丈夫です。</div>
-              <div class="map-shell" id="map_shell_a" hidden>
-                <div class="map-toolbar">
-                  <input id="map_search_a" class="map-input" type="text" placeholder="地名検索して移動（例: Tokyo Station, Fukuoka）">
-                  <button class="button-subtle" type="button" id="map_search_btn_a">検索</button>
-                  <button class="button-subtle" type="button" id="map_clear_btn_a">クリア</button>
-                </div>
-                <div id="map_a" class="map-canvas" aria-label="出生地マップ"></div>
-                <div id="map_status_a" class="map-status">地図をクリックすると、選択地点と緯度経度に反映されます。</div>
-                <div class="map-meta">
-                  <input id="map_label_a" class="coord-readonly" type="text" placeholder="選択された地点ラベル" readonly>
-                  <input id="map_place_id_a" type="hidden">
-                </div>
-                <div class="map-note">都道府県を選んでいても、地図で地点を確定すると都道府県選択は自動で解除され、座標が優先されます。</div>
-              </div>
-            </div>
-            {% else %}
-            <div class="map-status">Google Maps はまだ未設定です。環境変数 <code>GOOGLE_MAPS_API_KEY</code> を設定すると、この画面で地図選択が使えます。</div>
-            {% endif %}
-          </div>
-        </div>
-
-
-        <input type="hidden" name="output_style" id="output_style" value="normal">
-
-        <input type="hidden" name="detail_level" id="detail_level" value="standard">
-
-        <input type="hidden" name="theme" id="theme" value="overall">
-
-        <div class="row">
-          <label>相談内容（任意）</label>
-          <textarea name="message" id="message" rows="4" placeholder="例）仕事相談"></textarea>
-        </div>
-
-        <div class="row">
-          <label>観測事実（任意） <span class="pill">ユーザー申告 / 確認済みの事実だけ</span></label>
-          <textarea name="observations_text" rows="4" placeholder="例）\n睡眠: 5-6h\nストレス時の衝動買い: たまに\nクレカ比率: 高め\n（※解釈ではなく事実だけ）"></textarea>
-        </div>
-
-        <div class="row">
           <label>生成オプション</label>
           <div style="display:grid; gap:10px;">
             <label class="checkbox-line"><input type="checkbox" name="generate_ai" id="generate_ai" value="true" checked style="width:auto;" /> AI本文も生成する</label>
@@ -855,89 +917,6 @@
               <option value="sonnet">Claude Sonnet（高品質）</option>
             </select>
             <span class="hint" id="ai_model_hint" style="margin:0;">Claude: Haiku=高速, Sonnet=高品質</span>
-          </div>
-        </div>
-
-        <!-- 相性（相手）入力欄 -->
-        <div id="compat_block" style="display:none;">
-          <h3>相手（Person B）</h3>
-
-          <div class="row">
-            <label>相手の氏名（任意）</label>
-            <input name="name_b" placeholder="例）Aさん">
-          </div>
-
-          <div class="row">
-            <label>相手の生年月日</label>
-            <input name="birth_date_b" id="birth_date_b" type="date">
-          </div>
-
-          <div class="row">
-            <label>相手の出生時刻（不明なら空）</label>
-            <input name="birth_time_b" type="time">
-          </div>
-
-          <div class="row">
-            <label>相手の性別</label>
-            <select name="gender_b">
-              <option value="female" selected>女性</option>
-              <option value="male">男性</option>
-            </select>
-          </div>
-
-          <div class="hint">
-            相手の出生地も必須です。都道府県を選ぶか、地図・緯度経度で地点を指定してください。
-          </div>
-          <input type="hidden" name="birth_place_b" id="birth_place_b">
-
-          <div class="row">
-            <label>相手の都道府県（地図・座標で指定済みなら省略可）</label>
-            <select name="prefecture_b" id="prefecture_b">
-              <option value="">（未選択）</option>
-              {% for v,l in prefs %}
-                <option value="{{ v }}">{{ l }}</option>
-              {% endfor %}
-            </select>
-          </div>
-
-          <div class="row">
-            <label>相手の緯度・経度（都道府県を選択済みなら省略可）</label>
-            <div class="two">
-              <input name="lat_b" id="lat_b" type="number" step="0.000001" placeholder="lat">
-              <input name="lon_b" id="lon_b" type="number" step="0.000001" placeholder="lon">
-            </div>
-          </div>
-
-          <div class="row">
-            <label>相手の地図選択</label>
-            <div class="map-stack">
-              {% if google_maps_api_key %}
-              <div class="map-load-box" id="map_load_box_b">
-                <button class="button-subtle map-load-trigger" type="button" data-map-target="b">相手側の地図を読み込む</button>
-                <div class="map-load-note">相性鑑定で必要なときだけ読み込みます。地図を開くまでページの負荷を抑えます。</div>
-                <div class="map-shell" id="map_shell_b" hidden>
-                  <div class="map-toolbar">
-                    <input id="map_search_b" class="map-input" type="text" placeholder="相手の出生地を検索して移動">
-                    <button class="button-subtle" type="button" id="map_search_btn_b">検索</button>
-                    <button class="button-subtle" type="button" id="map_clear_btn_b">クリア</button>
-                  </div>
-                  <div id="map_b" class="map-canvas" aria-label="相手の出生地マップ"></div>
-                  <div id="map_status_b" class="map-status">相手側も地図クリックで選択地点と緯度経度に反映できます。</div>
-                  <div class="map-meta">
-                    <input id="map_label_b" class="coord-readonly" type="text" placeholder="選択された地点ラベル" readonly>
-                    <input id="map_place_id_b" type="hidden">
-                  </div>
-                </div>
-              </div>
-              {% else %}
-              <div class="map-status">Google Maps 未設定のため、相手側の地図選択は表示されません。</div>
-              {% endif %}
-            </div>
-          </div>
-
-
-          <div class="hint">
-            相手側も、県を選ぶと緯度経度はロックされます。
           </div>
         </div>
 
@@ -1384,26 +1363,43 @@
 
     function applyQueryPrefill() {
       const params = new URLSearchParams(window.location.search);
+      if (params.get("reanalyze") === "1") {
+        // 結果画面の「条件を変えて再解析」から。個人情報をURLに載せないため sessionStorage で受け取る。
+        try {
+          const saved = JSON.parse(sessionStorage.getItem("nanami_reanalyze") || "{}");
+          Object.keys(saved).forEach(function (key) { if (!params.has(key)) params.set(key, saved[key]); });
+          sessionStorage.removeItem("nanami_reanalyze");
+        } catch (e) {}
+      }
       if (!params || !params.toString()) return;
 
-      const map = [
-        ["name", 'input[name="name"]'],
-        ["birth_date", 'input[name="birth_date"]'],
-        ["birth_time", 'input[name="birth_time"]'],
-        ["prefecture", '#prefecture'],
-        ["birth_place", '#birth_place'],
-        ["lat", '#lat'],
-        ["lon", '#lon'],
-        ["gender", 'select[name="gender"]'],
-        ["consultation_text", 'textarea[name="consultation_text"]']
+      // 「条件を変えて再解析」や案件画面からの引き継ぎ。
+      // 依存関係のある項目（分析タイプ→占術、AI→モデル）は先に設定して change を発火させる。
+      const form = document.querySelector('form[action="/analyze"]');
+      const aliases = { consultation_text: "message" };
+      const order = [
+        "analysis_type", "analysis_mode", "astrology_system", "reading_style", "ai_provider", "ai_model",
+        "name", "birth_date", "birth_time", "gender", "prefecture", "birth_place", "lat", "lon",
+        "name_b", "birth_date_b", "birth_time_b", "gender_b", "prefecture_b", "birth_place_b", "lat_b", "lon_b",
+        "message", "consultation_text", "observations_text",
+        "house_system", "node_mode", "lilith_mode", "day_change_at_23",
+        "auto_option_mode", "include_chiron", "include_lilith", "include_vertex", "include_asteroids",
+        "generate_ai", "yaml_only", "include_reader", "include_transit"
       ];
 
-      map.forEach(function ([key, selector]) {
+      order.forEach(function (key) {
         const value = params.get(key);
-        if (value === null) return;
-        const el = document.querySelector(selector);
+        if (value === null || !form) return;
+        const el = form.querySelector('[name="' + (aliases[key] || key) + '"]');
         if (!el) return;
-        el.value = value;
+        if (el.type === "checkbox") {
+          el.checked = value === "true";
+          // 天体オプションに change を送ると「手動変更」と判定され自動設定がOFFになるため送らない
+          if (key !== "yaml_only" && key !== "auto_option_mode") return;
+        } else {
+          el.value = value;
+        }
+        el.dispatchEvent(new Event("change", { bubbles: true }));
       });
 
       const fromOrderCode = params.get('from_order_code');

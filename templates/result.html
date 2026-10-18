@@ -574,6 +574,11 @@
       .scrollareaSmall { height: 200px; }
     }
 
+    .result-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin:4px 0 16px; }
+    .result-head h1 { margin:0; font-size:24px; }
+    .result-head-actions { display:flex; align-items:center; flex-wrap:wrap; gap:14px; }
+    .reanalyze-btn { display:inline-flex; align-items:center; padding:9px 16px; border-radius:10px; background:#111; color:#fff !important; text-decoration:none; font-size:14px; font-weight:700; }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         -webkit-animation: none !important;
@@ -618,22 +623,12 @@
       </form>
     </div>
     {% endif %}
-    <div class="hero">
-      <section class="hero-panel">
-        <div class="eyebrow">analysis result / internal</div>
-        <h1>解析結果</h1>
-        <p class="lead">本文は黒文字のまま、コピー運用を邪魔しない前提で見た目だけを整理した結果画面です。</p>
-      </section>
-      <aside class="hero-side">
-        <div>
-          <div class="eyebrow">ready for copy</div>
-          <p class="lead" style="margin-top:12px;">AI本文と必要な内部メモだけを扱える構成に整理しています。</p>
-        </div>
-        <div class="hero-stats">
-          <div class="stat"><div class="stat-label">text color</div><div class="stat-value">Black</div></div>
-          <div class="stat"><div class="stat-label">ui tone</div><div class="stat-value">Modern soft</div></div>
-        </div>
-      </aside>
+    <div class="result-head">
+      <h1>解析結果</h1>
+      <div class="result-head-actions">
+        {% if reanalyze_params %}<a class="reanalyze-btn" href="/?reanalyze=1" onclick="return startReanalyze();">条件を変えて再解析</a>{% endif %}
+        <a href="/">新しく入力する</a>
+      </div>
     </div>
 
     <div class="card">
@@ -752,8 +747,8 @@
       <!-- ページタブバー -->
       <div class="pg-tabs" role="tablist">
         <button class="pg-tab active" data-pg="pg_result"   role="tab" aria-selected="true">鑑定結果</button>
-        <button class="pg-tab"        data-pg="pg_memo"     role="tab" aria-selected="false">占い師メモ</button>
-        <button class="pg-tab"        data-pg="pg_transit"  role="tab" aria-selected="false">トランジット</button>
+        {% if include_reader %}<button class="pg-tab"        data-pg="pg_memo"     role="tab" aria-selected="false">占い師メモ</button>{% endif %}
+        {% if transit_data %}<button class="pg-tab"        data-pg="pg_transit"  role="tab" aria-selected="false">トランジット</button>{% endif %}
         <button class="pg-tab"        data-pg="pg_data"     role="tab" aria-selected="false">データ</button>
       </div>
 
@@ -896,6 +891,7 @@
       </div><!-- /pg_data -->
 
       <div style="margin-top: 24px; position:relative; z-index:1; display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+        {% if reanalyze_params %}<a class="reanalyze-btn" href="/?reanalyze=1" onclick="return startReanalyze();">条件を変えて再解析</a>{% endif %}
         <a href="/">← 入力画面に戻る</a>
         {% set _back_code = order_code or from_order_code %}
         {% if _back_code %}
@@ -908,6 +904,13 @@
   </div>
 
   <script>
+  /* ─── 条件を変えて再解析 ─────────────────────────── */
+  var reanalyzeParams = {{ (reanalyze_params or {}) | tojson }};
+  function startReanalyze(){
+    try{ sessionStorage.setItem('nanami_reanalyze', JSON.stringify(reanalyzeParams)); }catch(e){}
+    return true;
+  }
+
   /* ─── データ定義 ─────────────────────────────────── */
   var rawReader    = {{ reader_text | tojson }};
   var rawAstro     = {{ raw_json | tojson | safe }} || {};
@@ -1752,10 +1755,8 @@
     /* ─── ローディング解除 ───────────────────────── */
     var loading=byId('loading'); var content=byId('content');
     try{ sessionStorage.removeItem('nanami_loading'); }catch(e){}
-    setTimeout(function(){
-      if(loading){ loading.classList.remove('show'); loading.setAttribute('aria-hidden','true'); }
-      if(content){ content.classList.add('ready'); }
-    }, 520);
+    if(loading){ loading.classList.remove('show'); loading.setAttribute('aria-hidden','true'); }
+    if(content){ content.classList.add('ready'); }
   });
 
   window.addEventListener('pageshow', function(){

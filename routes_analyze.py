@@ -77,6 +77,19 @@ def _build_inputs_view(**kwargs: Any) -> dict[str, Any]:
     return dict(kwargs)
 
 
+def _build_reanalyze_params(values: dict[str, Any]) -> dict[str, str]:
+    """結果画面の「条件を変えて再解析」で入力画面へ引き継ぐ値。
+
+    個人情報を含むため URL には載せず、結果画面の JS が sessionStorage 経由で渡す。
+    """
+    params: dict[str, str] = {}
+    for key, value in values.items():
+        if value is None or value == "":
+            continue
+        params[key] = ("true" if value else "false") if isinstance(value, bool) else str(value)
+    return params
+
+
 def _normalize_manual_systems(manual_systems: list[str] | None, astrology_system: str) -> list[str]:
     systems = [str(s).strip().lower() for s in (manual_systems or []) if str(s).strip()]
     selected = set(systems)
@@ -515,6 +528,46 @@ def analyze(
                 "bias_guard": bias_guard_obj,
                 "transit_data": transit_data,
                 "from_order_code": (from_order_code or "").strip() or None,
+                "reanalyze_params": _build_reanalyze_params({
+                    "from_order_code": (from_order_code or "").strip(),
+                    "analysis_type": analysis_type,
+                    "analysis_mode": analysis_mode,
+                    "astrology_system": astrology_system,
+                    "reading_style": reading_style,
+                    "ai_provider": ai_provider,
+                    "ai_model": ai_model,
+                    "name": name,
+                    "birth_date": birth_date,
+                    "birth_time": birth_time,
+                    "gender": gender,
+                    "prefecture": prefecture,
+                    "birth_place": birth_place,
+                    "lat": None if prefecture else lat,
+                    "lon": None if prefecture else lon,
+                    "name_b": name_b,
+                    "birth_date_b": birth_date_b,
+                    "birth_time_b": birth_time_b,
+                    "gender_b": gender_b,
+                    "prefecture_b": prefecture_b,
+                    "birth_place_b": birth_place_b,
+                    "lat_b": None if prefecture_b else lat_b,
+                    "lon_b": None if prefecture_b else lon_b,
+                    "message": message,
+                    "observations_text": observations_text,
+                    "house_system": house_system,
+                    "node_mode": node_mode,
+                    "lilith_mode": lilith_mode,
+                    "day_change_at_23": day_change_at_23,
+                    "auto_option_mode": auto_option_mode_flag,
+                    "include_chiron": include_chiron_flag,
+                    "include_lilith": include_lilith_flag,
+                    "include_vertex": include_vertex_flag,
+                    "include_asteroids": include_asteroids_flag,
+                    "generate_ai": generate_ai_flag,
+                    "yaml_only": yaml_only_flag,
+                    "include_reader": include_reader_flag,
+                    "include_transit": include_transit_flag,
+                }),
             },
         )
     except HTTPException:
