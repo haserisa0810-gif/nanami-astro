@@ -11,3 +11,9 @@ venv/
 .gcloudignore.save
 .vscode/
 .idea/
+deploy.env.yaml
+*.env
+.agents/
+.codex/
+.codex-remote-attachments/
+.pytest_cache/

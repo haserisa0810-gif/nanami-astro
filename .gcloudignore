@@ -20,3 +20,14 @@ venv/
 # 日本語ファイル名は gcloud のソースアーカイブで文字化けし
 # Cloud Run の container import が失敗するため除外する
 prompts/*コピー*
+
+# 秘密情報・作業用ファイルはアップロードしない
+.git/
+deploy.env.yaml
+*.env
+.env.*
+!.env.example
+.agents/
+.codex/
+.codex-remote-attachments/
+.pytest_cache/
