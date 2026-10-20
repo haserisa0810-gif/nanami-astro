@@ -20,6 +20,6 @@ meta: astrology_system:{astrology_system}, theme:{theme}, message:{user_message}
 5) 衝突発生メカニズム
 6) 長期関係の安定構造
 7) 強い引力と変容作用
-8) ハウス重なりによる影響領域（データがある範囲のみ）
+8) {compat_influence_heading}（データがある範囲のみ）
 9) 統合まとめ
 10) 実践的ヒント

@@ -72,16 +72,17 @@ def test_prompt_contains_public_evidence_and_internal_key_rules():
     assert "第1章で決めた「この人の核」" in prompt
     assert "章ごとに別人化" in prompt
     assert "共感できる個人鑑定" in prompt
-    assert "そうそう" in prompt
-    assert "あるある" in prompt
-    assert "なんで分かるの？" in prompt
-    assert "言われると痛いけど当たっている" in prompt
-    assert "自分でも説明できなかった" in prompt
+    assert "計算済みの主要構造から" in prompt
+    assert "一致・安定・葛藤を読み分け" in prompt
+    assert "未確認の経験を作らない" in prompt
     assert "占術は人物像を説明する材料" in prompt
-    assert "まず人物像を書き" in prompt
+    assert "まず人物像を書き" not in prompt
+    assert "まず各占術の計算済みデータと反証を照合" in prompt
+    assert "その結果から人物像を組み立て" in prompt
     assert "三占術を順番に説明しない" in prompt
-    assert "西洋占星術で主軸を作り" in prompt
-    assert "四柱推命で現実面や行動パターンを補強" in prompt
+    assert "先に人物像を決めて" in prompt
+    assert "後付けの裏付けを探さない" in prompt
+    assert "各占術の方式・確かさ・適用範囲を区別" in prompt
     assert "三占術が一致した内容は、一つの結論として統合" in prompt
     assert "各章で違う気付きを書く" in prompt
     assert "完成してから出そうとする" in prompt

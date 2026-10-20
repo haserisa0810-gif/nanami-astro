@@ -34,9 +34,10 @@ def test_shichu_prompt_renders_and_contains_western_ban():
     assert "トランジットを使い" not in template
 
     # 深化データの活用指示と用語の厳密ルール
-    assert "神殺は、本文のどこかで必ず1回以上" in template
-    assert "実践アクションの章で候補五行を日常の行動に翻訳" in template
-    assert "type: 伏吟` がある場合のみ使う" in template
+    assert "補助情報として関連がある場合だけ" in template
+    assert "hold/withheld は保留" in template
+    assert "その type がある場合のみ使う" in template
+    assert "関連が薄い章は統合・省略" in template
 
     # プレースホルダが ctx で全て埋まる（KeyError にならず {} が残らない）
     rendered = _render_prompt(template, {

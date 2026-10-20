@@ -25,6 +25,14 @@ class GuardResult:
 
 
 _READER_REQUIRED_HEADERS = [
+    "### 1) 主要構造と根拠",
+    "### 2) 現れ方と条件",
+    "### 3) 現状確認の質問",
+    "### 4) 伝え方",
+    "### 5) 活かし方と注意点",
+]
+
+_LEGACY_READER_HEADERS = [
     "### 1) ハイリスク（洗い出し）",
     "### 2) 具体的な“事故り方”",
     "### 3) 観測ポイント（質問）",
@@ -137,7 +145,7 @@ def validate_generated_text(
     report_type: ReportType,
     risk_flags: list[dict[str, Any]] | None = None,
 ) -> GuardResult:
-    """Heuristic validation to reduce "positive-only" outputs."""
+    """Heuristic format checks; this does not validate astrological evidence."""
     t = (text or "").strip()
     issues: list[str] = []
     if not t:
@@ -147,25 +155,21 @@ def validate_generated_text(
     sev_max = _severity_max(rf)
 
     # Reader must keep the fixed headings.
-    if report_type in ("single_web_reader", "single_line_reader"):
-        for h in _READER_REQUIRED_HEADERS:
+    if report_type == "single_web_reader":
+        if not all(h in t for h in _LEGACY_READER_HEADERS):
+            for h in _READER_REQUIRED_HEADERS:
+                if h not in t:
+                    issues.append(f"reader必須見出し欠落: {h}")
+    elif report_type == "single_line_reader":
+        for h in ("【主要構造と根拠】", "【現れ方と条件】", "【現状確認の質問】", "【伝え方・活かし方】"):
             if h not in t:
                 issues.append(f"reader必須見出し欠落: {h}")
-
-        # Must contain some bullets/questions.
-        bullets = len(re.findall(r"^[-・]\s+", t, flags=re.MULTILINE))
-        if bullets < 8:
-            issues.append("readerの箇条書き量が少なすぎます（実務粒度不足）")
-
-        # Avoid harmlessness language.
-        if re.search(r"(大丈夫|問題ない|心配いらない)", t):
-            issues.append("readerで無害化ワード（大丈夫/問題ない等）が出ています")
 
     # Client: if high severity exists, require a caution block.
     # ただし本文がまだ短い・見出し不足の段階では fail で潰さず、十分な長さが出た後だけ厳しく見る。
     if report_type in ("single_web", "single_line") and sev_max >= 4:
         has_caution = bool(re.search(r"(注意|気をつけ|リスク|事故|落とし穴)", t))
-        visible_headers = len(re.findall(r"^###\\s+", t, flags=re.MULTILINE))
+        visible_headers = len(re.findall(r"^#{1,6}\s+", t, flags=re.MULTILINE))
         if len(t) >= 1200 and visible_headers >= 4 and not has_caution:
             issues.append("高severityリスクがあるのに、注意喚起が文章上に現れていません")
 
@@ -185,15 +189,18 @@ def build_fix_instructions(result: GuardResult, report_type: ReportType) -> str:
 
     base = [
         "【BIAS_GUARD 修正指示】",
-        "- 良いこと中心の作文をやめ、事故導線（発火条件→行動→結果）を具体化する",
-        "- 断定は禁止。ただし『かもしれない』連発は禁止。条件とパターンで書く",
+        "- 指摘された形式・不足だけを修正し、主要構造と根拠・候補・保留を維持する",
+        "- 曖昧語の多さを断定や深刻さで解消しない。根拠、条件、行動のつながりを具体化する",
+        "- 根拠のある厳しい傾向は残し、再生成のために事故や症状、新たな問題を作らない",
     ]
-    if report_type in ("single_web_reader", "single_line_reader"):
+    if report_type == "single_web_reader":
         base += [
             "- 出力フォーマット（### 1)〜### 5)）の見出しを崩さない",
-            "- 1)はseverityが高い順に並べ、箇条書きを増やす",
-            "- 3)は“質問”の形で5〜8個、4)は“言い方テンプレ”を必ず含める",
+            "- 1)は主要構造と参照根拠、2)は条件ごとの現れ方を記す",
+            "- 3)は現状確認の質問、4)は伝え方、5)は活かし方と根拠のある注意点を記す",
         ]
+    elif report_type == "single_line_reader":
+        base.append("- 主要構造と根拠、現れ方と条件、現状確認の質問、伝え方・活かし方の4つの見出しを維持する")
     if result.issues:
         base.append("- NG検出: " + " / ".join(result.issues[:6]))
 

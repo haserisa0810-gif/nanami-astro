@@ -368,7 +368,9 @@ def _shichu_themes(shichu: dict[str, Any]) -> list[dict[str, Any]]:
     themes: list[dict[str, Any]] = []
     sr = _as_dict(shichu.get("structure_report"))
     normalized = _as_dict(shichu.get("normalized_data"))
-    label = sr.get("label") or _pick(sr, "strength_index", "label") or sr.get("strength_label")
+    weighted = _as_dict(sr.get("strength_v2"))
+    label = weighted.get("band") or sr.get("label") or _pick(sr, "strength_index", "label") or sr.get("strength_label")
+    strength_role = "力量方式の候補" if weighted else "旧方式の参考値"
     feats = _as_list(sr.get("dominant_features"))
     day_master = sr.get("day_master") or _pick(normalized, "ten_gods", "day_master")
     seasonal_context = _as_dict(sr.get("seasonal_context"))
@@ -378,13 +380,13 @@ def _shichu_themes(shichu: dict[str, Any]) -> list[dict[str, Any]]:
         if day_master:
             reasons.append(f"日主は「{day_master}」で、性質判断はこの中心軸を土台に見ていきます。")
         if label:
-            reasons.append(f"全体の強弱判定は「{label}」で、極端すぎないが偏りは拾う前提です。")
+            reasons.append(f"{strength_role}は「{label}」。別方式の値と平均・多数決せず、人物像を強弱だけで決めないでください。")
         for feat in feats[:4]:
             s = str(feat)
             if "相対的に多い" in s:
                 reasons.append(f"{s}ため、その要素の性質は前に出やすいです。")
             elif "相対的に少ない" in s:
-                reasons.append(f"{s}ため、その要素は意識して補うとバランスを取りやすいです。")
+                reasons.append(f"{s}。単純な個数の少なさから、補うべき五行や心理傾向を決めないでください。")
             elif s.startswith("月支は"):
                 reasons.append(f"{s}ので、季節や環境条件の影響を受けながら性質が表に出ます。")
             elif s.startswith("大運方向は"):
@@ -404,7 +406,7 @@ def _shichu_themes(shichu: dict[str, Any]) -> list[dict[str, Any]]:
         if day_master:
             summary_bits.append(f"日主は「{day_master}」")
         if label:
-            summary_bits.append(f"全体傾向は「{label}」")
+            summary_bits.append(f"{strength_role}は「{label}」")
         if feats:
             summary_bits.append("特徴は「" + " / ".join(map(str, feats[:3])) + "」")
         summary_text = "、".join(summary_bits) if summary_bits else "命式バランスを整理しました"
@@ -413,7 +415,7 @@ def _shichu_themes(shichu: dict[str, Any]) -> list[dict[str, Any]]:
             "id": "shichu_balance",
             "label": "命式バランス（四柱推命）",
             "summary": summary_text,
-            "client_text": f"生まれ持った土台は『{label or 'バランスあり'}』で、強い要素と不足気味の要素の両方を見ていきます。",
+            "client_text": f"{strength_role}は『{label or '未評価'}』として、支える要素と負荷の関係を見ていきます。",
             "reader_explanation": "強弱や五行の偏りを、そのままラベル化せず、実際の出方と補い方に翻訳して使います。",
             "reasons": reasons,
             "evidence": [x for x in [label or "", *list(map(str, feats[:5]))] if x],
